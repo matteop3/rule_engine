@@ -1,5 +1,9 @@
-# app/main.py
 from fastapi import FastAPI
+
+from app.database import engine, Base
+from app.models import domain # Importa i modelli
+
+Base.metadata.create_all(bind=engine)
 
 # Inizializzazione dell'app
 app = FastAPI(
