@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from app.database import engine, Base
 from app.models import domain
-from app.routers import entities, fields # Router importing
+from app.routers import entities, fields, values, rules # Router importing
 
 # DB tables creation
 Base.metadata.create_all(bind=engine)
@@ -15,6 +15,8 @@ app = FastAPI(
 # Router registration
 app.include_router(entities.router)
 app.include_router(fields.router)
+app.include_router(values.router)
+app.include_router(rules.router)
 
 def health_check() -> dict[str, str]:
     """Simple health check endpoint."""
