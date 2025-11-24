@@ -1,1 +1,1 @@
-from .rule_engine import RuleEngine
+from .rule_engine import RuleEngineService
