@@ -127,18 +127,18 @@ class RuleEngineService:
         """
         criteria_list = conditions.get("criteria", [])
         if not criteria_list:
-            # Empty rule = True (or False depending on preference, but usually True)
+            # Empty rule = True
             return True
 
         for criteria in criteria_list:
             if not self._check_criterion(criteria, context):
                 return False # One failed criterion is enough to invalidate the AND
         
-        return True # All past criteria
+        return True # All criteria are passed
 
     def _check_criterion(self, criterion: Dict[str, Any], context: Dict[int, Any]) -> bool:
-        """Compare: Context[field_id] OPERATOR Expected_Value"""
-        # Note: here we assume that JSON uses “field_id” as the key for robustness.
+        """Compare: context[field_id] OPERATOR expected_Value"""
+        # Note: here we assume that JSON uses “field_id” as the key.
         target_field_id = criterion.get("field_id") 
         operator = criterion.get("operator")
         expected_val = criterion.get("value")
