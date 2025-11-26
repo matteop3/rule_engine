@@ -52,6 +52,7 @@ class RuleEngineService:
         # Build the “Running Context” that updates step by step
         running_context: Dict[int, Any] = {} # Key: field_id, Value: current valid value
         output_fields: List[FieldOutputState] = []
+        is_config_complete = True
 
         for field in fields_db:
             # Retrieve possible options (static)
@@ -111,14 +112,27 @@ class RuleEngineService:
                 for v in available_values_objs
             ]
 
+            if field.is_required and final_value is None:
+                is_config_complete = False
+
+            if field.is_required and not field.is_hidden and final_value is None:
+                is_config_complete = False
+
             output_fields.append(FieldOutputState(
                 field_id=field.id,
                 field_name=field.name,
                 current_value=final_value,
-                available_options=out_options
+                available_options=out_options,
+                is_required=field.is_required,
+                is_readonly=field.is_readonly,
+                is_hidden=field.is_hidden
             ))
 
-        return CalculationResponse(entity_id=entity.id, fields=output_fields)
+        return CalculationResponse(
+            entity_id=entity.id, 
+            fields=output_fields,
+            is_complete=is_config_complete # Il semaforo verde/rosso finale
+        )
 
     def _evaluate_rule(self, conditions: Dict[str, Any], context: Dict[int, Any]) -> bool:
         """

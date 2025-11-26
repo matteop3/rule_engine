@@ -29,8 +29,12 @@ class FieldOutputState(BaseModel):
     field_name: str        
     current_value: Any # The actual current value (after validation and default)    
     available_options: List[ValueOption] # List of options that can be selected at this time
+    is_required: bool
+    is_readonly: bool
+    is_hidden: bool
 
 class CalculationResponse(BaseModel):
     """Complete response with the status of all fields in the entity."""
     entity_id: int
     fields: List[FieldOutputState]
+    is_complete: bool = True

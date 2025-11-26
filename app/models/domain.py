@@ -26,6 +26,8 @@ class Field(Base):
     name: Mapped[str] = mapped_column(String(100))
     data_type: Mapped[str] = mapped_column(String(50), default="string")
     is_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_readonly: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     is_free_value: Mapped[bool] = mapped_column(Boolean, default=False)
     step: Mapped[int] = mapped_column(Integer, default=0) 
     sequence: Mapped[int] = mapped_column(Integer, default=0)
