@@ -41,10 +41,9 @@ class RuleEngineService:
                 rules_by_target_value[r.target_value_id] = []
             rules_by_target_value[r.target_value_id].append(r)
 
-        # Map: current input user {field_id: value}
-        # Note: convert everything to strings to make comparisons easier, or None
+        # Map: current input user {field_id: value} and normalizing user inputs (empty strings -> None)
         user_input_map: Dict[int, Any] = {
-            item.field_id: str(item.value) if item.value is not None else None 
+            item.field_id: self._normalize_value(item.value)
             for item in request.current_state
         }
 
@@ -60,60 +59,73 @@ class RuleEngineService:
             
             # Filter available options (Rule-based dynamics)
             available_values_objs: List[Value] = []
-            
-            for val_obj in possible_values:
-                # Retrieve rules for this specific value
-                rules_for_val = rules_by_target_value.get(val_obj.id, [])
+
+            if field.is_free_value:
+                # FREE VALUE (Text, Number, Date, ... inputs): retrieve raw input directly
+                # Don't filter values because there are no pre-defined values in DB.
+                # Don't check rules for specific values (rules apply to options, not free text).
                 
-                if not rules_for_val:
-                    # No rules = Always available
-                    is_available = True
-                else:
-                    # OR logic between rules: only one needs to be true
-                    is_available = False
-                    for rule in rules_for_val:
-                        if self._evaluate_rule(rule.conditions, running_context):
-                            is_available = True
-                            break # Once a valid rule has been found, the value is available.
+                raw_input = user_input_map.get(field.id)
+                final_value = raw_input 
                 
-                if is_available:
-                    available_values_objs.append(val_obj)
+                # Note: eventual Data Type validation here
+                # (e.g. check if it's a valid integer if field.data_type == 'int')
+                
+                # Free values have no "options" to return
+                out_options = []
 
-            # Determine the final current value
-            # Retrieve user input (if any)
-            raw_input = user_input_map.get(field.id)
-            final_value = None
-
-            # Create a list of valid values for quick comparison
-            valid_str_values = [v.value for v in available_values_objs]
-
-            # Validation: user input is still valid?
-            if raw_input is not None and raw_input in valid_str_values:
-                final_value = raw_input
             else:
-                # Invalid or missing input -> Reset to None
+                # CONSTRAINED VALUE (Dropdown, Radiobuttons, ...)
+                
+                for val_obj in possible_values:
+                    # Retrieve rules for this specific value
+                    rules_for_val = rules_by_target_value.get(val_obj.id, [])
+                    
+                    if not rules_for_val:
+                        # No rules = Always available
+                        is_available = True
+                    else:
+                        # OR logic between rules: only one needs to be true
+                        is_available = False
+                        for rule in rules_for_val:
+                            if self._evaluate_rule(rule.conditions, running_context):
+                                is_available = True
+                                break # Once a valid rule has been found, the value is available.
+                    
+                    if is_available:
+                        available_values_objs.append(val_obj)
+
+                # Determine the final current value
+                # Retrieve user input (if any)
+                raw_input = user_input_map.get(field.id)
                 final_value = None
 
-            # Apply default (if None)
-            if final_value is None:
-                # Search for a default from available options
-                for val_obj in available_values_objs:
-                    if val_obj.is_default:
-                        final_value = val_obj.value
-                        break
+                # Create a list of valid values for quick comparison
+                valid_str_values = [v.value for v in available_values_objs]
 
-            # Context and output update
-            # Important: the context is updated with the calculated value, not the raw value.
-            running_context[field.id] = final_value
+                # Validation: user input is still valid?
+                if raw_input is not None and raw_input in valid_str_values:
+                    final_value = raw_input
+                
+                # Apply default (ONLY if the field is None and mandatory)
+                if final_value is None and field.is_required:
+                    # If there is only one option, use it.
+                    if len(available_values_objs) == 1:
+                        final_value = available_values_objs[0].value
+                    else:
+                        # Otherwise, look for the first default you find.
+                        final_value = next((val_obj.value for val_obj in available_values_objs if val_obj.is_default), None)
 
-            # Output building
-            out_options = [
-                ValueOption(id=v.id, value=v.value, label=v.label, is_default=v.is_default)
-                for v in available_values_objs
-            ]
+                # Context and output update
+                # Important: the context is updated with the calculated value, not the raw value.
+                running_context[field.id] = final_value
 
-            if field.is_required and final_value is None:
-                is_config_complete = False
+                # Prepare options for output
+                out_options = [
+                    ValueOption(id=v.id, value=v.value, label=v.label, is_default=v.is_default)
+                    for v in available_values_objs
+                ]
+            
 
             if field.is_required and not field.is_hidden and final_value is None:
                 is_config_complete = False
@@ -197,3 +209,7 @@ class RuleEngineService:
                 return False
 
         return False
+    
+    def _normalize_value(self, val: Any) -> Any:
+        """Converts empty strings to None, keeps other values unchanged."""
+        return None if isinstance(val, str) and val.strip() == "" else val
