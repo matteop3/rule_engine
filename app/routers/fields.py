@@ -20,6 +20,16 @@ def create_field(field_data: FieldCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND, 
             detail=f"Entity with id {field_data.entity_id} not found"
         )
+    
+    # Ensure data consistency: default_value on Field model is allowed ONLY for free-text fields.
+    if not field_data.is_free_value and field_data.default_value is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "You cannot set 'default_value' on the Field object if 'is_free_value' is False. "
+                "For non-free fields, please set 'is_default=True' on the specific Value object instead."
+            )
+        )
 
     # Field creation
     new_field = Field(**field_data.model_dump()) # Convert Pydantic schema into a dictionary

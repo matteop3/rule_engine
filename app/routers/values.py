@@ -10,6 +10,7 @@ router = APIRouter(
     tags=["Values"]
 )
 
+
 @router.post("/", response_model=ValueRead, status_code=status.HTTP_201_CREATED)
 def create_value(value_data: ValueCreate, db: Session = Depends(get_db)):
     """Create a new Value related to a Field."""
@@ -21,6 +22,16 @@ def create_value(value_data: ValueCreate, db: Session = Depends(get_db)):
             detail=f"Field with id {value_data.field_id} not found"
         )
 
+    # Prevent the creation of the Value if I am associating it with a free-value Field
+    if field.is_free_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Field '{field.name}' (ID {field.id}) is configured as 'Free Value'. "
+                "You cannot define pre-set values for it."
+            )
+        )
+
     # Value creation
     new_value = Value(**value_data.model_dump()) # Convert Pydantic schema into a dictionary
     
@@ -29,6 +40,7 @@ def create_value(value_data: ValueCreate, db: Session = Depends(get_db)):
     db.refresh(new_value)
     
     return new_value
+
 
 @router.get("/", response_model=List[ValueRead])
 def read_values(

@@ -9,6 +9,7 @@ class FieldBase(BaseSchema):
     is_readonly: bool = False
     is_hidden: bool = False
     is_free_value: bool = False
+    default_value: Optional[str] = None # Only if is_free_value
     step: int = 0
     sequence: int = 0
 

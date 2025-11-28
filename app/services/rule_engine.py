@@ -70,6 +70,10 @@ class RuleEngineService:
                 
                 # Note: eventual Data Type validation here
                 # (e.g. check if it's a valid integer if field.data_type == 'int')
+
+                # Apply the default only if the value is empty AND a default_value exists for this Field.
+                if final_value is None and field.default_value is not None:
+                    final_value = field.default_value
                 
                 # Free values have no "options" to return
                 out_options = []

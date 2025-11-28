@@ -29,6 +29,7 @@ class Field(Base):
     is_readonly: Mapped[bool] = mapped_column(Boolean, default=False)
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     is_free_value: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_value: Mapped[Optional[str]] = mapped_column(String(255), nullable=True) # Only if is_free_value
     step: Mapped[int] = mapped_column(Integer, default=0) 
     sequence: Mapped[int] = mapped_column(Integer, default=0)
 
