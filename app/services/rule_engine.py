@@ -71,8 +71,8 @@ class RuleEngineService:
                 # Note: eventual Data Type validation here
                 # (e.g. check if it's a valid integer if field.data_type == 'int')
 
-                # Apply the default only if the value is empty AND a default_value exists for this Field.
-                if final_value is None and field.default_value is not None:
+                # Apply the default only if the value is mandatory AND empty AND a default_value exists for this Field.
+                if field.is_required and final_value is None and field.default_value is not None:
                     final_value = field.default_value
                 
                 # Free values have no "options" to return
@@ -111,7 +111,7 @@ class RuleEngineService:
                 if raw_input is not None and raw_input in valid_str_values:
                     final_value = raw_input
                 
-                # Apply default (ONLY if the field is None and mandatory)
+                # Apply default or force a single option (ONLY if the field is None and mandatory)
                 if final_value is None and field.is_required:
                     # If there is only one option, use it.
                     if len(available_values_objs) == 1:
@@ -213,6 +213,7 @@ class RuleEngineService:
                 return False
 
         return False
+    
     
     def _normalize_value(self, val: Any) -> Any:
         """Converts empty strings to None, keeps other values unchanged."""
