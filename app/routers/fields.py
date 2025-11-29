@@ -2,8 +2,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.domain import Field, Entity
-from app.schemas import FieldCreate, FieldRead
+from app.models.domain import Field, Entity, Value
+from app.schemas import FieldCreate, FieldRead, FieldUpdate
 
 router = APIRouter(
     prefix="/fields",
@@ -56,3 +56,51 @@ def read_fields(
         query = query.filter(Field.entity_id == entity_id)
         
     return query.offset(skip).limit(limit).all()
+
+@router.put("/{field_id}", response_model=FieldRead)
+def update_field(field_id: int, field_update: FieldUpdate, db: Session = Depends(get_db)):
+    # Read Field from DB
+    db_field = db.query(Field).filter(Field.id == field_id).first()
+    if not db_field:
+        raise HTTPException(status_code=404, detail="Field not found")
+
+    # State transition analysis
+    old_is_free = db_field.is_free_value
+    new_is_free = field_update.is_free_value
+
+    # SCENARIO A: from Field with a data ource to a free Field
+    if not old_is_free and new_is_free:
+        # Check integrity: are there any related values?
+        existing_values_count = db.query(Value).filter(Value.field_id == field_id).count()
+        
+        if existing_values_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Cannot change 'is_free_value' to True because this field has associated Values. "
+                    "Please delete all Values (and related Rules) associated with this field first."
+                )
+            )
+        
+        # Do not clear the default_value here, otherwise 
+        # if the user has passed one it will be blanked.
+
+    # SCENARIO B: from free Field to a Field with a data source
+    if old_is_free and not new_is_free:
+        # Non-free fields do not use Field.default_value
+        if field_update.default_value is not None:
+             raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot set 'default_value' when switching to a non-free field. Use Value.is_default instead."
+            )
+
+    # Apply updates (update only received fields, I 
+    # prefer a non-strict PUT that acts also as a PATCH)
+    update_data = field_update.model_dump(exclude_unset=True)
+    
+    for key, value in update_data.items():
+        setattr(db_field, key, value)
+
+    db.commit()
+    db.refresh(db_field)
+    return db_field

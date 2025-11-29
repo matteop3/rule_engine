@@ -14,9 +14,17 @@ class FieldBase(BaseSchema):
     sequence: int = 0
 
 class FieldCreate(FieldBase):
+    """ Schema to create a Field (POST). """
     entity_id: int
 
 class FieldRead(FieldBase):
+    """ Schema to read a Field (GET). """
     id: int
     entity_id: int
     # Datasource not included here
+
+class FieldUpdate(FieldCreate):
+    """ Schema to update a Field (PUT). """
+    # In a PUT, I expect the client to send all fields, 
+    # so inheriting from FieldBase is correct.
+    pass

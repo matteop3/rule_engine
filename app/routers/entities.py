@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.domain import Entity
-from app.schemas import EntityCreate, EntityRead
+from app.schemas import EntityCreate, EntityRead, EntityUpdate
 
 # Router definition 
 # prefix="/entities" all routes will begin with /entities
@@ -25,7 +25,7 @@ def create_entity(entity: EntityCreate, db: Session = Depends(get_db)):
     # Create DB instance
     db_entity = Entity(name=entity.name)
     
-    # Saving
+    # Save
     db.add(db_entity)
     db.commit()
     db.refresh(db_entity) # Reload the object from the DB to get the generated ID
@@ -39,3 +39,19 @@ def read_entities(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
     """
     entities = db.query(Entity).offset(skip).limit(limit).all()
     return entities
+
+@router.put("/{entity_id}", response_model=EntityRead)
+def update_entity(entity_id: int, entity_in: EntityUpdate, db: Session = Depends(get_db)):
+    # Read Entity from DB
+    db_entity = db.query(Entity).filter(Entity.id == entity_id).first()
+    if not db_entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    
+    # Update all fields
+    for key, value in entity_in.model_dump().items():
+        setattr(db_entity, key, value)
+    
+    # Save
+    db.commit()
+    db.refresh(db_entity)
+    return db_entity

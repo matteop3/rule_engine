@@ -2,7 +2,7 @@
 # making them directly accessible from “app.schemas.”
 
 from .base_schema import BaseSchema
-from .entity import EntityBase, EntityCreate, EntityRead
-from .field import FieldBase, FieldCreate, FieldRead
-from .value import ValueBase, ValueCreate, ValueRead
-from .rule import RuleBase, RuleCreate, RuleRead
+from .entity import EntityBase, EntityCreate, EntityRead, EntityUpdate
+from .field import FieldBase, FieldCreate, FieldRead, FieldUpdate
+from .value import ValueBase, ValueCreate, ValueRead, ValueUpdate
+from .rule import RuleBase, RuleCreate, RuleRead, RuleUpdate
