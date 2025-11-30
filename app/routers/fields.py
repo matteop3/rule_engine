@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.domain import Field, Entity, Value
+from app.models.domain import Field, Entity, Value, Rule
 from app.schemas import FieldCreate, FieldRead, FieldUpdate
 
 router = APIRouter(
@@ -40,6 +40,7 @@ def create_field(field_data: FieldCreate, db: Session = Depends(get_db)):
     
     return new_field
 
+
 @router.get("/", response_model=List[FieldRead])
 def read_fields(
     entity_id: Optional[int] = None, 
@@ -56,6 +57,7 @@ def read_fields(
         query = query.filter(Field.entity_id == entity_id)
         
     return query.offset(skip).limit(limit).all()
+
 
 @router.put("/{field_id}", response_model=FieldRead)
 def update_field(field_id: int, field_update: FieldUpdate, db: Session = Depends(get_db)):
@@ -86,6 +88,8 @@ def update_field(field_id: int, field_update: FieldUpdate, db: Session = Depends
         # if the user has passed one it will be blanked.
 
     # SCENARIO B: from free Field to a Field with a data source
+    # Ensure the DB is cleaned of any old default_value
+    force_default_reset = False
     if old_is_free and not new_is_free:
         # Non-free fields do not use Field.default_value
         if field_update.default_value is not None:
@@ -93,14 +97,77 @@ def update_field(field_id: int, field_update: FieldUpdate, db: Session = Depends
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot set 'default_value' when switching to a non-free field. Use Value.is_default instead."
             )
+        # Flag to force cleanup later
+        force_default_reset = True
 
     # Apply updates (update only received fields, I 
     # prefer a non-strict PUT that acts also as a PATCH)
     update_data = field_update.model_dump(exclude_unset=True)
+
+    # If switching from a Field with a free value to a  Field with a 
+    # data source, explicitly overwrite DB default_value to None
+    if force_default_reset:
+        update_data['default_value'] = None
     
+    # Update all fields
     for key, value in update_data.items():
         setattr(db_field, key, value)
 
+    # Save
     db.commit()
     db.refresh(db_field)
     return db_field
+
+
+@router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_field(field_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a Field.
+    Strict policy: 
+    1. Cannot delete if it has Values.
+    2. Cannot delete if it is the target of a Rule.
+    3. Cannot delete if it is used as a condition inside any Rule of the same Entity.
+    """
+    db_field = db.query(Field).filter(Field.id == field_id).first()
+    if not db_field:
+        raise HTTPException(status_code=404, detail="Field not found")
+
+    # Guardrail: check for Values
+    values_count = db.query(Value).filter(Value.field_id == field_id).count()
+    if values_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete Field because it has {values_count} associated Values."
+        )
+
+    # Guardrail: check for Rules targeting this field
+    rules_targeting_field = db.query(Rule).filter(Rule.target_field_id == field_id).count()
+    if rules_targeting_field > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete Field because it is the target of {rules_targeting_field} Rules."
+        )
+    
+    # Deep scan: check usage in JSON conditions (implicit relation)
+    # Retrive all Entity Rules
+    entity_rules = db.query(Rule).filter(Rule.entity_id == db_field.entity_id).all()
+    
+    for rule in entity_rules:
+        # Expected structure: {"criteria": [{"field_id": 1, ...}, ...]}
+        criteria_list = rule.conditions.get("criteria", [])
+        
+        for criterion in criteria_list:
+            # If the Field ID is found inside the Rule criterion...
+            if criterion.get("field_id") == field_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Cannot delete Field because it is used as a condition criteria "
+                        f"in Rule ID {rule.id} (Target Field ID: {rule.target_field_id}). "
+                        "Please update or delete that rule first."
+                    )
+                )
+
+    db.delete(db_field)
+    db.commit()
+    return None
