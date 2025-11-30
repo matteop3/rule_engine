@@ -39,21 +39,23 @@ def create_rule(rule_data: RuleCreate, db: Session = Depends(get_db)):
         )
 
     # Check target Value existence and ownership
-    # The target Value must belong to the target Field
-    target_value = db.query(Value).filter(
-        Value.id == rule_data.target_value_id,
-        Value.field_id == rule_data.target_field_id
-    ).first()
+    # The target Value must belong to the target Field (if specified)
+    if rule_data.target_value_id is not None:
+        target_value = db.query(Value).filter(
+            Value.id == rule_data.target_value_id,
+            Value.field_id == rule_data.target_field_id
+        ).first()
 
-    if not target_value:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Target Value {rule_data.target_value_id} not found or does not belong to Field {rule_data.target_field_id}"
-        )
+        if not target_value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail=f"Target Value {rule_data.target_value_id} not found or does not belong to Field"
+            )
 
     # Create the Rule
     new_rule = Rule(**rule_data.model_dump()) # Convert Pydantic schema into a dictionary
     
+    # Save
     db.add(new_rule)
     db.commit()
     db.refresh(new_rule)

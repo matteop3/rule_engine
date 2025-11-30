@@ -6,8 +6,8 @@ from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOut
 class RuleEngineService:
     def calculate_state(self, db: Session, request: CalculationRequest) -> CalculationResponse:
         """
-        Main calculation engine (CPQ logic).
-        Performs waterfall on all entity fields.
+        CPQ Core Engine.
+        Executes waterfall logic on all entity fields.
         """
         
         # PERFORMANCE OPTIMIZATION
@@ -37,102 +37,138 @@ class RuleEngineService:
         # Map: target_value_id -> Rule objects list (1-to-Many relationship to manage OR)
         rules_by_target_value: Dict[int, List[Rule]] = {}
         for r in all_rules:
-            if r.target_value_id not in rules_by_target_value:
-                rules_by_target_value[r.target_value_id] = []
-            rules_by_target_value[r.target_value_id].append(r)
+            # Index rules by target_value_id only if it exists (availability rules)
+            if r.target_value_id is not None:
+                if r.target_value_id not in rules_by_target_value:
+                    rules_by_target_value[r.target_value_id] = []
+                rules_by_target_value[r.target_value_id].append(r)
 
-        # Map: current input user {field_id: value} and normalizing user inputs (empty strings -> None)
-        user_input_map: Dict[int, Any] = {
-            item.field_id: self._normalize_value(item.value)
-            for item in request.current_state
-        }
+        # User input normalization
+        user_input_map: Dict[int, Any] = {}
+        for item in request.current_state:
+            val = item.value
+            if isinstance(val, str):
+                if not val.strip():
+                    val = None
+                else:
+                    val = val.strip()
+            user_input_map[item.field_id] = val
 
         # WATERFALL EXECUTION
-        # Build the “Running Context” that updates step by step
-        running_context: Dict[int, Any] = {} # Key: field_id, Value: current valid value
+        running_context: Dict[int, Any] = {}
         output_fields: List[FieldOutputState] = []
-        is_config_complete = True
 
         for field in fields_db:
-            # Retrieve possible options (static)
-            possible_values = values_by_field.get(field.id, [])
+
+            # Layer 1: visibility check
+            visibility_rules = [
+                r for r in all_rules 
+                if r.target_field_id == field.id and r.rule_type == "visibility"
+            ]
             
-            # Filter available options (Rule-based dynamics)
+            # Start from DB static configuration
+            is_visible = not field.is_hidden 
+            
+            if visibility_rules:
+                # Visibility logic: field is hidden unless a rule passes
+                is_rule_passed = False
+                for rule in visibility_rules:
+                    if self._evaluate_rule(rule.conditions, running_context):
+                        is_rule_passed = True
+                        break
+                is_visible = is_rule_passed
+
+            if not is_visible:
+                # Field is hidden: reset value and skip processing
+                running_context[field.id] = None
+                output_fields.append(FieldOutputState(
+                    field_id=field.id,
+                    field_name=field.name,
+                    current_value=None,
+                    available_options=[],
+                    is_required=field.is_required,
+                    is_readonly=field.is_readonly,
+                    is_hidden=True
+                ))
+                continue 
+
+            # Layer 2: editability check
+            editability_rules = [
+                r for r in all_rules 
+                if r.target_field_id == field.id and r.rule_type == "editability"
+            ]
+            
+            is_readonly = field.is_readonly
+            
+            if editability_rules:
+                # "Enable if" logic: field is readonly unless a rule passes
+                is_rule_passed = False
+                for rule in editability_rules:
+                    if self._evaluate_rule(rule.conditions, running_context):
+                        is_rule_passed = True
+                        break
+                is_readonly = not is_rule_passed
+
+            # Layer 3: values availability
+            possible_values = values_by_field.get(field.id, [])
             available_values_objs: List[Value] = []
 
             if field.is_free_value:
-                # FREE VALUE (Text, Number, Date, ... inputs): retrieve raw input directly
-                # Don't filter values because there are no pre-defined values in DB.
-                # Don't check rules for specific values (rules apply to options, not free text).
-                
+                # Free-value fields
                 raw_input = user_input_map.get(field.id)
                 final_value = raw_input 
                 
-                # Note: eventual Data Type validation here
-                # (e.g. check if it's a valid integer if field.data_type == 'int')
-
-                # Apply the default only if the value is mandatory AND empty AND a default_value exists for this Field.
+                # Default application logic
                 if field.is_required and final_value is None and field.default_value is not None:
                     final_value = field.default_value
-                
-                # Free values have no "options" to return
+
                 out_options = []
 
             else:
-                # CONSTRAINED VALUE (Dropdown, Radiobuttons, ...)
-                
+                # Fields with a data source
                 for val_obj in possible_values:
-                    # Retrieve rules for this specific value
-                    rules_for_val = rules_by_target_value.get(val_obj.id, [])
+                    # Check rules specific to this value
+                    rules_for_val = [
+                        r for r in rules_by_target_value.get(val_obj.id, [])
+                        if r.rule_type == 'availability'
+                    ]
                     
                     if not rules_for_val:
-                        # No rules = Always available
+                        # No explicit rules means that the Value is available
                         is_available = True
                     else:
-                        # OR logic between rules: only one needs to be true
                         is_available = False
                         for rule in rules_for_val:
                             if self._evaluate_rule(rule.conditions, running_context):
                                 is_available = True
-                                break # Once a valid rule has been found, the value is available.
+                                break 
                     
                     if is_available:
                         available_values_objs.append(val_obj)
 
-                # Determine the final current value
-                # Retrieve user input (if any)
+                # Validation and auto-selection
                 raw_input = user_input_map.get(field.id)
                 final_value = None
-
-                # Create a list of valid values for quick comparison
                 valid_str_values = [v.value for v in available_values_objs]
 
-                # Validation: user input is still valid?
                 if raw_input is not None and raw_input in valid_str_values:
                     final_value = raw_input
                 
-                # Apply default or force a single option (ONLY if the field is None and mandatory)
                 if final_value is None and field.is_required:
-                    # If there is only one option, use it.
                     if len(available_values_objs) == 1:
+                        # Force single option
                         final_value = available_values_objs[0].value
                     else:
-                        # Otherwise, look for the first default you find.
+                        # Default Value application: look for the first default you find.
                         final_value = next((val_obj.value for val_obj in available_values_objs if val_obj.is_default), None)
-
-                # Context and output update
-                # Important: the context is updated with the calculated value, not the raw value.
-                running_context[field.id] = final_value
-
-                # Prepare options for output
+                
                 out_options = [
                     ValueOption(id=v.id, value=v.value, label=v.label, is_default=v.is_default)
                     for v in available_values_objs
                 ]
-            
 
-            if field.is_required and not field.is_hidden and final_value is None:
-                is_config_complete = False
+            # Finalization
+            running_context[field.id] = final_value
 
             output_fields.append(FieldOutputState(
                 field_id=field.id,
@@ -140,14 +176,21 @@ class RuleEngineService:
                 current_value=final_value,
                 available_options=out_options,
                 is_required=field.is_required,
-                is_readonly=field.is_readonly,
-                is_hidden=field.is_hidden
+                is_readonly=is_readonly, # Calculated dynamic readonly
+                is_hidden=False # We know it's visible if we reached here
             ))
+
+        # Check global completeness for the response flag
+        global_complete = True
+        for out_f in output_fields:
+            if out_f.is_required and not out_f.is_hidden and out_f.current_value is None:
+                global_complete = False
+                break
 
         return CalculationResponse(
             entity_id=entity.id, 
             fields=output_fields,
-            is_complete=is_config_complete # Il semaforo verde/rosso finale
+            is_complete=global_complete
         )
 
     def _evaluate_rule(self, conditions: Dict[str, Any], context: Dict[int, Any]) -> bool:

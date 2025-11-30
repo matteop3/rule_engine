@@ -66,12 +66,15 @@ class Rule(Base):
     
     # This rule enable this specific target value
     target_field_id: Mapped[int] = mapped_column(ForeignKey("fields.id"))
-    target_value_id: Mapped[int] = mapped_column(ForeignKey("values.id"))
+    target_value_id: Mapped[Optional[int]] = mapped_column(ForeignKey("values.id"), nullable=True)
+    
 
     # Conditions logic stored as JSON
     conditions: Mapped[dict] = mapped_column(JSON)
 
+    # Relations
     entity: Mapped["Entity"] = relationship(back_populates="rules")
-    # Relazioni opzionali per navigazione facile, se servono
     target_field: Mapped["Field"] = relationship(foreign_keys=[target_field_id])
     target_value: Mapped["Value"] = relationship(foreign_keys=[target_value_id])
+
+    rule_type: Mapped[str] = mapped_column(String(50), default="availability")
