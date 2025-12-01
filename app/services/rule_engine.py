@@ -17,7 +17,7 @@ class RuleEngineService:
             raise ValueError(f"Entity {request.entity_id} not found")
 
         # Retrieve the fields sorted by sequence
-        fields_db = db.query(Field).filter(Field.entity_id == entity.id).order_by(Field.sequence).all()
+        fields_db = db.query(Field).filter(Field.entity_id == entity.id).order_by(Field.step, Field.sequence).all()
         
         # Retrieve ALL the values from these fields
         field_ids = [f.id for f in fields_db]
@@ -48,10 +48,9 @@ class RuleEngineService:
         for item in request.current_state:
             val = item.value
             if isinstance(val, str):
-                if not val.strip():
+                val = val.strip()
+                if not val:
                     val = None
-                else:
-                    val = val.strip()
             user_input_map[item.field_id] = val
 
         # WATERFALL EXECUTION
@@ -141,7 +140,7 @@ class RuleEngineService:
                         for rule in rules_for_val:
                             if self._evaluate_rule(rule.conditions, running_context):
                                 is_available = True
-                                break 
+                                break # Or logic: a single passed Rule is enough to make the Value available
                     
                     if is_available:
                         available_values_objs.append(val_obj)
@@ -256,8 +255,3 @@ class RuleEngineService:
                 return False
 
         return False
-    
-    
-    def _normalize_value(self, val: Any) -> Any:
-        """Converts empty strings to None, keeps other values unchanged."""
-        return None if isinstance(val, str) and val.strip() == "" else val

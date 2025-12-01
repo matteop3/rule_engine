@@ -14,6 +14,26 @@ class RuleCreate(RuleBase):
     entity_id: int
     target_field_id: int
     target_value_id: Optional[int] = None
+
+    # Criteria validator: empty rules are considered as unintended
+    @field_validator('conditions')
+    @classmethod
+    def check_conditions_not_empty(cls, v: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Ensures that the rule contains at least one criterion.
+        Empty rules are not allowed as they can act as unintended overrides.
+        """
+        criteria = v.get("criteria")
+        
+        # Structural check: must be a list
+        if not isinstance(criteria, list):
+            raise ValueError("The 'conditions' JSON must contain a 'criteria' key with a list of conditions.")
+        
+        # Content check: must not be empty
+        if len(criteria) == 0:
+            raise ValueError("The 'criteria' list cannot be empty. You must define at least one condition.")
+        
+        return v
     
     @model_validator(mode='after')
     def check_rule_type_consistency(self):
