@@ -6,7 +6,6 @@ from app.models.domain import VersionStatus # Importing Enum for validation
 
 class VersionBase(BaseSchema):
     """ Base properties shared by create and read operations. """
-    version_number: int
     changelog: Optional[str] = None
     status: VersionStatus = VersionStatus.DRAFT
 
@@ -24,6 +23,7 @@ class VersionRead(VersionBase):
     """ Output schema for API responses. """
     id: int
     entity_id: int
+    version_number: int
     created_at: datetime
     published_at: Optional[datetime] = None
 

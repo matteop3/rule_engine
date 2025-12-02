@@ -1,12 +1,10 @@
 # app/models/domain.py
 from typing import List, Optional, Any
 from sqlalchemy import String, Boolean, ForeignKey, Integer, Text, JSON, DateTime, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship, DeclarativeBase
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
+from app.database import Base
 import enum
-
-class Base(DeclarativeBase):
-    pass
 
 
 # --- ENUMS ---

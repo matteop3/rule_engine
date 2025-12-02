@@ -1,6 +1,6 @@
 # app/database.py
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 # In produzione, questo URL verrebbe letto da app/core/config.py o variabili d'ambiente
 SQLALCHEMY_DATABASE_URL = "sqlite:///./rule_engine.db"
@@ -18,15 +18,11 @@ engine = create_engine(
 # Non è la sessione stessa, ma la classe per crearle.
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base: Classe da cui erediteranno tutti i nostri modelli ORM (Entity, Field, Rule).
-Base = declarative_base()
+# DEFINIZIONE UNICA DELLA BASE
+class Base(DeclarativeBase):
+    pass
 
-# Dependency Injection per FastAPI
 def get_db():
-    """
-    Generatore che crea una sessione DB per ogni richiesta e la chiude al termine.
-    Garantisce che non lasciamo connessioni appese.
-    """
     db = SessionLocal()
     try:
         yield db
