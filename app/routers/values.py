@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.domain import Value, Field, Rule
-from app.schemas import ValueCreate, ValueRead,  ValueUpdate
+from app.schemas import ValueCreate, ValueRead, ValueUpdate
+from .utils import check_version_editable
 
 router = APIRouter(
     prefix="/values",
@@ -12,14 +13,17 @@ router = APIRouter(
 
 @router.post("/", response_model=ValueRead, status_code=status.HTTP_201_CREATED)
 def create_value(value_data: ValueCreate, db: Session = Depends(get_db)):
-    """Create a new Value related to a Field."""
+    """ Create a new Value related to a Field. """
     # Check integrity: does parent Field exist?
     field = db.query(Field).filter(Field.id == value_data.field_id).first()
     if not field:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, 
-            detail=f"Field with id {value_data.field_id} not found"
+            detail=f"Field with id {value_data.field_id} not found."
         )
+
+    # Security check: is the Version containing this Field editable?
+    check_version_editable(field.entity_version_id, db)
 
     # Prevent the creation of the Value if I am associating it with a free-value Field
     if field.is_free_value:
@@ -32,7 +36,7 @@ def create_value(value_data: ValueCreate, db: Session = Depends(get_db)):
         )
 
     # Value creation
-    new_value = Value(**value_data.model_dump()) # Convert Pydantic schema into a dictionary
+    new_value = Value(**value_data.model_dump()) 
     
     db.add(new_value)
     db.commit()
@@ -48,7 +52,7 @@ def read_values(
     limit: int = 100, 
     db: Session = Depends(get_db)
 ):
-    """Retrieve the values of a Field"""
+    """ Retrieve the values of a Field. """
     query = db.query(Value)
     
     if field_id:
@@ -62,32 +66,49 @@ def update_value(value_id: int, value_in: ValueUpdate, db: Session = Depends(get
     """ Updates an existing Value. """
     db_value = db.query(Value).filter(Value.id == value_id).first()
     if not db_value:
-        raise HTTPException(status_code=404, detail="Value not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Value not found.")
 
-    # If changing the field_id, validate the new parent field
+    # To check security, we need the parent field to access the entity_version_id
+    parent_field = db_value.field
+    if not parent_field:
+        # Should not happen if DB integrity is preserved
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="Corrupted Data: Value has no parent Field."
+        )
+
+    # Security check
+    check_version_editable(parent_field.entity_version_id, db)
+
+    # If changing the Field_id, validate the new parent Field
     if value_in.field_id is not None and value_in.field_id != db_value.field_id:
         new_field = db.query(Field).filter(Field.id == value_in.field_id).first()
         if not new_field:
-            raise HTTPException(status_code=404, detail="New Field not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="New Field not found."
+            )
         
         # Check integrity: cannot move value to a Free Field
         if new_field.is_free_value:
             raise HTTPException(
-                status_code=400, 
+                status_code=status.HTTP_400_BAD_REQUEST, 
                 detail="Cannot assign Value to a Field with a free value."
             )
+        
+        # Optional: Check if new_field belongs to the same version? 
+        # Usually assumed, but 'check_version_editable' on the current value protects the current draft.
 
-    # Apply updates (update only received fields, I 
-    # prefer a non-strict PUT that acts also as a PATCH)
+    # Apply updates
     update_data = value_in.model_dump(exclude_unset=True)
 
-    # Update all fields
     for key, value in update_data.items():
         setattr(db_value, key, value)
 
     # Save
     db.commit()
     db.refresh(db_value)
+
     return db_value
 
 
@@ -101,11 +122,20 @@ def delete_value(value_id: int, db: Session = Depends(get_db)):
     """
     db_value = db.query(Value).filter(Value.id == value_id).first()
     if not db_value:
-        raise HTTPException(status_code=404, detail="Value not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Value not found."
+        )
 
     parent_field = db_value.field 
     if not parent_field:
-        raise HTTPException(status_code=500, detail="Corrupted Data: Value has no parent Field")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="Corrupted Data: Value has no parent Field."
+        )
+
+    # Security check
+    check_version_editable(parent_field.entity_version_id, db)
 
     # Check for Rules targeting this value explicitly (target)
     rules_targeting_value = db.query(Rule).filter(Rule.target_value_id == value_id).count()
@@ -115,21 +145,20 @@ def delete_value(value_id: int, db: Session = Depends(get_db)):
             detail=f"Cannot delete Value because it is the explicit target of {rules_targeting_value} Rules."
         )
 
-    # Deep scan: check usage in JSON conditions (implicit ssage)
-    # Fetch all rules belonging to the same Entity to scan their criteria.
-    entity_rules = db.query(Rule).filter(Rule.entity_id == parent_field.entity_id).all()
+    # Deep scan: check usage in JSON conditions (implicit usage)
+    entity_rules = db.query(Rule).filter(
+        Rule.entity_version_id == parent_field.entity_version_id
+    ).all()
     
-    value_str_to_check = str(db_value.value) # Normalize to string for comparison
+    value_str_to_check = str(db_value.value) 
 
     for rule in entity_rules:
         criteria_list = rule.conditions.get("criteria", [])
         
         for criterion in criteria_list:
-            # Check context: does this criterion refer to the same Field ID?
             crit_field_id = criterion.get("field_id")
             
             if crit_field_id == db_value.field_id:
-                # Check content: does the value string match?
                 crit_value = str(criterion.get("value", ""))
                 
                 if crit_value == value_str_to_check:
@@ -144,4 +173,5 @@ def delete_value(value_id: int, db: Session = Depends(get_db)):
     # If all checks pass
     db.delete(db_value)
     db.commit()
+
     return None

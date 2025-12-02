@@ -2,7 +2,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.domain import Entity, Field
+from app.models.domain import Entity, EntityVersion
 from app.schemas import EntityCreate, EntityRead, EntityUpdate
 
 # Router definition 
@@ -14,16 +14,15 @@ router = APIRouter(
 
 @router.post("/", response_model=EntityRead, status_code=status.HTTP_201_CREATED)
 def create_entity(entity: EntityCreate, db: Session = Depends(get_db)):
-    """
-    Create a new Entity into database.
-    """
-    # Preventive check to see if an entity with the same name already exists (optional but recommended)
+    """ Create a new Entity into database. """
+    # Preventive check to see if an entity with the same name already exists
     existing_entity = db.query(Entity).filter(Entity.name == entity.name).first()
     if existing_entity:
-        raise HTTPException(status_code=400, detail="Entity with this name already exists")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Entity with this name already exists.")
 
     # Create DB instance
-    db_entity = Entity(name=entity.name)
+    # Using **unpacking handles 'description' and other optional fields automatically
+    db_entity = Entity(**entity.model_dump())
     
     # Save
     db.add(db_entity)
@@ -35,9 +34,7 @@ def create_entity(entity: EntityCreate, db: Session = Depends(get_db)):
 
 @router.get("/", response_model=List[EntityRead])
 def read_entities(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """
-    Retrieve Entity list.
-    """
+    """ Retrieve Entity list. """
     entities = db.query(Entity).offset(skip).limit(limit).all()
     return entities
 
@@ -48,21 +45,25 @@ def update_entity(entity_id: int, entity_in: EntityUpdate, db: Session = Depends
     # Read Entity from DB
     db_entity = db.query(Entity).filter(Entity.id == entity_id).first()
     if not db_entity:
-        raise HTTPException(status_code=404, detail="Entity not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found.")
     
     # Check name uniqueness if name is being changed
     if entity_in.name is not None and entity_in.name != db_entity.name:
         existing = db.query(Entity).filter(Entity.name == entity_in.name).first()
         if existing:
-            raise HTTPException(status_code=400, detail="Entity with this name already exists")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Entity with this name already exists.")
     
-    # Update all fields
-    for key, value in entity_in.model_dump().items():
+    # Update fields
+    # exclude_unset=True ensures we don't overwrite existing data with None unless explicitly sent
+    update_data = entity_in.model_dump(exclude_unset=True)
+    
+    for key, value in update_data.items():
         setattr(db_entity, key, value)
     
     # Save
     db.commit()
     db.refresh(db_entity)
+
     return db_entity
 
 
@@ -70,20 +71,23 @@ def update_entity(entity_id: int, entity_in: EntityUpdate, db: Session = Depends
 def delete_entity(entity_id: int, db: Session = Depends(get_db)):
     """
     Delete an Entity.
-    Strict policy: cannot delete if it contains Fields.
+    Strict policy: cannot delete if it contains Versions (Draft, Published or Archived).
     """
     db_entity = db.query(Entity).filter(Entity.id == entity_id).first()
     if not db_entity:
-        raise HTTPException(status_code=404, detail="Entity not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found.")
 
     # Guardrail: check for dependencies
-    fields_count = db.query(Field).filter(Field.entity_id == entity_id).count()
-    if fields_count > 0:
+    versions_count = db.query(EntityVersion).filter(EntityVersion.entity_id == entity_id).count()
+    
+    if versions_count > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot delete Entity because it has {fields_count} associated Fields. Please delete them first."
+            detail=f"Cannot delete Entity because it has {versions_count} associated Versions. Please delete them first."
         )
 
+    # Save
     db.delete(db_entity)
     db.commit()
+
     return None

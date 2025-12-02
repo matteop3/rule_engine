@@ -12,7 +12,7 @@ router = APIRouter(
 @router.post("/calculate", response_model=CalculationResponse)
 def calculate_state(request: CalculationRequest, db: Session = Depends(get_db)):
     """
-    Endpoint to trigger the Rule Engine calculation.
+    Triggers the Rule Engine calculation using the PUBLISHED version of the Entity.
     It takes the current state of the entity (user inputs) and returns
     the calculated state (available options, visibility, valid values) based on the rules.
     """
