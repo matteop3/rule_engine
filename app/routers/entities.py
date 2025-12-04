@@ -39,6 +39,15 @@ def read_entities(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
     return entities
 
 
+@router.get("/{entity_id}", response_model=EntityRead)
+def read_entity(entity_id: int, db: Session = Depends(get_db)):
+    """ Retrieve a single Entity by ID. """
+    db_entity = db.query(Entity).filter(Entity.id == entity_id).first()
+    if not db_entity:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found")
+    return db_entity
+
+
 @router.put("/{entity_id}", response_model=EntityRead)
 def update_entity(entity_id: int, entity_in: EntityUpdate, db: Session = Depends(get_db)):
     """ Update an existing Entity. """

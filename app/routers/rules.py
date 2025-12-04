@@ -76,6 +76,15 @@ def read_rules(
     return query.offset(skip).limit(limit).all()
 
 
+@router.get("/{rule_id}", response_model=RuleRead)
+def read_rule(rule_id: int, db: Session = Depends(get_db)):
+    """ Retrieve a single Rule. """
+    rule = db.query(Rule).filter(Rule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
+    return rule
+
+
 @router.put("/{rule_id}", response_model=RuleRead)
 def update_rule(rule_id: int, rule_in: RuleUpdate, db: Session = Depends(get_db)):
     """

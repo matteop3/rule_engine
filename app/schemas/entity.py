@@ -4,6 +4,7 @@ from .base_schema import BaseSchema
 
 class EntityBase(BaseSchema):
     name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
 
 class EntityCreate(EntityBase):
     """ Schema to create an Entity (POST). """

@@ -11,6 +11,33 @@ router = APIRouter(
     tags=["Fields"]
 )
 
+@router.get("/", response_model=List[FieldRead])
+def read_fields(
+    entity_version_id: int, # Required: fields always belong to a version context
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve Fields for a specific Version.
+    Ordered by step and sequence.
+    """
+    fields = db.query(Field)\
+        .filter(Field.entity_version_id == entity_version_id)\
+        .order_by(Field.step, Field.sequence)\
+        .offset(skip).limit(limit).all()
+    return fields
+
+
+@router.get("/{field_id}", response_model=FieldRead)
+def read_field(field_id: int, db: Session = Depends(get_db)):
+    """ Retrieve a single Field. """
+    field = db.query(Field).filter(Field.id == field_id).first()
+    if not field:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found.")
+    return field
+
+
 @router.post("/", response_model=FieldRead, status_code=status.HTTP_201_CREATED)
 def create_field(field_data: FieldCreate, db: Session = Depends(get_db)):
     """

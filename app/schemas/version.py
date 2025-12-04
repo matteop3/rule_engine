@@ -30,6 +30,10 @@ class VersionRead(VersionBase):
 class VersionUpdate(BaseSchema):
     """ Schema for updating version metadata (e.g. changelog, status). """
     changelog: Optional[str] = None
-    # Status changes usually happen via specific endpoints (publish/archive), 
-    # but allowed here for admin flexibility.
-    status: Optional[VersionStatus] = None
+
+class VersionClone(BaseSchema):
+    """ 
+    Specific schema for clone operation.
+    The entity_id is derived from the source Version.
+    """
+    changelog: Optional[str] = None

@@ -61,6 +61,15 @@ def read_values(
     return query.offset(skip).limit(limit).all()
 
 
+@router.get("/{value_id}", response_model=ValueRead)
+def read_value(value_id: int, db: Session = Depends(get_db)):
+    """ Retrieve a single Value. """
+    value = db.query(Value).filter(Value.id == value_id).first()
+    if not value:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Value not found.")
+    return value
+
+
 @router.put("/{value_id}", response_model=ValueRead)
 def update_value(value_id: int, value_in: ValueUpdate, db: Session = Depends(get_db)):
     """ Updates an existing Value. """
