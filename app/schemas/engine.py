@@ -1,4 +1,4 @@
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any
 from pydantic import BaseModel, Field
 
 # --- INPUT: from client ---
@@ -12,6 +12,7 @@ class CalculationRequest(BaseModel):
     """Request for status calculation."""
     entity_id: int
     current_state: List[FieldInputState]
+    entity_version_id: Optional[int] = None
 
 
 # --- OUTPUT: to client ---

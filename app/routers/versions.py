@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -157,10 +157,10 @@ def clone_version(version_id: int, clone_in: VersionClone, db: Session = Depends
 
     except ValueError as e:
         db.rollback()
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Cloning failed: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cloning failed: {str(e)}")
     
 
 @router.patch("/{version_id}", response_model=VersionRead)
@@ -177,8 +177,8 @@ def update_version_metadata(version_id: int, version_update: VersionUpdate, db: 
     if version_update.changelog is not None:
         version.changelog = version_update.changelog
     
-    # Note: We do not allow changing the ‘status’ here; 
-    # we use the dedicated /publish or /archive routes to ensure transition logic.
+    # Do not allow changing the ‘status’ here; use the dedicated 
+    # /publish or /archive routes to ensure transition logic.
 
     db.commit()
     db.refresh(version)

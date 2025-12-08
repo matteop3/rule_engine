@@ -1,6 +1,7 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.models.domain import EntityVersion, Field, Value, Rule, VersionStatus
+import copy
 
 class VersioningService:
     def clone_version(self, db: Session, source_version_id: int, new_changelog: Optional[str] = None) -> EntityVersion:
@@ -89,7 +90,7 @@ class VersioningService:
                 new_target_value_id = value_map.get(old_rule.target_value_id)
 
             # Rewrite JSON conditions
-            # We must iterate over criteria and update 'field_id'
+            # Iterate over criteria and update 'field_id'
             new_conditions = self._rewrite_conditions(old_rule.conditions, field_map)
 
             new_rule = Rule(
@@ -106,7 +107,6 @@ class VersioningService:
 
     def _rewrite_conditions(self, conditions: Dict[str, Any], field_map: Dict[int, int]) -> Dict[str, Any]:
         """ Helper to traverse the JSON structure and update field IDs. """
-        import copy
         new_cond = copy.deepcopy(conditions) # Avoid modifying the original object in memory
         
         criteria_list = new_cond.get("criteria", [])

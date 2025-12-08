@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 from app.models.domain import Entity, Field, Value, Rule, EntityVersion, VersionStatus
 from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOutputState, ValueOption, FieldInputState
@@ -9,27 +9,41 @@ class RuleEngineService:
         CPQ core engine.
         Finds the PUBLISHED Version of the Entity and executes waterfall logic.
         """
-        
+
         # Fetch Entity
         entity = db.query(Entity).filter(Entity.id == request.entity_id).first()
         if not entity:
             raise ValueError(f"Entity {request.entity_id} not found.")
+
+        target_version = None
+
+        # Preview mode (explicit Version)
+        if request.entity_version_id is not None:
+            target_version = db.query(EntityVersion).filter(
+                EntityVersion.id == request.entity_version_id
+            ).first()
+
+            if not target_version:
+                raise ValueError(f"Version {request.entity_version_id} not found.")
+            
+            # Integrity check: ensure the Version belongs to the requested Entity
+            if target_version.entity_id != request.entity_id:
+                raise ValueError(f"Version {request.entity_version_id} does not belong to Entity {request.entity_id}.")
+
+        # Production mode (PUBLISHED Version)
+        else:
+            # Fetch PUBLISHED Version
+            target_version = db.query(EntityVersion).filter(
+                EntityVersion.entity_id == request.entity_id,
+                EntityVersion.status == VersionStatus.PUBLISHED
+            ).first()
+
+            if not target_version:
+                raise ValueError(f"Entity {request.entity_id} has no PUBLISHED version ready for calculation.")
         
-        # Fetch published Version
-        # Engine works only on live Version
-        published_version = db.query(EntityVersion).filter(
-            EntityVersion.entity_id == entity.id,
-            EntityVersion.status == VersionStatus.PUBLISHED
-        ).first()
-
-        if not published_version:
-            # Se non c'è una versione pubblicata, l'entità non è configurabile
-            raise ValueError(f"Entity {entity.name} has no PUBLISHED version ready for calculation.")
-
-        # Fecth Fields, Values and Rules from the Version
-        # Retrieve the Fields sorted by step and then sequence
+        # Fetch Fields and Rules from the target Version
         fields_db = db.query(Field).filter(
-            Field.entity_version_id == published_version.id
+            Field.entity_version_id == target_version.id
         ).order_by(Field.step, Field.sequence).all()
         
         field_ids = [f.id for f in fields_db]
@@ -37,7 +51,7 @@ class RuleEngineService:
         
         # Retrieve Rules for this Version
         all_rules = db.query(Rule).filter(
-            Rule.entity_version_id == published_version.id
+            Rule.entity_version_id == target_version.id
         ).all()
 
         # INDEXING (Create maps for fast memory access)        
