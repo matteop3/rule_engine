@@ -1,10 +1,11 @@
 # app/models/domain.py
-from typing import List, Optional, Any
+from typing import List, Dict, Optional, Any
 from sqlalchemy import String, Boolean, ForeignKey, Integer, Text, JSON, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 from app.database import Base
 import enum
+import uuid
 
 
 # --- ENUMS ---
@@ -50,6 +51,9 @@ class EntityVersion(Base):
     entity: Mapped["Entity"] = relationship(back_populates="versions")
     fields: Mapped[List["Field"]] = relationship(back_populates="entity_version", cascade="all, delete-orphan")
     rules: Mapped[List["Rule"]] = relationship(back_populates="entity_version", cascade="all, delete-orphan")
+
+    # By deleting a DRAFT Version all associated Configurations are deleted.
+    configurations: Mapped[List["Configuration"]] = relationship(back_populates="entity_version", cascade="all, delete-orphan")
 
 
 class Field(Base):
@@ -112,3 +116,28 @@ class Rule(Base):
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="rules")
     target_field: Mapped["Field"] = relationship(foreign_keys=[target_field_id])
     target_value: Mapped["Value"] = relationship(foreign_keys=[target_value_id])
+
+
+class Configuration(Base):
+    """
+    Stores a user's session/quote.
+    Uses UUID for secure external access.
+    Stores raw input data (re-hydration strategy).
+    """
+    __tablename__ = "configurations"
+
+    # UUID primary key
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    
+    entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"))
+    name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    
+    # Payload: list of inputs [{"field_id": 1, "value": "Red"}, ...]
+    data: Mapped[List[Dict[str, Any]]] = mapped_column(JSON)
+    
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Relations
+    entity_version: Mapped["EntityVersion"] = relationship(back_populates="configurations")

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from app.database import engine, Base
 from app.models import domain
-from app.routers import entities, fields, values, rules, engine as engine_router, versions
+from app.routers import entities, fields, values, rules, engine as engine_router, versions, configurations
 
 # DB tables creation
 Base.metadata.create_all(bind=engine)
@@ -19,6 +19,7 @@ app.include_router(fields.router)
 app.include_router(values.router)
 app.include_router(rules.router)
 app.include_router(engine_router.router)
+app.include_router(configurations.router)
 
 @app.get("/")
 def health_check() -> dict[str, str]:
