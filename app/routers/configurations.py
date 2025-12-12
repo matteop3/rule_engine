@@ -133,7 +133,7 @@ def load_and_calculate_configuration(config_id: str, db: Session = Depends(get_d
     engine_payload = CalculationRequest(
         entity_id=version.entity_id,
         entity_version_id=version.id, 
-        current_state=current_state_objects # Ora il tipo è corretto: List[FieldInputState]
+        current_state=current_state_objects # Type is now correct: List[FieldInputState]
     )
 
     # Run engine
