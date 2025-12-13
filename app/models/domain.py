@@ -15,6 +15,12 @@ class VersionStatus(str, enum.Enum):
     ARCHIVED = "ARCHIVED"   # Old, read-only, preserved for history
 
 
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"     # God-user (all permissions)
+    AUTHOR = "author"   # Product manager (manage everything except for users)
+    USER = "user"       # Regular user (use configurator and manage own Configurations)
+
+
 # --- TABLES ---
 
 class Entity(Base):
@@ -118,6 +124,25 @@ class Rule(Base):
     target_value: Mapped["Value"] = relationship(foreign_keys=[target_value_id])
 
 
+class User(Base):
+    """ Represents a user of the systems. """
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    
+    role: Mapped[UserRole] = mapped_column(String(50), default=UserRole.USER)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    
+    #  Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Relations
+    configurations: Mapped[List["Configuration"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
+
+
 class Configuration(Base):
     """
     Stores a user's session/quote.
@@ -130,6 +155,7 @@ class Configuration(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     
     entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     
     # Payload: list of inputs [{"field_id": 1, "value": "Red"}, ...]
@@ -141,3 +167,4 @@ class Configuration(Base):
 
     # Relations
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="configurations")
+    owner: Mapped["User"] = relationship(back_populates="configurations")
