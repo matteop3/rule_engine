@@ -1,9 +1,10 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.domain import Configuration, EntityVersion
-from app.schemas import ConfigurationCreate, ConfigurationRead, ConfigurationUpdate
+from app.dependencies import get_current_user
+from app.models.domain import Configuration, User, UserRole, EntityVersion, VersionStatus
+from app.schemas.configuration import ConfigurationCreate, ConfigurationRead, ConfigurationUpdate
 from app.schemas.engine import CalculationRequest, CalculationResponse, FieldInputState
 from app.services.rule_engine import RuleEngineService
 
@@ -12,13 +13,50 @@ router = APIRouter(
     tags=["Configurations"]
 )
 
+
+# Internal helper for security
+
+def get_configuration_or_404(
+    db: Session, 
+    config_id: str, 
+    user: User
+) -> Configuration:
+    """
+    Retrieve a configuration and check permissions.
+    - If not exists -> 404
+    - If exists but not yours (and you're not an admin) -> 403
+    """
+    config = db.query(Configuration).filter(Configuration.id == config_id).first()
+    
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Configuration not found."
+        )
+    
+    # Check permissions (RBAC + Ownership)
+    # If not yours and you're not an admin -> ERROR
+    if user.role != UserRole.ADMIN and config.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this configuration."
+        )
+        
+    return config
+
+
 # CRUD
 
 @router.post("/", response_model=ConfigurationRead, status_code=status.HTTP_201_CREATED)
-def save_configuration(config_in: ConfigurationCreate, db: Session = Depends(get_db)):
+def create_configuration(
+    config_in: ConfigurationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Login required
+):
     """
     Saves a user configuration (a snapshot of inputs).
     Accepts any Entity Version (Draft, Published, Archived).
+    Owner automatically assigned from token.
     """
     # Check if Version exists
     version = db.query(EntityVersion).filter(EntityVersion.id == config_in.entity_version_id).first()
@@ -29,6 +67,7 @@ def save_configuration(config_in: ConfigurationCreate, db: Session = Depends(get
     # UUID is generated automatically by the Model default
     new_config = Configuration(
         entity_version_id=config_in.entity_version_id,
+        user_id=current_user.id, 
         name=config_in.name,
         data=config_in.model_dump()['data'] # Extract list of dicts from Pydantic models
     )
@@ -36,46 +75,62 @@ def save_configuration(config_in: ConfigurationCreate, db: Session = Depends(get
     db.add(new_config)
     db.commit()
     db.refresh(new_config)
-    
+
     return new_config
-
-
-@router.get("/{config_id}", response_model=ConfigurationRead)
-def read_configuration(config_id: str, db: Session = Depends(get_db)):
-    """ Retrieve the raw saved data (metadata + inputs). """
-    config = db.query(Configuration).filter(Configuration.id == config_id).first()
-    if not config:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Configuration not found.")
-    
-    return config
 
 
 @router.get("/", response_model=List[ConfigurationRead])
 def list_configurations(
     entity_version_id: Optional[int] = None,
     skip: int = 0, 
-    limit: int = 100, 
-    db: Session = Depends(get_db)
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """ List saved configurations, optionally filtered by Version. """
+    """
+    Configurations list.
+    - ADMIN: Vede tutto (o filtra per version_id).
+    - USER: Vede SOLO le sue configurazioni.
+    """
     query = db.query(Configuration)
-    
+
+    # 1. Filtro di Sicurezza (Multi-Tenancy)
+    if current_user.role != UserRole.ADMIN:
+        query = query.filter(Configuration.user_id == current_user.id)
+
+    # 2. Filtri opzionali utente
     if entity_version_id:
         query = query.filter(Configuration.entity_version_id == entity_version_id)
-    
+
     # Order by newest first
     return query.order_by(Configuration.updated_at.desc()).offset(skip).limit(limit).all()
 
 
+@router.get("/{config_id}", response_model=ConfigurationRead)
+def read_configuration(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieve the raw saved data (metadata + inputs).
+    Protezione: Solo proprietario o Admin.
+    """
+    return get_configuration_or_404(db, config_id, current_user)
+
+
 @router.patch("/{config_id}", response_model=ConfigurationRead)
-def update_configuration(config_id: str, config_update: ConfigurationUpdate, db: Session = Depends(get_db)):
+def update_configuration(
+    config_id: str,
+    config_update: ConfigurationUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """ 
     Update configuration name or data inputs. 
     Cannot change the linked Version ID (integrity).
     """
-    config = db.query(Configuration).filter(Configuration.id == config_id).first()
-    if not config:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Configuration not found.")
+    config = get_configuration_or_404(db, config_id, current_user)
 
     update_data = config_update.model_dump(exclude_unset=True)
 
@@ -91,12 +146,14 @@ def update_configuration(config_id: str, config_update: ConfigurationUpdate, db:
 
 
 @router.delete("/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_configuration(config_id: str, db: Session = Depends(get_db)):
+def delete_configuration(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """ Delete a saved configuration. """
-    config = db.query(Configuration).filter(Configuration.id == config_id).first()
-    if not config:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Configuration not found.")
-
+    config = get_configuration_or_404(db, config_id, current_user)
+    
     db.delete(config)
     db.commit()
 
@@ -106,7 +163,11 @@ def delete_configuration(config_id: str, db: Session = Depends(get_db)):
 # Re-hydration endpoint
 
 @router.get("/{config_id}/calculate", response_model=CalculationResponse)
-def load_and_calculate_configuration(config_id: str, db: Session = Depends(get_db)):
+def load_and_calculate_configuration(
+    config_id: str, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
     """
     Sandbox:
     1. Loads the saved inputs from DB.
@@ -114,9 +175,7 @@ def load_and_calculate_configuration(config_id: str, db: Session = Depends(get_d
     3. Returns the full calculated state (Fields, Options, Visibility).
     """
     # Fetch Config
-    config = db.query(Configuration).filter(Configuration.id == config_id).first()
-    if not config:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Configuration not found.")
+    config = get_configuration_or_404(db, config_id, current_user)
 
     # Fetch Linked Version to get Entity ID
     version = config.entity_version

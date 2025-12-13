@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from app.database import engine, Base
 from app.models import domain
-from app.routers import entities, fields, values, rules, engine as engine_router, versions, configurations
+from app.routers import entities, fields, values, rules, engine as engine_router, versions, configurations, auth
 
 # DB tables creation
 Base.metadata.create_all(bind=engine)
@@ -13,6 +13,7 @@ app = FastAPI(
 )
 
 # Router registration
+app.include_router(auth.router)
 app.include_router(entities.router)
 app.include_router(versions.router)
 app.include_router(fields.router)
