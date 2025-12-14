@@ -2,7 +2,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.domain import Value, Field, Rule
+from app.dependencies import get_current_user, require_role
+from app.models.domain import Value, Field, Rule, User, UserRole
 from app.schemas import ValueCreate, ValueRead, ValueUpdate
 from .utils import check_version_editable
 
@@ -12,8 +13,15 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=ValueRead, status_code=status.HTTP_201_CREATED)
-def create_value(value_data: ValueCreate, db: Session = Depends(get_db)):
+def create_value(
+    value_data: ValueCreate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Create a new Value related to a Field. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     # Check integrity: does parent Field exist?
     field = db.query(Field).filter(Field.id == value_data.field_id).first()
     if not field:
@@ -50,9 +58,13 @@ def read_values(
     field_id: Optional[int] = None, 
     skip: int = 0, 
     limit: int = 100, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """ Retrieve the values of a Field. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     query = db.query(Value)
     
     if field_id:
@@ -62,8 +74,15 @@ def read_values(
 
 
 @router.get("/{value_id}", response_model=ValueRead)
-def read_value(value_id: int, db: Session = Depends(get_db)):
+def read_value(
+    value_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Retrieve a single Value. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     value = db.query(Value).filter(Value.id == value_id).first()
     if not value:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Value not found.")
@@ -71,8 +90,16 @@ def read_value(value_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{value_id}", response_model=ValueRead)
-def update_value(value_id: int, value_in: ValueUpdate, db: Session = Depends(get_db)):
+def update_value(
+    value_id: int, 
+    value_in: ValueUpdate, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Updates an existing Value. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     db_value = db.query(Value).filter(Value.id == value_id).first()
     if not db_value:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Value not found.")
@@ -122,13 +149,20 @@ def update_value(value_id: int, value_in: ValueUpdate, db: Session = Depends(get
 
 
 @router.delete("/{value_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_value(value_id: int, db: Session = Depends(get_db)):
+def delete_value(
+    value_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Delete a Value.
     Strict policy: 
     1. Cannot delete if it is the explicit target of a Rule.
     2. Cannot delete if it is used as a condition criteria in any Rule (deep scan).
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     db_value = db.query(Value).filter(Value.id == value_id).first()
     if not db_value:
         raise HTTPException(

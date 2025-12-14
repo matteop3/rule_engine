@@ -2,7 +2,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.domain import Entity, EntityVersion
+from app.dependencies import get_current_user, require_role
+from app.models.domain import Entity, EntityVersion, User, UserRole
 from app.schemas import EntityCreate, EntityRead, EntityUpdate
 
 # Router definition 
@@ -13,8 +14,15 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=EntityRead, status_code=status.HTTP_201_CREATED)
-def create_entity(entity: EntityCreate, db: Session = Depends(get_db)):
+def create_entity(
+    entity: EntityCreate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Create a new Entity into database. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     # Preventive check to see if an entity with the same name already exists
     existing_entity = db.query(Entity).filter(Entity.name == entity.name).first()
     if existing_entity:
@@ -33,24 +41,43 @@ def create_entity(entity: EntityCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=List[EntityRead])
-def read_entities(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_entities(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Retrieve Entity list. """
     entities = db.query(Entity).offset(skip).limit(limit).all()
+    
     return entities
 
 
 @router.get("/{entity_id}", response_model=EntityRead)
-def read_entity(entity_id: int, db: Session = Depends(get_db)):
+def read_entity(
+    entity_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Retrieve a single Entity by ID. """
     db_entity = db.query(Entity).filter(Entity.id == entity_id).first()
     if not db_entity:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found.")
+    
     return db_entity
 
 
 @router.put("/{entity_id}", response_model=EntityRead)
-def update_entity(entity_id: int, entity_in: EntityUpdate, db: Session = Depends(get_db)):
+def update_entity(
+    entity_id: int, 
+    entity_in: EntityUpdate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Update an existing Entity. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     # Read Entity from DB
     db_entity = db.query(Entity).filter(Entity.id == entity_id).first()
     if not db_entity:
@@ -77,11 +104,18 @@ def update_entity(entity_id: int, entity_in: EntityUpdate, db: Session = Depends
 
 
 @router.delete("/{entity_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_entity(entity_id: int, db: Session = Depends(get_db)):
+def delete_entity(
+    entity_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Delete an Entity.
     Strict policy: cannot delete if it contains Versions (Draft, Published or Archived).
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     db_entity = db.query(Entity).filter(Entity.id == entity_id).first()
     if not db_entity:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found.")

@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
 from app.database import get_db
-from app.models.domain import Entity, EntityVersion, VersionStatus
+from app.dependencies import get_current_user, require_role
+from app.models.domain import Entity, EntityVersion, VersionStatus, User, UserRole
 from app.schemas import VersionCreate, VersionRead, VersionUpdate, VersionClone
 from datetime import datetime, timezone
 from app.services.versioning import VersioningService
@@ -18,34 +19,54 @@ def read_versions(
     entity_id: int,  # Required filter: listing all versions of ALL entities makes no sense
     skip: int = 0, 
     limit: int = 100, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """
     Retrieve version history for a specific Entity.
     Ordered by version_number descending (newest first).
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     versions = db.query(EntityVersion)\
         .filter(EntityVersion.entity_id == entity_id)\
         .order_by(EntityVersion.version_number.desc())\
         .offset(skip).limit(limit).all()
+    
     return versions
 
 
 @router.get("/{version_id}", response_model=VersionRead)
-def read_version(version_id: int, db: Session = Depends(get_db)):
+def read_version(
+    version_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Retrieve a single Version details. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
     if not version:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
+    
     return version
 
 
 @router.post("/", response_model=VersionRead, status_code=status.HTTP_201_CREATED)
-def create_version_draft(version_in: VersionCreate, db: Session = Depends(get_db)):
+def create_version_draft(
+    version_in: VersionCreate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Creates a new Version (DRAFT) for an Entity.
     Auto-calculates the version number (incremental).
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     # Check Entity
     entity = db.query(Entity).filter(Entity.id == version_in.entity_id).first()
     if not entity:
@@ -86,11 +107,18 @@ def create_version_draft(version_in: VersionCreate, db: Session = Depends(get_db
     return new_version
 
 @router.post("/{version_id}/publish", response_model=VersionRead)
-def publish_version(version_id: int, db: Session = Depends(get_db)):
+def publish_version(
+    version_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Promotes a DRAFT to PUBLISHED.
     Archives any previously PUBLISHED version (single published policy).
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
     if not version:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
@@ -118,8 +146,16 @@ def publish_version(version_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{version_id}/clone", response_model=VersionRead, status_code=status.HTTP_201_CREATED)
-def clone_version(version_id: int, clone_in: VersionClone, db: Session = Depends(get_db)):
+def clone_version(
+    version_id: int, 
+    clone_in: VersionClone, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Creates a new DRAFT version by cloning an existing source version (deep copy). """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     # Fetch source Version first (to know which Entity we are talking about)
     source_version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
     if not source_version:
@@ -153,6 +189,7 @@ def clone_version(version_id: int, clone_in: VersionClone, db: Session = Depends
         
         db.commit()
         db.refresh(new_version)
+        
         return new_version
 
     except ValueError as e:
@@ -164,11 +201,19 @@ def clone_version(version_id: int, clone_in: VersionClone, db: Session = Depends
     
 
 @router.patch("/{version_id}", response_model=VersionRead)
-def update_version_metadata(version_id: int, version_update: VersionUpdate, db: Session = Depends(get_db)):
+def update_version_metadata(
+    version_id: int, 
+    version_update: VersionUpdate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Update version metadata (e.g. fix a typo in the changelog).
     Allowed for DRAFT and even PUBLISHED/ARCHIVED (it's just a label).
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
     if not version:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
@@ -182,16 +227,24 @@ def update_version_metadata(version_id: int, version_update: VersionUpdate, db: 
 
     db.commit()
     db.refresh(version)
+
     return version
 
 
 @router.delete("/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_version(version_id: int, db: Session = Depends(get_db)):
+def delete_version(
+    version_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Delete a Version.
     Strict policy: only 'DRAFT' versions can be deleted.
     Once published, a version is part of history and cannot be removed.
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
     if not version:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
@@ -208,4 +261,5 @@ def delete_version(version_id: int, db: Session = Depends(get_db)):
     
     db.delete(version)
     db.commit()
+
     return None

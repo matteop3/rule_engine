@@ -30,12 +30,12 @@ async def get_current_user(
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail="Could not validate credentials.",
         headers={"WWW-Authenticate": "Bearer"},
     )
     
     try:
-        # 1. Decodifica il Token
+        # Decode token
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: Optional[str] = payload.get("sub")
         
@@ -45,14 +45,14 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    # 2. Recupera l'utente dal DB
+    # Fetch User from DB
     user = db.query(User).filter(User.id == user_id).first()
-    
+        
     if user is None:
         raise credentials_exception
         
     if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user.")
 
     return user
 

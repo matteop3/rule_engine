@@ -2,7 +2,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.domain import Rule, Field, Value
+from app.dependencies import get_current_user, require_role
+from app.models.domain import Rule, Field, Value, User, UserRole
 from app.schemas import RuleCreate, RuleRead, RuleUpdate
 from .utils import check_version_editable
 
@@ -12,12 +13,18 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=RuleRead, status_code=status.HTTP_201_CREATED)
-def create_rule(rule_data: RuleCreate, db: Session = Depends(get_db)):
+def create_rule(
+    rule_data: RuleCreate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Creates a new Rule in a DRAFT version.
     Includes validation to ensure target Field and Value belong to 
     the specified Entity Version.
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
 
     # Security check: ensure the version is in DRAFT status
     check_version_editable(rule_data.entity_version_id, db)
@@ -63,12 +70,16 @@ def read_rules(
     entity_version_id: Optional[int] = None, 
     skip: int = 0, 
     limit: int = 100, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """
     Retrieve a list of rules. 
     Can filter by entity_version_id (recommended).
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     query = db.query(Rule)
     if entity_version_id:
         query = query.filter(Rule.entity_version_id == entity_version_id)
@@ -77,20 +88,36 @@ def read_rules(
 
 
 @router.get("/{rule_id}", response_model=RuleRead)
-def read_rule(rule_id: int, db: Session = Depends(get_db)):
+def read_rule(
+    rule_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Retrieve a single Rule. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     rule = db.query(Rule).filter(Rule.id == rule_id).first()
     if not rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
+    
     return rule
 
 
-@router.put("/{rule_id}", response_model=RuleRead)
-def update_rule(rule_id: int, rule_in: RuleUpdate, db: Session = Depends(get_db)):
+@router.patch("/{rule_id}", response_model=RuleRead)
+def update_rule(
+    rule_id: int, 
+    rule_in: RuleUpdate, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Updates an existing Rule.
     Includes validation to ensure target Field and Value belong to the correct Version.
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     db_rule = db.query(Rule).filter(Rule.id == rule_id).first()
     if not db_rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
@@ -139,12 +166,20 @@ def update_rule(rule_id: int, rule_in: RuleUpdate, db: Session = Depends(get_db)
 
     db.commit()
     db.refresh(db_rule)
+
     return db_rule
 
 
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_rule(rule_id: int, db: Session = Depends(get_db)):
+def delete_rule(
+    rule_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Delete a Rule. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     db_rule = db.query(Rule).filter(Rule.id == rule_id).first()
     if not db_rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
@@ -154,4 +189,5 @@ def delete_rule(rule_id: int, db: Session = Depends(get_db)):
 
     db.delete(db_rule)
     db.commit()
+    
     return None

@@ -51,7 +51,7 @@ def get_configuration_or_404(
 def create_configuration(
     config_in: ConfigurationCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Login required
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """
     Saves a user configuration (a snapshot of inputs).

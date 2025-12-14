@@ -2,7 +2,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.domain import Field, EntityVersion, Value, Rule
+from app.dependencies import get_current_user, require_role
+from app.models.domain import Field, EntityVersion, Value, Rule, User, UserRole
 from app.schemas import FieldCreate, FieldRead, FieldUpdate
 from .utils import check_version_editable
 
@@ -16,34 +17,54 @@ def read_fields(
     entity_version_id: int, # Required: fields always belong to a version context
     skip: int = 0, 
     limit: int = 100, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """
     Retrieve Fields for a specific Version.
     Ordered by step and sequence.
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     fields = db.query(Field)\
         .filter(Field.entity_version_id == entity_version_id)\
         .order_by(Field.step, Field.sequence)\
         .offset(skip).limit(limit).all()
+    
     return fields
 
 
 @router.get("/{field_id}", response_model=FieldRead)
-def read_field(field_id: int, db: Session = Depends(get_db)):
+def read_field(
+    field_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """ Retrieve a single Field. """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     field = db.query(Field).filter(Field.id == field_id).first()
     if not field:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found.")
+    
     return field
 
 
 @router.post("/", response_model=FieldRead, status_code=status.HTTP_201_CREATED)
-def create_field(field_data: FieldCreate, db: Session = Depends(get_db)):
+def create_field(
+    field_data: FieldCreate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Creates a new Field attached to a specific Entity Version.
     Protected: The version must be DRAFT.
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     # Security check: is the version editable?
     check_version_editable(field_data.entity_version_id, db)
 
@@ -68,7 +89,15 @@ def create_field(field_data: FieldCreate, db: Session = Depends(get_db)):
     return new_field
 
 @router.put("/{field_id}", response_model=FieldRead)
-def update_field(field_id: int, field_update: FieldUpdate, db: Session = Depends(get_db)):
+def update_field(
+    field_id: int, 
+    field_update: FieldUpdate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     db_field = db.query(Field).filter(Field.id == field_id).first()
     if not db_field:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found.")
@@ -126,10 +155,15 @@ def update_field(field_id: int, field_update: FieldUpdate, db: Session = Depends
     # Save
     db.commit()
     db.refresh(db_field)
+
     return db_field
 
 @router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_field(field_id: int, db: Session = Depends(get_db)):
+def delete_field(
+    field_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Delete a Field.
     Strict policy: 
@@ -137,6 +171,9 @@ def delete_field(field_id: int, db: Session = Depends(get_db)):
     2. Cannot delete if it is the target of a Rule.
     3. Cannot delete if it is used as a condition inside any Rule of the same Entity.
     """
+    # Verify current user's role
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+
     db_field = db.query(Field).filter(Field.id == field_id).first()
     if not db_field:
         raise HTTPException(status_code=404, detail="Field not found.")
@@ -182,4 +219,5 @@ def delete_field(field_id: int, db: Session = Depends(get_db)):
 
     db.delete(db_field)
     db.commit()
+
     return None
