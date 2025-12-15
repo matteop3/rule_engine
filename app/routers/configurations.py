@@ -82,10 +82,11 @@ def create_configuration(
 @router.get("/", response_model=List[ConfigurationRead])
 def list_configurations(
     entity_version_id: Optional[int] = None,
+    user_id: Optional[str] = None,
     skip: int = 0, 
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """
     Configurations list.
@@ -94,11 +95,22 @@ def list_configurations(
     """
     query = db.query(Configuration)
 
-    # 1. Filtro di Sicurezza (Multi-Tenancy)
-    if current_user.role != UserRole.ADMIN:
+    # Security filter (multi-tenancy)
+    if current_user.role == UserRole.ADMIN:
+        # Admins can see everything and optionally filter by specific User
+        if user_id:
+            query = query.filter(Configuration.user_id == user_id)
+    else:
+        # Non-admin Users cannot query other Users Configurations
+        if user_id is not None and user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot list configurations belonging to other users."
+            )
+        # Force filter to current User
         query = query.filter(Configuration.user_id == current_user.id)
 
-    # 2. Filtri opzionali utente
+    # Optionally filter by Version
     if entity_version_id:
         query = query.filter(Configuration.entity_version_id == entity_version_id)
 
@@ -110,7 +122,7 @@ def list_configurations(
 def read_configuration(
     config_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """
     Retrieve the raw saved data (metadata + inputs).
@@ -124,7 +136,7 @@ def update_configuration(
     config_id: str,
     config_update: ConfigurationUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """ 
     Update configuration name or data inputs. 
@@ -149,7 +161,7 @@ def update_configuration(
 def delete_configuration(
     config_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """ Delete a saved configuration. """
     config = get_configuration_or_404(db, config_id, current_user)
@@ -166,7 +178,7 @@ def delete_configuration(
 def load_and_calculate_configuration(
     config_id: str, 
     db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user) # Auth required
 ):
     """
     Sandbox:
