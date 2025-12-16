@@ -5,28 +5,20 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.database import SessionLocal, get_db
 from app.models.domain import User, UserRole
 from app.core.security import SECRET_KEY, ALGORITHM
 
-# Definiamo dove si trova l'URL per fare login (serve a Swagger UI per mostrare il lucchetto)
+# Define where is the login url (used by Swagger)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
-
-def get_db() -> Generator:
-    """ Dependency per ottenere la sessione DB """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme), 
     db: Session = Depends(get_db)
 ) -> User:
     """
-    Decodifica il token, estrae l'ID utente (sub) e recupera l'utente dal DB.
-    Se qualcosa va storto, lancia 401 Unauthorized.
+    Decode the token, extract the user ID (sub), and retrieve the user from DB.
+    If something goes wrong, throw 401.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -59,8 +51,8 @@ async def get_current_user(
 
 def require_role(user: User, allowed_roles: List[UserRole]):
     """
-    Verifica se l'utente ha uno dei ruoli permessi.
-    Se no, lancia 403 Forbidden.
+    Check if User has an allowed role.
+    If not, throw 403.
     """
     if user.role not in allowed_roles:
         raise HTTPException(

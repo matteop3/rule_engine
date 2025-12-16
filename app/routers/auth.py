@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.database import get_db
 from app.models.domain import User
 from app.core.security import verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 
@@ -20,30 +20,29 @@ async def login_for_access_token(
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint standard OAuth2 per ottenere il Token.
-    Richiede 'username' (la nostra email) e 'password' via Form Data.
+    Standard OAuth2 endpoint to obtain the token.
+    'username' (email) and 'password' required by Form Data.
     """
-    # 1. Cerca l'utente per email
-    # Nota: form_data.username conterrà l'email
+    # Find User by email (form_data.username)
     user = db.query(User).filter(User.email == form_data.username).first()
     
-    # 2. Verifica Utente e Password
+    # Verify User existence and check password
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect email and/or password.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user.")
 
-    # 3. Genera il Token
+    # Generate the token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        subject=user.id, # Mettiamo l'UUID nel token
+        subject=user.id, # Put UUID into token
         expires_delta=access_token_expires
     )
     
-    # 4. Restituisce il JSON standard
+    # Return standard JSON
     return {"access_token": access_token, "token_type": "bearer"}

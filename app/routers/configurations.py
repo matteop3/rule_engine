@@ -23,8 +23,8 @@ def get_configuration_or_404(
 ) -> Configuration:
     """
     Retrieve a configuration and check permissions.
-    - If not exists -> 404
-    - If exists but not yours (and you're not an admin) -> 403
+    - If not exists, throw 404
+    - If exists but not yours (and you're not an admin), throw 403
     """
     config = db.query(Configuration).filter(Configuration.id == config_id).first()
     
@@ -34,8 +34,8 @@ def get_configuration_or_404(
             detail="Configuration not found."
         )
     
-    # Check permissions (RBAC + Ownership)
-    # If not yours and you're not an admin -> ERROR
+    # Check permissions (RBAC + ownership)
+    # If not yours and you're not an admin, throw 403
     if user.role != UserRole.ADMIN and config.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -90,8 +90,8 @@ def list_configurations(
 ):
     """
     Configurations list.
-    - ADMIN: Vede tutto (o filtra per version_id).
-    - USER: Vede SOLO le sue configurazioni.
+    ADMIN: can see everything.
+    AUTHOR AND USER: can see only theirs.
     """
     query = db.query(Configuration)
 
@@ -182,14 +182,14 @@ def load_and_calculate_configuration(
 ):
     """
     Sandbox:
-    1. Loads the saved inputs from DB.
-    2. Invokes the Rule Engine using the linked Version.
-    3. Returns the full calculated state (Fields, Options, Visibility).
+    1) Loads the saved inputs from DB.
+    2) Invokes the Rule Engine using the linked Version.
+    3) Returns the full calculated state.
     """
     # Fetch Config
     config = get_configuration_or_404(db, config_id, current_user)
 
-    # Fetch Linked Version to get Entity ID
+    # Fetch linked Version to get Entity ID
     version = config.entity_version
     if not version:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Orphaned Configuration: Version not found.")
