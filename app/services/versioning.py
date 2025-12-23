@@ -1,9 +1,81 @@
 from typing import Dict, Any, Optional
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from app.models.domain import EntityVersion, Field, Value, Rule, VersionStatus
+from app.models.domain import Entity, EntityVersion, Field, Value, Rule, VersionStatus
 import copy
 
 class VersioningService:
+
+    def create_draft_version(self, db: Session, entity_id: int, changelog: Optional[str] = None) -> EntityVersion:
+        """
+        Creates a new DRAFT version.
+        Enforces:
+        - Entity existence check
+        - Single Draft Policy (only one draft per entity)
+        - Auto-increment version number
+        """
+        # Check if Entity exists
+        entity = db.query(Entity).filter(Entity.id == entity_id).first()
+        if not entity:
+            raise ValueError(f"Entity {entity_id} not found.")
+
+        # Check if DRAFT exists
+        existing_draft = db.query(EntityVersion).filter(
+            EntityVersion.entity_id == entity_id,
+            EntityVersion.status == VersionStatus.DRAFT
+        ).first()
+        
+        if existing_draft:
+            raise ValueError(f"A DRAFT version ({existing_draft.version_number}) already exists. Publish or delete it first.")
+
+        # Calculate next Version number
+        last_ver = db.query(EntityVersion).filter(
+            EntityVersion.entity_id == entity_id
+        ).order_by(EntityVersion.version_number.desc()).first()
+        
+        next_num = last_ver.version_number + 1 if last_ver else 1
+
+        # Create the object
+        new_version = EntityVersion(
+            entity_id=entity_id,
+            version_number=next_num,
+            status=VersionStatus.DRAFT,
+            changelog=changelog
+        )
+        
+        db.add(new_version)
+        return new_version
+
+    def publish_version(self, db: Session, version_id: int) -> EntityVersion:
+        """
+        Promotes a DRAFT to PUBLISHED.
+        Enforces:
+        - Existence check
+        - Status check (only DRAFT can be published)
+        - Single Published Policy (archives the previous one)
+        """
+        version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
+        if not version:
+            raise ValueError(f"Version {version_id} not found.")
+        
+        if version.status != VersionStatus.DRAFT:
+            raise ValueError("Only DRAFT Versions can be published.")
+
+        # Archive currently published Version (if any)
+        current_published = db.query(EntityVersion).filter(
+            EntityVersion.entity_id == version.entity_id,
+            EntityVersion.status == VersionStatus.PUBLISHED
+        ).first()
+        
+        if current_published:
+            current_published.status = VersionStatus.ARCHIVED
+        
+        # Publish the new Version
+        version.status = VersionStatus.PUBLISHED
+        version.published_at = datetime.now(timezone.utc)
+
+        return version
+
     def clone_version(self, db: Session, source_version_id: int, new_changelog: Optional[str] = None) -> EntityVersion:
         """
         Performs a deep copy of a source version into a new DRAFT version.
@@ -14,6 +86,15 @@ class VersioningService:
         source_version = db.query(EntityVersion).filter(EntityVersion.id == source_version_id).first()
         if not source_version:
             raise ValueError(f"Source version {source_version_id} not found.")
+        
+        # Check if DRAFT exists
+        existing_draft = db.query(EntityVersion).filter(
+            EntityVersion.entity_id == source_version.entity_id,
+            EntityVersion.status == VersionStatus.DRAFT
+        ).first()
+        
+        if existing_draft:
+             raise ValueError(f"A DRAFT version ({existing_draft.version_number}) already exists.")
 
         # Calculate new version number
         last_ver = db.query(EntityVersion).filter(

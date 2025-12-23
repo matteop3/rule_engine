@@ -67,44 +67,27 @@ def create_version_draft(
     # Verify current user's role
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
 
-    # Check Entity
-    entity = db.query(Entity).filter(Entity.id == version_in.entity_id).first()
-    if not entity:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found.")
+    service = VersioningService()
 
-    # Check if there is already a DRAFT (single draft policy)
-    existing_draft = db.query(EntityVersion).filter(
-        EntityVersion.entity_id == version_in.entity_id,
-        EntityVersion.status == VersionStatus.DRAFT
-    ).first()
-    
-    if existing_draft:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"A DRAFT version ({existing_draft.version_number}) already exists. Please publish or delete it first."
+    try:
+        new_version = service.create_draft_version(
+            db=db, 
+            entity_id=version_in.entity_id, 
+            changelog=version_in.changelog
         )
+        db.commit()
+        db.refresh(new_version)
 
-    # Calculate next version number
-    # Get max version number for this entity
-    last_ver = db.query(EntityVersion).filter(
-        EntityVersion.entity_id == version_in.entity_id
-    ).order_by(EntityVersion.version_number.desc()).first()
-    
-    next_num = last_ver.version_number + 1 if last_ver else 1
+        return new_version
 
-    # Create Version
-    new_version = EntityVersion(
-        entity_id=version_in.entity_id,
-        version_number=next_num,
-        status=VersionStatus.DRAFT,
-        changelog=version_in.changelog
-    )
-    
-    db.add(new_version)
-    db.commit()
-    db.refresh(new_version)
-
-    return new_version
+    except ValueError as e:
+        db.rollback()
+        msg = str(e)
+        if "not found" in msg:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=msg)
+        if "already exists" in msg:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail=msg)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=msg)
 
 @router.post("/{version_id}/publish", response_model=VersionRead)
 def publish_version(
@@ -118,31 +101,22 @@ def publish_version(
     """
     # Verify current user's role
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+    
+    service = VersioningService()
 
-    version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
-    if not version:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
-    
-    if version.status != VersionStatus.DRAFT:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only DRAFT versions can be published.")
+    try:
+        version = service.publish_version(db, version_id)
+        db.commit()
+        db.refresh(version)
 
-    # Archive currently published version (if any)
-    current_published = db.query(EntityVersion).filter(
-        EntityVersion.entity_id == version.entity_id,
-        EntityVersion.status == VersionStatus.PUBLISHED
-    ).first()
-    
-    if current_published:
-        current_published.status = VersionStatus.ARCHIVED
-    
-    # Publish the new Version
-    version.status = VersionStatus.PUBLISHED
-    version.published_at = datetime.now(timezone.utc)
-    
-    db.commit()
-    db.refresh(version)
+        return version
 
-    return version
+    except ValueError as e:
+        db.rollback()
+        msg = str(e)
+        if "not found" in msg:
+             raise HTTPException(status.HTTP_404_NOT_FOUND, detail=msg)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=msg)
 
 
 @router.post("/{version_id}/clone", response_model=VersionRead, status_code=status.HTTP_201_CREATED)
@@ -156,29 +130,11 @@ def clone_version(
     # Verify current user's role
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
 
-    # Fetch source Version first (to know which Entity we are talking about)
-    source_version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
-    if not source_version:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source version not found.")
-
-    # Check if a DRAFT already exists for this Entity
-    # Allow one DRAFT at a time to avoid confusion
-    existing_draft = db.query(EntityVersion).filter(
-        EntityVersion.entity_id == source_version.entity_id,
-        EntityVersion.status == VersionStatus.DRAFT
-    ).first()
-    
-    if existing_draft:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"A DRAFT version ({existing_draft.version_number}) already exists for Entity {source_version.entity_id}. Please publish or delete it first."
-        )
-
-    # Perform clone via Service
     service = VersioningService()
+
     try:
         clean_changelog = clone_in.changelog
-        if clean_changelog and clean_changelog.strip() == "string": # Hack: blank Swagger default
+        if clean_changelog and clean_changelog.strip() == "string": # Hack: clean Swagger default
             clean_changelog = None
 
         new_version = service.clone_version(
@@ -186,18 +142,19 @@ def clone_version(
             source_version_id=version_id, 
             new_changelog=clean_changelog
         )
-        
         db.commit()
         db.refresh(new_version)
-        
+
         return new_version
 
     except ValueError as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cloning failed: {str(e)}")
+        msg = str(e)
+        if "not found" in msg:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=msg)
+        if "already exists" in msg:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail=msg)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cloning failed: {msg}")
     
 
 @router.patch("/{version_id}", response_model=VersionRead)
