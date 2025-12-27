@@ -21,22 +21,44 @@ class UserRole(str, enum.Enum):
     USER = "user"       # Regular user (use configurator and manage own Configurations)
 
 
-# --- TABLES ---
+class FieldType(str, enum.Enum):
+    STRING = "string"
+    NUMBER = "number"
+    BOOLEAN = "boolean"
+    DATE = "date"
 
-class Entity(Base):
+
+# --- MIXINS ---
+class AuditMixin:
+    """ Add creation and editing automatic tracking. """
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        server_default=func.now(), 
+        nullable=False
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), 
+        onupdate=func.now(), 
+        nullable=True
+    )
+    created_by_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_by_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+# --- TABLES ---
+class Entity(Base, AuditMixin):
     """ Entities logical container. """
     __tablename__ = "entities"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     
     # Relation 1-to-N with its versions
     versions: Mapped[List["EntityVersion"]] = relationship(back_populates="entity", cascade="all, delete-orphan")
 
 
-class EntityVersion(Base):
+class EntityVersion(Base, AuditMixin):
     """
     A specific snapshot of the Entity configuration. 
     It contains the Fields and Rules valid for this version.
@@ -49,8 +71,6 @@ class EntityVersion(Base):
     version_number: Mapped[int] = mapped_column(Integer)
     status: Mapped[VersionStatus] = mapped_column(String(20), default=VersionStatus.DRAFT)
     changelog: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Relations
@@ -124,7 +144,7 @@ class Rule(Base):
     target_value: Mapped["Value"] = relationship(foreign_keys=[target_value_id])
 
 
-class User(Base):
+class User(Base, AuditMixin):
     """ Represents a user of the systems. """
     __tablename__ = "users"
 
@@ -134,16 +154,12 @@ class User(Base):
     
     role: Mapped[UserRole] = mapped_column(String(50), default=UserRole.USER)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    
-    #  Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relations
     configurations: Mapped[List["Configuration"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
 
 
-class Configuration(Base):
+class Configuration(Base, AuditMixin):
     """
     Stores a user's session/quote.
     Uses UUID for secure external access.
@@ -160,10 +176,6 @@ class Configuration(Base):
     
     # Payload: list of inputs [{"field_id": 1, "value": "Red"}, ...]
     data: Mapped[List[Dict[str, Any]]] = mapped_column(JSON)
-    
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relations
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="configurations")

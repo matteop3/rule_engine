@@ -6,7 +6,7 @@ import copy
 
 class VersioningService:
 
-    def create_draft_version(self, db: Session, entity_id: int, changelog: Optional[str] = None) -> EntityVersion:
+    def create_draft_version(self, db: Session, entity_id: int, user_id: str, changelog: Optional[str] = None) -> EntityVersion:
         """
         Creates a new DRAFT version.
         Enforces:
@@ -40,13 +40,15 @@ class VersioningService:
             entity_id=entity_id,
             version_number=next_num,
             status=VersionStatus.DRAFT,
-            changelog=changelog
+            changelog=changelog,
+            created_by_id=user_id,
+            updated_by_id=user_id
         )
         
         db.add(new_version)
         return new_version
 
-    def publish_version(self, db: Session, version_id: int) -> EntityVersion:
+    def publish_version(self, db: Session, version_id: int, user_id: str) -> EntityVersion:
         """
         Promotes a DRAFT to PUBLISHED.
         Enforces:
@@ -73,10 +75,11 @@ class VersioningService:
         # Publish the new Version
         version.status = VersionStatus.PUBLISHED
         version.published_at = datetime.now(timezone.utc)
+        version.updated_by_id = user_id
 
         return version
 
-    def clone_version(self, db: Session, source_version_id: int, new_changelog: Optional[str] = None) -> EntityVersion:
+    def clone_version(self, db: Session, source_version_id: int, user_id: str, new_changelog: Optional[str] = None) -> EntityVersion:
         """
         Performs a deep copy of a source version into a new DRAFT version.
         Handles ID remapping for Fields, Values, and Rules (including JSON criteria).
@@ -108,7 +111,9 @@ class VersioningService:
             entity_id=source_version.entity_id,
             version_number=next_num,
             status=VersionStatus.DRAFT,
-            changelog=new_changelog or f"Cloned from v{source_version.version_number}"
+            changelog=new_changelog or f"Cloned from v{source_version.version_number}.",
+            created_by_id=user_id,
+            updated_by_id=user_id
         )
         db.add(new_version)
         db.flush() # Flush to generate new_version.id

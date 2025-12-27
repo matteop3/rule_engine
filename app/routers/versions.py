@@ -72,7 +72,8 @@ def create_version_draft(
     try:
         new_version = service.create_draft_version(
             db=db, 
-            entity_id=version_in.entity_id, 
+            entity_id=version_in.entity_id,
+            user_id=current_user.id,
             changelog=version_in.changelog
         )
         db.commit()
@@ -105,7 +106,7 @@ def publish_version(
     service = VersioningService()
 
     try:
-        version = service.publish_version(db, version_id)
+        version = service.publish_version(db, version_id, current_user.id)
         db.commit()
         db.refresh(version)
 
@@ -140,6 +141,7 @@ def clone_version(
         new_version = service.clone_version(
             db=db, 
             source_version_id=version_id, 
+            user_id=current_user.id, 
             new_changelog=clean_changelog
         )
         db.commit()

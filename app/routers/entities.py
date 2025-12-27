@@ -31,6 +31,10 @@ def create_entity(
     # Create DB instance
     # Using **unpacking handles 'description' and other optional fields automatically
     db_entity = Entity(**entity.model_dump())
+
+    # Audit update
+    db_entity.created_by_id = current_user.id
+    db_entity.updated_by_id = current_user.id
     
     # Save
     db.add(db_entity)
@@ -95,6 +99,9 @@ def update_entity(
     
     for key, value in update_data.items():
         setattr(db_entity, key, value)
+
+    # Audit update
+    db_entity.updated_by_id = current_user.id
     
     # Save
     db.commit()

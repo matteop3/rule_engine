@@ -1,7 +1,7 @@
 from typing import Optional
 from datetime import datetime
 from pydantic import Field
-from .base_schema import BaseSchema
+from .base_schema import BaseSchema, AuditSchemaMixin
 from app.models.domain import VersionStatus # Importing Enum for validation
 
 class VersionBase(BaseSchema):
@@ -19,12 +19,11 @@ class VersionCreate(VersionBase):
     # Note: When cloning, we might need a source_version_id, but that goes in the URL/Service logic.
     pass
 
-class VersionRead(VersionBase):
+class VersionRead(VersionBase, AuditSchemaMixin):
     """ Output schema for API responses. """
     id: int
     entity_id: int
     version_number: int
-    created_at: datetime
     published_at: Optional[datetime] = None
 
 class VersionUpdate(BaseSchema):

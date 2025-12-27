@@ -63,13 +63,21 @@ def create_configuration(
     if not version:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity Version not found.")
 
+    if current_user.role == UserRole.USER and version.status != VersionStatus.PUBLISHED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Regular Users can only save Configurations for PUBLISHED versions."
+        )
+
     # Create Configuration
     # UUID is generated automatically by the Model default
     new_config = Configuration(
         entity_version_id=config_in.entity_version_id,
         user_id=current_user.id, 
         name=config_in.name,
-        data=config_in.model_dump()['data'] # Extract list of dicts from Pydantic models
+        data=config_in.model_dump()['data'], # Extract list of dicts from Pydantic models
+        created_by_id=current_user.id,
+        updated_by_id=current_user.id
     )
     
     db.add(new_config)

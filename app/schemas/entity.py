@@ -1,6 +1,6 @@
 from typing import Optional
 from pydantic import Field
-from .base_schema import BaseSchema
+from .base_schema import BaseSchema, AuditSchemaMixin
 
 class EntityBase(BaseSchema):
     name: str = Field(..., min_length=1, max_length=100)
@@ -12,7 +12,7 @@ class EntityCreate(EntityBase):
     # inheriting from EntityBase (which has name) is correct.
     pass
 
-class EntityRead(EntityBase):
+class EntityRead(EntityBase, AuditSchemaMixin):
     """ Schema to read an Entity (GET). """
     id: int
 

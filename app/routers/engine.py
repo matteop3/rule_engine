@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.dependencies import get_current_user
 from app.schemas.engine import CalculationRequest, CalculationResponse
+from app.models.domain import User
 from app.services import RuleEngineService
 
 router = APIRouter(
@@ -10,7 +12,11 @@ router = APIRouter(
 )
 
 @router.post("/calculate", response_model=CalculationResponse)
-def calculate_state(request: CalculationRequest, db: Session = Depends(get_db)):
+def calculate_state(
+    request: CalculationRequest, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user) # Auth required
+):
     """
     Triggers the Rule Engine calculation using the PUBLISHED version of the Entity.
     It takes the current state of the entity (user inputs) and returns

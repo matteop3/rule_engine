@@ -2,6 +2,7 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
 from app.models.domain import UserRole
+from .base_schema import AuditSchemaMixin
 
 # Base properties shared by models
 class UserBase(BaseModel):
@@ -14,10 +15,8 @@ class UserCreate(UserBase):
     password: str = Field(min_length=8, description="Password must be at least 8 characters.")
 
 # Properties to return to client
-class UserRead(UserBase):
+class UserRead(UserBase, AuditSchemaMixin):
     id: str
-    created_at: datetime
-    updated_at: datetime
     
     class Config:
         from_attributes = True

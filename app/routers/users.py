@@ -8,6 +8,8 @@ from app.models.domain import User, UserRole, Configuration
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.core.security import get_password_hash
 
+import uuid
+
 router = APIRouter(
     prefix="/users",
     tags=["Users"]
@@ -38,7 +40,9 @@ def create_user(
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
         role=user_in.role,
-        is_active=user_in.is_active
+        is_active=user_in.is_active,
+        created_by_id=current_user.id,
+        updated_by_id=current_user.id
     )
     
     db.add(new_user)
@@ -104,6 +108,14 @@ def update_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    
+    if user_in.email is not None and user_in.email != user.email:
+        existing_email = db.query(User).filter(User.email == user_in.email).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Email already in use."
+            )
 
     update_data = user_in.model_dump(exclude_unset=True)
 
@@ -115,6 +127,9 @@ def update_user(
 
     for key, value in update_data.items():
         setattr(user, key, value)
+    
+    # Audit update
+    user.updated_by_id = current_user.id
 
     db.commit()
     db.refresh(user)
@@ -139,17 +154,6 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
-    # Guardrail: check if Configurations related to the User exist
-    configs_count = db.query(Configuration).filter(Configuration.user_id == user_id).count()
-    if configs_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Cannot delete User because they own {configs_count} configurations. "
-                "Please soft-delete the User (set is_active=False) to preserve data history."
-            )
-        )
-
     # Block to delete themselves
     if user.id == current_user.id:
         raise HTTPException(
@@ -157,7 +161,17 @@ def delete_user(
             detail="You cannot delete your own account."
         )
 
-    db.delete(user)
-    db.commit()
+    # Soft-delete logic
+    user.is_active = False
+
+    # Rename the email to free it up and make it unusable but traceable
+    # Use a short UUID to ensure uniqueness
+    user.email = f"{user.email}_deleted_{str(uuid.uuid4())[:8]}"
+    
+    # Audit update
+    user.updated_by_id = current_user.id
+
+    db.commit()    
+    # No refresh is needed because return 204 (no content).
 
     return None
