@@ -33,6 +33,7 @@ class RuleType(str, enum.Enum):
     AVAILABILITY = "availability" # Filter available options (multi-choice fields)
     EDITABILITY = "editability"   # Read-only / Writable
     MANDATORY = "mandatory"       # Required / Optional
+    VALIDATION = "validation"     # Content validity
 
 
 # --- MIXINS ---
@@ -144,6 +145,7 @@ class Rule(Base):
     rule_type: Mapped[str] = mapped_column(String(50), default=RuleType.AVAILABILITY)    
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     conditions: Mapped[dict] = mapped_column(JSON)
+    error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Relations
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="rules")

@@ -33,6 +33,7 @@ class FieldOutputState(BaseModel):
     is_required: bool
     is_readonly: bool
     is_hidden: bool
+    error_message: Optional[str] = None
 
 class CalculationResponse(BaseModel):
     """Complete response with the status of all fields in the entity."""

@@ -11,6 +11,7 @@ class RuleBase(BaseSchema):
     conditions: Dict[str, Any]
     description: Optional[str] = None
     rule_type: RuleType = RuleType.AVAILABILITY  # Default
+    error_message: Optional[str] = None
 
 class RuleCreate(RuleBase):
     """ Payload to create a new version. """

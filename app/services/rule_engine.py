@@ -115,7 +115,8 @@ class RuleEngineService:
                     available_options=[],
                     is_required=field.is_required,
                     is_readonly=field.is_readonly,
-                    is_hidden=True
+                    is_hidden=not is_visible,
+                    error_message=None
                 ))
                 continue 
 
@@ -210,6 +211,20 @@ class RuleEngineService:
                     for v in available_values_objs
                 ]
 
+            # Layer 5: validation (negative pattern: if rule passes -> error message)
+            validation_error = None
+
+            if is_visible and final_value is not None:                
+                validation_rules = [
+                    r for r in all_rules 
+                    if r.target_field_id == field.id and r.rule_type == RuleType.VALIDATION
+                ]
+
+                for rule in validation_rules:
+                    if self._evaluate_rule(rule.conditions, running_context):
+                        validation_error = rule.error_message or "Validation error."
+                        break
+
             # Finalization
             running_context[field.id] = final_value
 
@@ -219,8 +234,9 @@ class RuleEngineService:
                 current_value=final_value,
                 available_options=out_options,
                 is_required=is_required,
-                is_readonly=is_readonly, # Calculated dynamic readonly
-                is_hidden=False # We know it's visible if we reached here
+                is_readonly=is_readonly,
+                is_hidden=not is_visible,
+                error_message=validation_error
             ))
 
         # Check global completeness for the response flag
