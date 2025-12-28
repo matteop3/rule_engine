@@ -1,6 +1,7 @@
 from typing import Optional, Any, Dict, Literal
 from pydantic import Field, model_validator, field_validator
 from .base_schema import BaseSchema
+from app.models.domain import RuleType
 
 # Define valid rule types
 RuleTypeEnum = Literal['availability', 'visibility', 'editability']
@@ -9,7 +10,7 @@ class RuleBase(BaseSchema):
     """ Base properties shared by create and read operations. """
     conditions: Dict[str, Any]
     description: Optional[str] = None
-    rule_type: RuleTypeEnum = "availability"
+    rule_type: RuleType = RuleType.AVAILABILITY  # Default
 
 class RuleCreate(RuleBase):
     """ Payload to create a new version. """
@@ -37,11 +38,11 @@ class RuleCreate(RuleBase):
         t_value = self.target_value_id
 
         if t_value is not None:
-            if r_type != 'availability':
-                raise ValueError(f"Consistency error: if 'target_value_id' is provided, rule_type must be 'availability'. Got '{r_type}'.")
+            if r_type != RuleType.AVAILABILITY:
+                raise ValueError(f"Consistency error: if 'target_value_id' is provided, rule_type must be '{RuleType.AVAILABILITY}'. Got '{r_type}'.")
         else:
-            if r_type == 'availability':
-                 raise ValueError("Consistency error: if 'target_value_id' is None, rule_type cannot be 'availability'.")
+            if r_type == RuleType.AVAILABILITY:
+                 raise ValueError(f"Consistency error: if 'target_value_id' is None, rule_type cannot be '{RuleType.AVAILABILITY}'.")
         return self
 
 class RuleUpdate(RuleCreate):

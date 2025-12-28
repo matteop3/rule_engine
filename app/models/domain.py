@@ -28,6 +28,13 @@ class FieldType(str, enum.Enum):
     DATE = "date"
 
 
+class RuleType(str, enum.Enum):
+    VISIBILITY = "visibility"     # Show/hide Field
+    AVAILABILITY = "availability" # Filter available options (multi-choice fields)
+    EDITABILITY = "editability"   # Read-only / Writable
+    MANDATORY = "mandatory"       # Required / Optional
+
+
 # --- MIXINS ---
 class AuditMixin:
     """ Add creation and editing automatic tracking. """
@@ -134,7 +141,7 @@ class Rule(Base):
     target_field_id: Mapped[int] = mapped_column(ForeignKey("fields.id"))
     target_value_id: Mapped[Optional[int]] = mapped_column(ForeignKey("values.id"), nullable=True)
     
-    rule_type: Mapped[str] = mapped_column(String(50), default="availability")    
+    rule_type: Mapped[str] = mapped_column(String(50), default=RuleType.AVAILABILITY)    
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     conditions: Mapped[dict] = mapped_column(JSON)
 

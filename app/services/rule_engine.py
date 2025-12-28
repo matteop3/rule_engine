@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
-from app.models.domain import Entity, Field, Value, Rule, EntityVersion, VersionStatus
+from app.models.domain import Entity, Field, Value, Rule, RuleType, EntityVersion, VersionStatus
 from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOutputState, ValueOption, FieldInputState
 
 class RuleEngineService:
@@ -90,7 +90,7 @@ class RuleEngineService:
             # Layer 1: visibility check
             visibility_rules = [
                 r for r in all_rules 
-                if r.target_field_id == field.id and r.rule_type == "visibility"
+                if r.target_field_id == field.id and r.rule_type == RuleType.VISIBILITY
             ]
             
             # Start from DB static configuration
@@ -122,7 +122,7 @@ class RuleEngineService:
             # Layer 2: editability check
             editability_rules = [
                 r for r in all_rules 
-                if r.target_field_id == field.id and r.rule_type == "editability"
+                if r.target_field_id == field.id and r.rule_type == RuleType.EDITABILITY
             ]
             
             is_readonly = field.is_readonly
@@ -136,7 +136,23 @@ class RuleEngineService:
                         break
                 is_readonly = not is_rule_passed
 
-            # Layer 3: values availability
+            # Layer 3: mandatory check
+            mandatory_rules = [
+                r for r in all_rules 
+                if r.target_field_id == field.id and r.rule_type == RuleType.MANDATORY
+            ]
+            
+            # Start from DB static configuration
+            is_required = field.is_required
+
+            if mandatory_rules:
+                # "Make mandatory if" logic: field becomes required if a rule passes
+                for rule in mandatory_rules:
+                    if self._evaluate_rule(rule.conditions, running_context):
+                        is_required = True
+                        break
+
+            # Layer 4: values availability
             possible_values = values_by_field.get(field.id, [])
             available_values_objs: List[Value] = []
 
@@ -146,7 +162,7 @@ class RuleEngineService:
                 final_value = raw_input 
                 
                 # Default application logic
-                if field.is_required and final_value is None and field.default_value is not None:
+                if is_required and final_value is None and field.default_value is not None:
                     final_value = field.default_value
 
                 out_options = []
@@ -157,7 +173,7 @@ class RuleEngineService:
                     # Check rules specific to this value
                     rules_for_val = [
                         r for r in rules_by_target_value.get(val_obj.id, [])
-                        if r.rule_type == 'availability'
+                        if r.rule_type == RuleType.AVAILABILITY
                     ]
                     
                     if not rules_for_val:
@@ -181,7 +197,7 @@ class RuleEngineService:
                 if raw_input is not None and raw_input in valid_str_values:
                     final_value = raw_input
                 
-                if final_value is None and field.is_required:
+                if final_value is None and is_required:
                     if len(available_values_objs) == 1:
                         # Force single option
                         final_value = available_values_objs[0].value
@@ -202,7 +218,7 @@ class RuleEngineService:
                 field_name=field.name,
                 current_value=final_value,
                 available_options=out_options,
-                is_required=field.is_required,
+                is_required=is_required,
                 is_readonly=is_readonly, # Calculated dynamic readonly
                 is_hidden=False # We know it's visible if we reached here
             ))
