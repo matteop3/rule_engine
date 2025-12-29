@@ -1,7 +1,8 @@
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
-from app.models.domain import Entity, Field, Value, Rule, RuleType, EntityVersion, VersionStatus
-from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOutputState, ValueOption, FieldInputState
+from app.models.domain import Entity, Field, FieldType, Value, Rule, RuleType, EntityVersion, VersionStatus
+from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOutputState, ValueOption
+from datetime import date
 
 class RuleEngineService:
     def calculate_state(self, db: Session, request: CalculationRequest) -> CalculationResponse:
@@ -54,6 +55,9 @@ class RuleEngineService:
             Rule.entity_version_id == target_version.id
         ).all()
 
+        # Prepare Fields data_type map
+        type_map: Dict[int, str] = {f.id: f.data_type for f in fields_db}
+
         # INDEXING (Create maps for fast memory access)        
         # Map: field_id -> Value objects list
         values_by_field: Dict[int, List[Value]] = {}
@@ -100,7 +104,7 @@ class RuleEngineService:
                 # Visibility logic: field is hidden unless a rule passes
                 is_rule_passed = False
                 for rule in visibility_rules:
-                    if self._evaluate_rule(rule.conditions, running_context):
+                    if self._evaluate_rule(rule.conditions, running_context, type_map):
                         is_rule_passed = True
                         break
                 is_visible = is_rule_passed
@@ -132,7 +136,7 @@ class RuleEngineService:
                 # "Enable if" logic: field is readonly unless a rule passes
                 is_rule_passed = False
                 for rule in editability_rules:
-                    if self._evaluate_rule(rule.conditions, running_context):
+                    if self._evaluate_rule(rule.conditions, running_context, type_map):
                         is_rule_passed = True
                         break
                 is_readonly = not is_rule_passed
@@ -149,7 +153,7 @@ class RuleEngineService:
             if mandatory_rules:
                 # "Make mandatory if" logic: field becomes required if a rule passes
                 for rule in mandatory_rules:
-                    if self._evaluate_rule(rule.conditions, running_context):
+                    if self._evaluate_rule(rule.conditions, running_context, type_map):
                         is_required = True
                         break
 
@@ -183,7 +187,7 @@ class RuleEngineService:
                     else:
                         is_available = False
                         for rule in rules_for_val:
-                            if self._evaluate_rule(rule.conditions, running_context):
+                            if self._evaluate_rule(rule.conditions, running_context, type_map):
                                 is_available = True
                                 break # Or logic: a single passed Rule is enough to make the Value available
                     
@@ -221,7 +225,7 @@ class RuleEngineService:
                 ]
 
                 for rule in validation_rules:
-                    if self._evaluate_rule(rule.conditions, running_context):
+                    if self._evaluate_rule(rule.conditions, running_context, type_map):
                         validation_error = rule.error_message or "Validation error."
                         break
 
@@ -252,7 +256,7 @@ class RuleEngineService:
             is_complete=global_complete
         )
 
-    def _evaluate_rule(self, conditions: Dict[str, Any], context: Dict[int, Any]) -> bool:
+    def _evaluate_rule(self, conditions: Dict[str, Any], context: Dict[int, Any], type_map: Dict[int, str]) -> bool:
         """
         Evaluate a SINGLE rule.
         Logic: All criteria within are ANDed.
@@ -263,12 +267,12 @@ class RuleEngineService:
             return True
 
         for criteria in criteria_list:
-            if not self._check_criterion(criteria, context):
+            if not self._check_criterion(criteria, context, type_map):
                 return False # One failed criterion is enough to invalidate the AND
         
         return True # All criteria are passed
 
-    def _check_criterion(self, criterion: Dict[str, Any], context: Dict[int, Any]) -> bool:
+    def _check_criterion(self, criterion: Dict[str, Any], context: Dict[int, Any], type_map: Dict[int, str]) -> bool:
         """Compare: context[field_id] OPERATOR expected_Value"""
         # Note: here we assume that JSON uses “field_id” as the key.
         target_field_id = criterion.get("field_id") 
@@ -285,33 +289,85 @@ class RuleEngineService:
         if actual_val is None:
             # If the dependent field has no value, the criterion fails.
             return False
-
-        # String normalization
-        s_actual = str(actual_val)
-        s_expected = str(expected_val)
-
-        if operator == "EQUALS":
-            return s_actual == s_expected
         
-        elif operator == "NOT_EQUALS":
-            return s_actual != s_expected
-        
-        elif operator == "IN":
-            # Expected value must be a list or string separated
-            if isinstance(expected_val, list):
-                return s_actual in [str(x) for x in expected_val]
-            return s_actual in s_expected
+        # Retrieve Field's data_type
+        f_type = type_map.get(target_field_id, FieldType.STRING)
 
-        elif operator == "GREATER_THAN":
-            try:
-                return float(s_actual) > float(s_expected)
-            except ValueError:
-                return False
-        
-        elif operator == "LESS_THAN":
-            try:
-                return float(s_actual) < float(s_expected)
-            except ValueError:
-                return False
+        try:
+            # Date handling
+            if f_type == FieldType.DATE:
+                if expected_val is None:
+                    return False
+                
+                # Assume ISO format YYYY-MM-DD
+                d_actual = date.fromisoformat(str(actual_val))
+
+                if operator == "IN":
+                    if isinstance(expected_val, list):
+                        # Convert every list element to date
+                        target_dates = []
+                        for x in expected_val:
+                            try:
+                                target_dates.append(date.fromisoformat(str(x)))
+                            except ValueError:
+                                continue # Ignore wrong items
+                        return d_actual in target_dates
+                    else:
+                        # If 'IN' but not a real list
+                        return d_actual == date.fromisoformat(str(expected_val))
+
+                d_expected = date.fromisoformat(str(expected_val))
+                
+                if operator == "GREATER_THAN": return d_actual > d_expected
+                if operator == "LESS_THAN":    return d_actual < d_expected
+                if operator == "EQUALS":       return d_actual == d_expected
+                if operator == "NOT_EQUALS":   return d_actual != d_expected
+
+            # Number handling
+            elif f_type == FieldType.NUMBER:
+                if expected_val is None:
+                    return False
+                
+                n_actual = float(actual_val)
+
+                if operator == "IN":
+                    if isinstance(expected_val, list):
+                        # Convert every list element to date
+                        target_numbers = []
+                        for x in expected_val:
+                            try:
+                                target_numbers.append(float(x))
+                            except (ValueError, TypeError):
+                                continue # Ignore wrong items
+                        return n_actual in target_numbers
+                    else:
+                        # If 'IN' but not a real list
+                        return n_actual == float(expected_val)
+
+                n_expected = float(expected_val)
+                
+                if operator == "GREATER_THAN": return n_actual > n_expected
+                if operator == "LESS_THAN":    return n_actual < n_expected
+                if operator == "EQUALS":       return n_actual == n_expected
+                if operator == "NOT_EQUALS":   return n_actual != n_expected
+
+            # String/boolean handling
+            else:
+                s_actual = str(actual_val)
+                s_expected = str(expected_val)
+
+                if operator == "EQUALS":       return s_actual == s_expected
+                if operator == "NOT_EQUALS":   return s_actual != s_expected
+                if operator == "GREATER_THAN": return s_actual > s_expected
+                if operator == "LESS_THAN":    return s_actual < s_expected
+                
+                if operator == "IN":
+                    if isinstance(expected_val, list):
+                        return s_actual in [str(x) for x in expected_val]
+                    return s_actual in s_expected
+
+        except (ValueError, TypeError):
+            # Casting failed
+            return False
 
         return False
