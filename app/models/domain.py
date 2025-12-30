@@ -98,6 +98,7 @@ class Field(Base):
     entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"))
     
     name: Mapped[str] = mapped_column(String(100))
+    label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     data_type: Mapped[str] = mapped_column(String(50), default="string")
     is_required: Mapped[bool] = mapped_column(Boolean, default=False)
     is_readonly: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -165,7 +166,11 @@ class User(Base, AuditMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relations
-    configurations: Mapped[List["Configuration"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
+    configurations: Mapped[List["Configuration"]] = relationship(
+        back_populates="owner", 
+        cascade="all, delete-orphan",
+        foreign_keys="[Configuration.user_id]" # Specify which FK use
+    )
 
 
 class Configuration(Base, AuditMixin):
@@ -188,4 +193,7 @@ class Configuration(Base, AuditMixin):
 
     # Relations
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="configurations")
-    owner: Mapped["User"] = relationship(back_populates="configurations")
+    owner: Mapped["User"] = relationship(
+        back_populates="configurations",
+        foreign_keys=[user_id] # Specify which FK use
+    )

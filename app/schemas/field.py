@@ -5,6 +5,7 @@ from .base_schema import BaseSchema
 class FieldBase(BaseSchema):
     """ Base properties shared by create and read operations. """
     name: str = Field(..., max_length=100)
+    label: Optional[str] = None
     data_type: str = Field("string", max_length=50)
     is_required: bool = False
     is_readonly: bool = False

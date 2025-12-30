@@ -27,7 +27,8 @@ class ValueOption(BaseModel):
 class FieldOutputState(BaseModel):
     """The recalculated status of a field."""
     field_id: int
-    field_name: str        
+    field_name: str
+    field_label: Optional[str]
     current_value: Any # The actual current value (after validation and default)    
     available_options: List[ValueOption] # List of options that can be selected at this time
     is_required: bool

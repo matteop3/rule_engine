@@ -1,14 +1,14 @@
 from fastapi import FastAPI
+from app.core.config import settings
 from app.database import engine, Base
-from app.models import domain
 from app.routers import entities, fields, values, rules, engine as engine_router, versions, configurations, auth
 
 # DB tables creation
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="Rule Engine Service",
-    description="Generic configurable rule engine backend",
+    title=settings.PROJECT_NAME,
+    description=settings.PROJECT_DESCRIPTION,
     version="0.2.0"
 )
 

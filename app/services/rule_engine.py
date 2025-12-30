@@ -115,6 +115,7 @@ class RuleEngineService:
                 output_fields.append(FieldOutputState(
                     field_id=field.id,
                     field_name=field.name,
+                    field_label=field.label,
                     current_value=None,
                     available_options=[],
                     is_required=field.is_required,
@@ -235,6 +236,7 @@ class RuleEngineService:
             output_fields.append(FieldOutputState(
                 field_id=field.id,
                 field_name=field.name,
+                field_label=field.label,
                 current_value=final_value,
                 available_options=out_options,
                 is_required=is_required,
