@@ -2,7 +2,7 @@ from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 from app.models.domain import Entity, Field, FieldType, Value, Rule, RuleType, EntityVersion, VersionStatus
 from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOutputState, ValueOption
-from datetime import date
+from datetime import date, datetime
 
 class RuleEngineService:
     def calculate_state(self, db: Session, request: CalculationRequest) -> CalculationResponse:
@@ -90,11 +90,23 @@ class RuleEngineService:
         output_fields: List[FieldOutputState] = []
 
         for field in fields_db:
+            # Get curretn value (input or default or None)
+            current_val = next(
+                (item.value for item in request.current_state if item.field_id == field.id), 
+                None
+            )
+
+            # --- FIX CRITICO: AGGIORNAMENTO PREVENTIVO DEL CONTESTO ---
+            # Prima di calcolare qualsiasi regola, diciamo al contesto:
+            # "Ehi, per questo campo (db_field.id), il valore attuale è questo!"
+            # Senza questa riga, le regole di validazione che puntano a se stesse 
+            # troveranno 'None' nel contesto.
+            running_context[field.id] = current_val
 
             # Layer 1: visibility check
             visibility_rules = [
                 r for r in all_rules 
-                if r.target_field_id == field.id and r.rule_type == RuleType.VISIBILITY
+                if r.target_field_id == field.id and str(r.rule_type) == RuleType.VISIBILITY.value
             ]
             
             # Start from DB static configuration
@@ -128,7 +140,7 @@ class RuleEngineService:
             # Layer 2: editability check
             editability_rules = [
                 r for r in all_rules 
-                if r.target_field_id == field.id and r.rule_type == RuleType.EDITABILITY
+                if r.target_field_id == field.id and str(r.rule_type) == RuleType.EDITABILITY.value
             ]
             
             is_readonly = field.is_readonly
@@ -145,7 +157,7 @@ class RuleEngineService:
             # Layer 3: mandatory check
             mandatory_rules = [
                 r for r in all_rules 
-                if r.target_field_id == field.id and r.rule_type == RuleType.MANDATORY
+                if r.target_field_id == field.id and str(r.rule_type) == RuleType.MANDATORY.value
             ]
             
             # Start from DB static configuration
@@ -179,7 +191,7 @@ class RuleEngineService:
                     # Check rules specific to this value
                     rules_for_val = [
                         r for r in rules_by_target_value.get(val_obj.id, [])
-                        if r.rule_type == RuleType.AVAILABILITY
+                        if str(r.rule_type) == RuleType.AVAILABILITY.value
                     ]
                     
                     if not rules_for_val:
@@ -222,11 +234,11 @@ class RuleEngineService:
             if is_visible and final_value is not None:                
                 validation_rules = [
                     r for r in all_rules 
-                    if r.target_field_id == field.id and r.rule_type == RuleType.VALIDATION
+                    if r.target_field_id == field.id and str(r.rule_type) == RuleType.VALIDATION.value
                 ]
 
                 for rule in validation_rules:
-                    if self._evaluate_rule(rule.conditions, running_context, type_map):
+                    if self._evaluate_rule(rule.conditions, running_context, type_map, debug=True):
                         validation_error = rule.error_message or "Validation error."
                         break
 
@@ -258,7 +270,7 @@ class RuleEngineService:
             is_complete=global_complete
         )
 
-    def _evaluate_rule(self, conditions: Dict[str, Any], context: Dict[int, Any], type_map: Dict[int, str]) -> bool:
+    def _evaluate_rule(self, conditions: Dict[str, Any], context: Dict[int, Any], type_map: Dict[int, str], debug: bool=False) -> bool:
         """
         Evaluate a SINGLE rule.
         Logic: All criteria within are ANDed.
@@ -269,40 +281,52 @@ class RuleEngineService:
             return True
 
         for criteria in criteria_list:
-            if not self._check_criterion(criteria, context, type_map):
+            if not self._check_criterion(criteria, context, type_map, debug):
                 return False # One failed criterion is enough to invalidate the AND
         
         return True # All criteria are passed
 
-    def _check_criterion(self, criterion: Dict[str, Any], context: Dict[int, Any], type_map: Dict[int, str]) -> bool:
-        """Compare: context[field_id] OPERATOR expected_Value"""
+    def _check_criterion(self, criterion: Dict[str, Any], context: Dict[int, Any], type_map: Dict[int, str], debug: bool=False) -> bool:
         # Note: here we assume that JSON uses “field_id” as the key.
-        target_field_id = criterion.get("field_id") 
+        target_field_id = criterion.get("field_id")
         operator = criterion.get("operator")
         expected_val = criterion.get("value")
 
-        if target_field_id is None: 
+        if target_field_id is None:
             return False
 
         # Retrieve value from current context
-        # Convert to string for safe comparison, handling None
-        actual_val = context.get(target_field_id)
-        
+        actual_val = context.get(int(target_field_id))
+
         if actual_val is None:
             # If the dependent field has no value, the criterion fails.
             return False
-        
-        # Retrieve Field's data_type
-        f_type = type_map.get(target_field_id, FieldType.STRING)
+
+        f_type_raw = type_map.get(target_field_id, FieldType.STRING.value)
+        f_type_val = getattr(f_type_raw, "value", f_type_raw)
+        f_type = str(f_type_val).lower().strip()
+
+        def compare_as_string(val1, op, val2):
+            s1, s2 = str(val1), str(val2)
+            if op == "EQUALS":       return s1 == s2
+            if op == "NOT_EQUALS":   return s1 != s2
+            if op == "GREATER_THAN": return s1 > s2
+            if op == "LESS_THAN":    return s1 < s2
+            if op == "IN":
+                if isinstance(val2, list):
+                    return s1 in [str(x) for x in val2]
+                return s1 in s2
+            return False
 
         try:
             # Date handling
-            if f_type == FieldType.DATE:
+            if f_type == FieldType.DATE.value:
                 if expected_val is None:
                     return False
                 
-                # Assume ISO format YYYY-MM-DD
-                d_actual = date.fromisoformat(str(actual_val))
+                d_actual = actual_val
+                if not isinstance(d_actual, (date, datetime)):
+                    d_actual = date.fromisoformat(str(actual_val).strip())
 
                 if operator == "IN":
                     if isinstance(expected_val, list):
@@ -310,26 +334,31 @@ class RuleEngineService:
                         target_dates = []
                         for x in expected_val:
                             try:
-                                target_dates.append(date.fromisoformat(str(x)))
+                                if isinstance(x, (date, datetime)):
+                                    target_dates.append(x)
+                                else:
+                                    target_dates.append(date.fromisoformat(str(x)))
                             except ValueError:
                                 continue # Ignore wrong items
                         return d_actual in target_dates
                     else:
                         # If 'IN' but not a real list
                         return d_actual == date.fromisoformat(str(expected_val))
-
-                d_expected = date.fromisoformat(str(expected_val))
                 
+                d_expected = expected_val
+                if not isinstance(d_expected, (date, datetime)):
+                    d_expected = date.fromisoformat(str(expected_val))
+
                 if operator == "GREATER_THAN": return d_actual > d_expected
                 if operator == "LESS_THAN":    return d_actual < d_expected
                 if operator == "EQUALS":       return d_actual == d_expected
                 if operator == "NOT_EQUALS":   return d_actual != d_expected
-
+            
             # Number handling
-            elif f_type == FieldType.NUMBER:
+            elif f_type == FieldType.NUMBER.value:
                 if expected_val is None:
                     return False
-                
+
                 n_actual = float(actual_val)
 
                 if operator == "IN":
@@ -347,29 +376,17 @@ class RuleEngineService:
                         return n_actual == float(expected_val)
 
                 n_expected = float(expected_val)
-                
+
                 if operator == "GREATER_THAN": return n_actual > n_expected
                 if operator == "LESS_THAN":    return n_actual < n_expected
                 if operator == "EQUALS":       return n_actual == n_expected
                 if operator == "NOT_EQUALS":   return n_actual != n_expected
-
             # String/boolean handling
             else:
-                s_actual = str(actual_val)
-                s_expected = str(expected_val)
+                 return compare_as_string(actual_val, operator, expected_val)
 
-                if operator == "EQUALS":       return s_actual == s_expected
-                if operator == "NOT_EQUALS":   return s_actual != s_expected
-                if operator == "GREATER_THAN": return s_actual > s_expected
-                if operator == "LESS_THAN":    return s_actual < s_expected
-                
-                if operator == "IN":
-                    if isinstance(expected_val, list):
-                        return s_actual in [str(x) for x in expected_val]
-                    return s_actual in s_expected
-
-        except (ValueError, TypeError):
-            # Casting failed
-            return False
+        except (ValueError, TypeError) as e:
+            # Fallback to String as extrema ratio
+            return compare_as_string(actual_val, operator, expected_val)
 
         return False
