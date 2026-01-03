@@ -14,5 +14,5 @@ class AuditSchemaMixin(BaseModel):
     """
     created_at: datetime
     updated_at: Optional[datetime] = None
-    created_by_id: Optional[int] = None
-    updated_by_id: Optional[int] = None
+    created_by_id: Optional[str] = None
+    updated_by_id: Optional[str] = None

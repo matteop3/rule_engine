@@ -26,7 +26,7 @@ def test_engine_minorenne_validation(db_session, setup_insurance_scenario):
 
     assert field_out.error_message == "Minorenne"
     assert response.is_complete is False
-    print("\n✅ Test Minorenne superato: Errore rilevato correttamente.")
+    #print("\n✅ Test Minorenne superato: Errore rilevato correttamente.")
 
 
 def test_engine_mandatory_rule(db_session, setup_insurance_scenario):
@@ -61,7 +61,7 @@ def test_engine_mandatory_rule(db_session, setup_insurance_scenario):
     # Dato che non abbiamo fornito un valore per il satellitare, is_complete deve essere False
     assert resp_high.is_complete is False
     
-    print("\n✅ Test Mandatory superato: Il campo è diventato obbligatorio dinamicamente.")
+    #print("\n✅ Test Mandatory superato: Il campo è diventato obbligatorio dinamicamente.")
 
 
 def test_engine_visibility_logic(db_session, setup_insurance_scenario):
@@ -96,7 +96,7 @@ def test_engine_visibility_logic(db_session, setup_insurance_scenario):
     # Quando è nascosto, il valore deve essere resettato a None
     assert inf_moto.current_value is None
     
-    print("\n✅ Test Visibility superato: Campo nascosto correttamente su MOTO.")
+    #print("\n✅ Test Visibility superato: Campo nascosto correttamente su MOTO.")
 
 def test_engine_availability_filter(db_session, setup_insurance_scenario):
     """
@@ -121,4 +121,4 @@ def test_engine_availability_filter(db_session, setup_insurance_scenario):
     assert "VIP" in available_values      # Deve esserci
     assert "MINIMO" not in available_values # NON deve esserci
     
-    print("\n✅ Test Availability superato: Opzione MINIMO rimossa per CAMION.")
+    #print("\n✅ Test Availability superato: Opzione MINIMO rimossa per CAMION.")

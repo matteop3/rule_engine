@@ -132,9 +132,13 @@ class RuleEngineService:
                     available_options=[],
                     is_required=field.is_required,
                     is_readonly=field.is_readonly,
-                    is_hidden=not is_visible,
+                    is_hidden=True,
                     error_message=None
                 ))
+
+                # Update the context also
+                running_context[field.id] = None
+
                 continue 
 
             # Layer 2: editability check
@@ -231,17 +235,21 @@ class RuleEngineService:
             # Layer 5: validation (negative pattern: if rule passes -> error message)
             validation_error = None
 
-            if is_visible and final_value is not None:                
+            if is_visible and final_value is not None:
                 validation_rules = [
                     r for r in all_rules 
                     if r.target_field_id == field.id and str(r.rule_type) == RuleType.VALIDATION.value
                 ]
 
                 for rule in validation_rules:
-                    if self._evaluate_rule(rule.conditions, running_context, type_map, debug=True):
+                    if self._evaluate_rule(rule.conditions, running_context, type_map):
                         validation_error = rule.error_message or "Validation error."
                         break
 
+            # UX purpose
+            if is_required and final_value is None and validation_error is None:
+                validation_error = "Required field."
+            
             # Finalization
             running_context[field.id] = final_value
 
@@ -291,7 +299,6 @@ class RuleEngineService:
         target_field_id = criterion.get("field_id")
         operator = criterion.get("operator")
         expected_val = criterion.get("value")
-
         if target_field_id is None:
             return False
 
@@ -383,7 +390,7 @@ class RuleEngineService:
                 if operator == "NOT_EQUALS":   return n_actual != n_expected
             # String/boolean handling
             else:
-                 return compare_as_string(actual_val, operator, expected_val)
+                return compare_as_string(actual_val, operator, expected_val)
 
         except (ValueError, TypeError) as e:
             # Fallback to String as extrema ratio
