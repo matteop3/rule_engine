@@ -1,10 +1,10 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
-from app.models.domain import Entity, EntityVersion, VersionStatus, User, UserRole
+from app.models.domain import EntityVersion, VersionStatus, User, UserRole
 from app.schemas import VersionCreate, VersionRead, VersionUpdate, VersionClone
 from app.services.versioning import VersioningService
 
@@ -13,25 +13,122 @@ router = APIRouter(
     tags=["Versions"]
 )
 
+
+# ============================================================
+# DEPENDENCIES
+# ============================================================
+
+def get_versioning_service() -> VersioningService:
+    """
+    Dependency for Versioning Service.
+    Centralizes service instantiation.
+    """
+    return VersioningService()
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def get_version_or_404(db: Session, version_id: int) -> EntityVersion:
+    """
+    Retrieves a version by ID.
+    
+    Raises:
+        HTTPException(404): If version doesn't exist
+    """
+    version = db.query(EntityVersion).filter(
+        EntityVersion.id == version_id
+    ).first()
+    
+    if not version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Version not found."
+        )
+    
+    return version
+
+
+def validate_version_is_draft(version: EntityVersion) -> None:
+    """
+    Enforces that a version is in DRAFT status.
+    
+    Raises:
+        HTTPException(409): If version is not DRAFT
+    """
+    if version.status != VersionStatus.DRAFT:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Operation not allowed on {version.status.value} version. Only DRAFT versions can be modified."
+        )
+
+
+def handle_service_error(e: ValueError) -> HTTPException:
+    """
+    Converts service ValueError to appropriate HTTP exception.
+    
+    Business logic errors from VersioningService are mapped to:
+    - 404 for "not found"
+    - 409 for "already exists"
+    - 400 for other validation errors
+    """
+    msg: str = str(e)
+    
+    if "not found" in msg.lower():
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=msg
+        )
+    
+    if "already exists" in msg.lower():
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT, 
+            detail=msg
+        )
+    
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST, 
+        detail=msg
+    )
+
+
+# ============================================================
+# ENDPOINTS
+# ============================================================
+
 @router.get("/", response_model=List[VersionRead])
 def read_versions(
-    entity_id: int,  # Required filter: listing all versions of ALL entities makes no sense
+    entity_id: int,  # Required: listing versions without entity context makes no sense
     skip: int = 0, 
     limit: int = 100, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(get_current_user)  # Auth
 ):
     """
-    Retrieve version history for a specific Entity.
-    Ordered by version_number descending (newest first).
+    Retrieves version history for a specific Entity.
+    
+    Access Control:
+        - Only ADMIN and AUTHOR can view versions
+    
+    Query Parameters:
+        entity_id: The Entity to retrieve versions for (required)
+        skip: Pagination offset
+        limit: Maximum results (max 100)
+    
+    Returns:
+        List[VersionRead]: Versions ordered by version_number descending (newest first)
     """
-    # Verify current user's role
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
-
-    versions = db.query(EntityVersion)\
-        .filter(EntityVersion.entity_id == entity_id)\
-        .order_by(EntityVersion.version_number.desc())\
-        .offset(skip).limit(limit).all()
+    
+    # Cap limit to prevent abuse
+    limit = min(limit, 100)
+    
+    versions = db.query(EntityVersion).filter(
+        EntityVersion.entity_id == entity_id
+    ).order_by(
+        EntityVersion.version_number.desc()
+    ).offset(skip).limit(limit).all()
     
     return versions
 
@@ -40,83 +137,112 @@ def read_versions(
 def read_version(
     version_id: int, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(get_current_user)  # Auth
 ):
-    """ Retrieve a single Version details. """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
-
-    version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
-    if not version:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
+    """
+    Retrieves a single version by ID.
     
-    return version
+    Access Control:
+        - Only ADMIN and AUTHOR can view version details
+    
+    Returns:
+        VersionRead: The requested version
+    """
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+    
+    return get_version_or_404(db, version_id)
 
 
 @router.post("/", response_model=VersionRead, status_code=status.HTTP_201_CREATED)
 def create_version_draft(
     version_in: VersionCreate, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(get_current_user),  # Auth
+    versioning_service: VersioningService = Depends(get_versioning_service)
 ):
     """
-    Creates a new Version (DRAFT) for an Entity.
-    Auto-calculates the version number (incremental).
+    Creates a new DRAFT version for an Entity.
+    
+    - Version number is auto-calculated (incremental)
+    - Enforces Single Draft Policy (only one DRAFT per Entity)
+    
+    Access Control:
+        - Only ADMIN and AUTHOR can create versions
+    
+    Returns:
+        VersionRead: The created DRAFT version
     """
-    # Verify current user's role
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
-
-    service = VersioningService()
-
+    
     try:
-        new_version = service.create_draft_version(
+        new_version = versioning_service.create_draft_version(
             db=db, 
             entity_id=version_in.entity_id,
             user_id=current_user.id,
             changelog=version_in.changelog
         )
+        
         db.commit()
         db.refresh(new_version)
-
+        
         return new_version
-
+    
     except ValueError as e:
         db.rollback()
-        msg = str(e)
-        if "not found" in msg:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=msg)
-        if "already exists" in msg:
-            raise HTTPException(status.HTTP_409_CONFLICT, detail=msg)
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=msg)
+        raise handle_service_error(e)
+    
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
+
 
 @router.post("/{version_id}/publish", response_model=VersionRead)
 def publish_version(
     version_id: int, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(get_current_user),  # Auth
+    versioning_service: VersioningService = Depends(get_versioning_service)
 ):
     """
-    Promotes a DRAFT to PUBLISHED.
-    Archives any previously PUBLISHED version (single published policy).
+    Promotes a DRAFT version to PUBLISHED.
+    
+    - Archives any previously PUBLISHED version (Single Published Policy)
+    - Only DRAFT versions can be published
+    - Existing Configurations on this version become "production data"
+    
+    Access Control:
+        - Only ADMIN and AUTHOR can publish versions
+    
+    Returns:
+        VersionRead: The published version
     """
-    # Verify current user's role
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
     
-    service = VersioningService()
-
     try:
-        version = service.publish_version(db, version_id, current_user.id)
+        version = versioning_service.publish_version(
+            db=db, 
+            version_id=version_id, 
+            user_id=current_user.id
+        )
+        
         db.commit()
         db.refresh(version)
-
+        
         return version
-
+    
     except ValueError as e:
         db.rollback()
-        msg = str(e)
-        if "not found" in msg:
-             raise HTTPException(status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=msg)
+        raise handle_service_error(e)
+    
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
 
 
 @router.post("/{version_id}/clone", response_model=VersionRead, status_code=status.HTTP_201_CREATED)
@@ -124,100 +250,147 @@ def clone_version(
     version_id: int, 
     clone_in: VersionClone, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(get_current_user),  # Auth
+    versioning_service: VersioningService = Depends(get_versioning_service)
 ):
-    """ Creates a new DRAFT version by cloning an existing source version (deep copy). """
-    # Verify current user's role
+    """
+    Creates a new DRAFT version by deep-copying an existing version.
+    
+    - Source version can be in any status (DRAFT, PUBLISHED, ARCHIVED)
+    - Copies all Fields, Values, and Rules with ID remapping
+    - Enforces Single Draft Policy (target entity must not have a DRAFT)
+    
+    Access Control:
+        - Only ADMIN and AUTHOR can clone versions
+    
+    Returns:
+        VersionRead: The newly created DRAFT version
+    """
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
-
-    service = VersioningService()
-
+    
     try:
-        clean_changelog = clone_in.changelog
-        if clean_changelog and clean_changelog.strip() == "string": # Hack: clean Swagger default
+        # Clean Swagger default value hack
+        clean_changelog: Optional[str] = clone_in.changelog
+        if clean_changelog and clean_changelog.strip() == "string":
             clean_changelog = None
-
-        new_version = service.clone_version(
+        
+        new_version = versioning_service.clone_version(
             db=db, 
             source_version_id=version_id, 
             user_id=current_user.id, 
             new_changelog=clean_changelog
         )
+        
         db.commit()
         db.refresh(new_version)
-
+        
         return new_version
-
+    
     except ValueError as e:
         db.rollback()
-        msg = str(e)
-        if "not found" in msg:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=msg)
-        if "already exists" in msg:
-            raise HTTPException(status.HTTP_409_CONFLICT, detail=msg)
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cloning failed: {msg}")
+        raise handle_service_error(e)
     
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error during cloning: {str(e)}"
+        )
+
 
 @router.patch("/{version_id}", response_model=VersionRead)
 def update_version_metadata(
     version_id: int, 
     version_update: VersionUpdate, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(get_current_user)  # Auth
 ):
     """
-    Update version metadata (e.g. fix a typo in the changelog).
-    Allowed for DRAFT and even PUBLISHED/ARCHIVED (it's just a label).
-    """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
-
-    version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
-    if not version:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
-
-    # Update allowed fields only
-    if version_update.changelog is not None:
-        version.changelog = version_update.changelog
+    Updates version metadata (changelog).
     
-    # Do not allow changing the ‘status’ here; use the dedicated 
-    # /publish or /archive routes to ensure transition logic.
-
-    db.commit()
-    db.refresh(version)
-
-    return version
+    Restrictions:
+        - Only DRAFT versions can be modified
+        - PUBLISHED/ARCHIVED versions are immutable (history protection)
+        - Status changes must use dedicated endpoints (/publish)
+    
+    Access Control:
+        - Only ADMIN and AUTHOR can update versions
+    
+    Returns:
+        VersionRead: The updated version
+    """
+    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+    
+    version = get_version_or_404(db, version_id)
+    
+    # Enforce DRAFT-only modification policy
+    validate_version_is_draft(version)
+    
+    try:
+        # Update allowed fields
+        if version_update.changelog is not None:
+            version.changelog = version_update.changelog
+        
+        version.updated_by_id = current_user.id
+        
+        db.commit()
+        db.refresh(version)
+        
+        return version
+    
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
 
 
 @router.delete("/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_version(
     version_id: int, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(get_current_user)  # Auth
 ):
     """
-    Delete a Version.
-    Strict policy: only 'DRAFT' versions can be deleted.
-    Once published, a version is part of history and cannot be removed.
+    Deletes a version.
+    
+    Strict Policy:
+        - Only DRAFT versions can be deleted
+        - PUBLISHED/ARCHIVED versions are protected (history preservation)
+        - Cascade deletes all Fields, Values, Rules, and Configurations
+    
+    Note: Configurations on DRAFT versions are considered test data
+          and will be automatically deleted.
+    
+    Access Control:
+        - Only ADMIN and AUTHOR can delete versions
+    
+    Returns:
+        204 No Content on success
     """
-    # Verify current user's role
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
-
-    version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
-    if not version:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
-
-    # Guardrail: history protection
+    
+    version = get_version_or_404(db, version_id)
+    
+    # Enforce DRAFT-only deletion policy
     if version.status != VersionStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot delete version with status '{version.status.value}'. Only DRAFT versions can be deleted to clean up workspace."
+            detail=f"Cannot delete {version.status.value} version. Only DRAFT versions can be deleted to preserve history."
         )
-
-    # Note: Fields, Values and Rules will be automatically 
-    # deleted thanks to 'cascade="all, delete-orphan"' into models
     
-    db.delete(version)
-    db.commit()
-
-    return None
+    try:
+        # Cascade delete handled by SQLAlchemy relationships
+        # (Fields, Values, Rules, Configurations)
+        db.delete(version)
+        db.commit()
+        
+        return None
+    
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )

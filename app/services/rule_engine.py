@@ -62,7 +62,9 @@ class RuleEngineService:
         )
     
 
-    # Helper methods (data loading and indexing)
+    # ============================================================
+    # DATA LOADING & INDEXING
+    # ============================================================
     
     def _resolve_target_version(
         self, 
@@ -187,7 +189,9 @@ class RuleEngineService:
         return user_input_map
     
 
-    # Helper methods (field processing, waterfall logic)
+    # ============================================================
+    # FIELD PROCESSING (Waterfall Logic)
+    # ============================================================
     
     def _process_field(
         self,
@@ -267,7 +271,9 @@ class RuleEngineService:
         )
     
 
-    # Helper methods (Rule evaluation layer)
+    # ============================================================
+    # RULE EVALUATION LAYERS (DRY Pattern)
+    # ============================================================
     
     def _get_rules_by_type(
         self, 
@@ -523,7 +529,9 @@ class RuleEngineService:
         return None
     
 
-    # Helper methods (Rule evaluation engine)
+    # ============================================================
+    # RULE EVALUATION ENGINE
+    # ============================================================
     
     def _evaluate_rule(
         self, 
@@ -590,7 +598,9 @@ class RuleEngineService:
             return self._compare_strings(actual_val, operator, expected_val)
     
 
-    # Helper methods (type-specific comparisons)
+    # ============================================================
+    # TYPE-SPECIFIC COMPARISONS
+    # ============================================================
     
     def _compare_strings(
         self, 
@@ -700,7 +710,9 @@ class RuleEngineService:
         return False
     
 
-    # Helper methods (utility)
+    # ============================================================
+    # UTILITY
+    # ============================================================
     
     def _check_completeness(self, output_fields: List[FieldOutputState]) -> bool:
         """Checks if all required visible fields have values and validation errors."""

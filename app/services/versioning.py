@@ -5,6 +5,19 @@ from app.models.domain import Entity, EntityVersion, Field, Value, Rule, Version
 import copy
 
 class VersioningService:
+    """
+    Service for managing Entity versioning lifecycle.
+    
+    Transaction Management:
+    This service does NOT handle database commits.
+    The caller is responsible for:
+    - db.commit() on success
+    - db.rollback() on exception
+    """
+    # ============================================================
+    # PUBLIC API
+    # ============================================================
+
     def create_draft_version(
             self, 
             db: Session, 
@@ -176,7 +189,9 @@ class VersioningService:
         return new_version
 
 
-    # Helper methods
+    # ============================================================
+    # PRIVATE HELPERS
+    # ============================================================
 
     def _rewrite_conditions(self, conditions: Dict[str, Any], field_map: Dict[int, int]) -> Dict[str, Any]:
         """
