@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -23,8 +23,8 @@ def get_configuration_or_404(
 ) -> Configuration:
     """
     Retrieve a configuration and check permissions.
-    - If not exists, throw 404
-    - If exists but not yours (and you're not an admin), throw 403
+    - If not exists, throw 404.
+    - If exists but not yours (and you're not an admin), throw 403.
     """
     config = db.query(Configuration).filter(Configuration.id == config_id).first()
     
@@ -36,7 +36,7 @@ def get_configuration_or_404(
     
     # Check permissions (RBAC + ownership)
     # If not yours and you're not an admin, throw 403
-    if user.role != UserRole.ADMIN and config.user_id != user.id:
+    if config.user_id != user.id and user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access this configuration."
@@ -134,7 +134,7 @@ def read_configuration(
 ):
     """
     Retrieve the raw saved data (metadata + inputs).
-    Protezione: Solo proprietario o Admin.
+    Protection: only owner or ADMIN.
     """
     return get_configuration_or_404(db, config_id, current_user)
 
@@ -212,7 +212,7 @@ def load_and_calculate_configuration(
     engine_payload = CalculationRequest(
         entity_id=version.entity_id,
         entity_version_id=version.id, 
-        current_state=current_state_objects # Type is now correct: List[FieldInputState]
+        current_state=current_state_objects # Type here is correct: List[FieldInputState]
     )
 
     # Run engine

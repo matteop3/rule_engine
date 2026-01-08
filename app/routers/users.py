@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
-from app.models.domain import User, UserRole, Configuration
+from app.models.domain import User, UserRole
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.core.security import get_password_hash
 
@@ -144,9 +144,8 @@ def delete_user(
     current_user: User = Depends(get_current_user) # Auth required
 ):
     """
-    Delete a user permanently.
+    Disable a user.
     Blocked if the user has existing configurations.
-    To remove access without losing data, use PATCH is_active=False.
     """
     require_role(current_user, [UserRole.ADMIN])
     

@@ -2,9 +2,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Union, Any
 from jose import jwt
 from passlib.context import CryptContext
+from app.core.config import settings
 
 # Configuration
-SECRET_KEY = "CHANGE_THIS_TO_A_SUPER_SECRET_KEY_IN_ENV_FILE" 
+SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

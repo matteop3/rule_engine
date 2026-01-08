@@ -6,7 +6,6 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models.domain import Entity, EntityVersion, VersionStatus, User, UserRole
 from app.schemas import VersionCreate, VersionRead, VersionUpdate, VersionClone
-from datetime import datetime, timezone
 from app.services.versioning import VersioningService
 
 router = APIRouter(

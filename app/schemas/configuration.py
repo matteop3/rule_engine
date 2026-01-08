@@ -1,5 +1,5 @@
 from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from .base_schema import BaseSchema, AuditSchemaMixin
 
 # Reuse engine input structure

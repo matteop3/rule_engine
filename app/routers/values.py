@@ -131,9 +131,17 @@ def update_value(
                 status_code=status.HTTP_400_BAD_REQUEST, 
                 detail="Cannot assign Value to a Field with a free value."
             )
-        
-        # Optional: Check if new_field belongs to the same version? 
-        # Usually assumed, but 'check_version_editable' on the current value protects the current draft.
+
+        # If new_field does not belongs to the same version -> Error
+        if new_field.entity_version_id != parent_field.entity_version_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Consistency error: You cannot move a Value to a Field belonging to a different Version. "
+                    f"Current Version ID: {parent_field.entity_version_id}, "
+                    f"Target Field Version ID: {new_field.entity_version_id}."
+                )
+            )
 
     # Apply updates
     update_data = value_in.model_dump(exclude_unset=True)

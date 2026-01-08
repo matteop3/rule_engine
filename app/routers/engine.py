@@ -18,7 +18,7 @@ def calculate_state(
     current_user: User = Depends(get_current_user) # Auth required
 ):
     """
-    Triggers the Rule Engine calculation using the PUBLISHED version of the Entity.
+    Triggers the Rule Engine calculation using the (default: PUBLISHED) version of the Entity.
     It takes the current state of the entity (user inputs) and returns
     the calculated state (available options, visibility, valid values) based on the rules.
     """

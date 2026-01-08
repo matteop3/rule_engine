@@ -1,399 +1,716 @@
-from typing import List, Dict, Any
-from sqlalchemy.orm import Session
+from typing import List, Dict, Any, Optional, Tuple
+from sqlalchemy.orm import Session, joinedload
 from app.models.domain import Entity, Field, FieldType, Value, Rule, RuleType, EntityVersion, VersionStatus
 from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOutputState, ValueOption
 from datetime import date, datetime
 
+
 class RuleEngineService:
-    def calculate_state(self, db: Session, request: CalculationRequest) -> CalculationResponse:
+    """
+    CPQ Rule Engine: evaluates field states based on rules and user input.
+    
+    Note: This service does NOT handle database commits.
+    """
+    
+    def calculate_state(
+        self, 
+        db: Session, 
+        request: CalculationRequest
+    ) -> CalculationResponse:
         """
         CPQ core engine.
-        Finds the PUBLISHED Version of the Entity and executes waterfall logic.
+        Finds the target Version (PUBLISHED or explicit) and executes waterfall logic.
         """
+        
+        # Resolve target version
+        target_version = self._resolve_target_version(db, request)
+        
+        # Load all data for the version (with optimized queries)
+        fields_db, all_values, all_rules = self._load_version_data(db, target_version.id)
+        
+        # Build indexing structures
+        type_map = self._build_type_map(fields_db)
+        values_by_field = self._build_values_index(all_values)
+        rules_by_target_value = self._build_rules_index(all_rules)
+        user_input_map = self._normalize_user_input(request.current_state)
+        
+        # Execute waterfall
+        running_context: Dict[int, Any] = {}
+        output_fields: List[FieldOutputState] = []
+        
+        for field in fields_db:
+            field_state = self._process_field(
+                field=field,
+                all_rules=all_rules,
+                values_by_field=values_by_field,
+                rules_by_target_value=rules_by_target_value,
+                user_input_map=user_input_map,
+                running_context=running_context,
+                type_map=type_map
+            )
+            
+            output_fields.append(field_state)
+            running_context[field.id] = field_state.current_value
+        
+        # Check global completeness
+        is_complete = self._check_completeness(output_fields)
+        
+        return CalculationResponse(
+            entity_id=request.entity_id,
+            fields=output_fields,
+            is_complete=is_complete
+        )
+    
 
-        # Fetch Entity
+    # Helper methods (data loading and indexing)
+    
+    def _resolve_target_version(
+        self, 
+        db: Session, 
+        request: CalculationRequest
+    ) -> EntityVersion:
+        """
+        Resolves the target EntityVersion based on request parameters.
+        
+        - If entity_version_id is provided: preview mode (explicit version)
+        - Otherwise: production mode (PUBLISHED version)
+        """
+        # Check entity existence
         entity = db.query(Entity).filter(Entity.id == request.entity_id).first()
         if not entity:
             raise ValueError(f"Entity {request.entity_id} not found.")
-
-        target_version = None
-
-        # Preview mode (explicit Version)
+        
+        # Preview mode
         if request.entity_version_id is not None:
             target_version = db.query(EntityVersion).filter(
                 EntityVersion.id == request.entity_version_id
             ).first()
-
+            
             if not target_version:
                 raise ValueError(f"Version {request.entity_version_id} not found.")
             
-            # Integrity check: ensure the Version belongs to the requested Entity
             if target_version.entity_id != request.entity_id:
-                raise ValueError(f"Version {request.entity_version_id} does not belong to Entity {request.entity_id}.")
-
-        # Production mode (PUBLISHED Version)
-        else:
-            # Fetch PUBLISHED Version
-            target_version = db.query(EntityVersion).filter(
-                EntityVersion.entity_id == request.entity_id,
-                EntityVersion.status == VersionStatus.PUBLISHED
-            ).first()
-
-            if not target_version:
-                raise ValueError(f"Entity {request.entity_id} has no PUBLISHED version ready for calculation.")
+                raise ValueError(
+                    f"Version {request.entity_version_id} does not belong to "
+                    f"Entity {request.entity_id}."
+                )
+            
+            return target_version
         
-        # Fetch Fields and Rules from the target Version
+        # Production mode
+        target_version = db.query(EntityVersion).filter(
+            EntityVersion.entity_id == request.entity_id,
+            EntityVersion.status == VersionStatus.PUBLISHED
+        ).first()
+        
+        if not target_version:
+            raise ValueError(
+                f"Entity {request.entity_id} has no PUBLISHED version ready for calculation."
+            )
+        
+        return target_version
+    
+    def _load_version_data(
+        self, 
+        db: Session, 
+        version_id: int
+    ) -> Tuple[List[Field], List[Value], List[Rule]]:
+        """
+        Loads all Fields, Values, and Rules for a given version.
+        
+        Note: avoid N+1 by loading Values and Rules separately
+        instead of relying on lazy loading through relationships.
+        """
+        # Load fields ordered by execution sequence
         fields_db = db.query(Field).filter(
-            Field.entity_version_id == target_version.id
+            Field.entity_version_id == version_id
         ).order_by(Field.step, Field.sequence).all()
         
         field_ids = [f.id for f in fields_db]
-        all_values = db.query(Value).filter(Value.field_id.in_(field_ids)).all()
         
-        # Retrieve Rules for this Version
+        # Batch load all values
+        all_values = db.query(Value).filter(
+            Value.field_id.in_(field_ids)
+        ).all() if field_ids else []
+        
+        # Batch load all rules
         all_rules = db.query(Rule).filter(
-            Rule.entity_version_id == target_version.id
+            Rule.entity_version_id == version_id
         ).all()
-
-        # Prepare Fields data_type map
-        type_map: Dict[int, str] = {f.id: f.data_type for f in fields_db}
-
-        # INDEXING (Create maps for fast memory access)        
-        # Map: field_id -> Value objects list
-        values_by_field: Dict[int, List[Value]] = {}
-        for v in all_values:
-            if v.field_id not in values_by_field:
-                values_by_field[v.field_id] = []
-            values_by_field[v.field_id].append(v)
-
-        # Map: target_value_id -> Rule objects list (1-to-Many relationship to manage OR)
-        rules_by_target_value: Dict[int, List[Rule]] = {}
-        for r in all_rules:
-            # Index rules by target_value_id only if it exists (availability rules)
+        
+        return fields_db, all_values, all_rules
+    
+    def _build_type_map(self, fields: List[Field]) -> Dict[int, str]:
+        """Creates a mapping of field_id -> data_type string."""
+        return {f.id: f.data_type for f in fields}
+    
+    def _build_values_index(self, values: List[Value]) -> Dict[int, List[Value]]:
+        """Creates a mapping of field_id -> list of Value objects."""
+        index: Dict[int, List[Value]] = {}
+        for v in values:
+            if v.field_id not in index:
+                index[v.field_id] = []
+            index[v.field_id].append(v)
+        return index
+    
+    def _build_rules_index(self, rules: List[Rule]) -> Dict[int, List[Rule]]:
+        """
+        Creates a mapping of target_value_id -> list of Rule objects.
+        Only indexes rules with a target_value_id (availability rules).
+        """
+        index: Dict[int, List[Rule]] = {}
+        for r in rules:
             if r.target_value_id is not None:
-                if r.target_value_id not in rules_by_target_value:
-                    rules_by_target_value[r.target_value_id] = []
-                rules_by_target_value[r.target_value_id].append(r)
-
-        # User input normalization
+                if r.target_value_id not in index:
+                    index[r.target_value_id] = []
+                index[r.target_value_id].append(r)
+        return index
+    
+    def _normalize_user_input(
+        self, 
+        current_state: List[Any]
+    ) -> Dict[int, Any]:
+        """
+        Normalizes user input by stripping strings and converting empty to None.
+        """
         user_input_map: Dict[int, Any] = {}
-        for item in request.current_state:
+        for item in current_state:
             val = item.value
             if isinstance(val, str):
                 val = val.strip()
                 if not val:
                     val = None
+            elif isinstance(val, list):
+                if len(val) == 0:
+                    val = None
             user_input_map[item.field_id] = val
+        return user_input_map
+    
 
-        # WATERFALL EXECUTION
-        running_context: Dict[int, Any] = {}
-        output_fields: List[FieldOutputState] = []
-
-        for field in fields_db:
-            # Get curretn value (input or default or None)
-            current_val = next(
-                (item.value for item in request.current_state if item.field_id == field.id), 
-                None
-            )
-
-            # --- FIX CRITICO: AGGIORNAMENTO PREVENTIVO DEL CONTESTO ---
-            # Prima di calcolare qualsiasi regola, diciamo al contesto:
-            # "Ehi, per questo campo (db_field.id), il valore attuale è questo!"
-            # Senza questa riga, le regole di validazione che puntano a se stesse 
-            # troveranno 'None' nel contesto.
-            running_context[field.id] = current_val
-
-            # Layer 1: visibility check
-            visibility_rules = [
-                r for r in all_rules 
-                if r.target_field_id == field.id and str(r.rule_type) == RuleType.VISIBILITY.value
-            ]
-            
-            # Start from DB static configuration
-            is_visible = not field.is_hidden 
-            
-            if visibility_rules:
-                # Visibility logic: field is hidden unless a rule passes
-                is_rule_passed = False
-                for rule in visibility_rules:
-                    if self._evaluate_rule(rule.conditions, running_context, type_map):
-                        is_rule_passed = True
-                        break
-                is_visible = is_rule_passed
-
-            if not is_visible:
-                # Field is hidden: reset value and skip processing
-                running_context[field.id] = None
-                output_fields.append(FieldOutputState(
-                    field_id=field.id,
-                    field_name=field.name,
-                    field_label=field.label,
-                    current_value=None,
-                    available_options=[],
-                    is_required=field.is_required,
-                    is_readonly=field.is_readonly,
-                    is_hidden=True,
-                    error_message=None
-                ))
-
-                # Update the context also
-                running_context[field.id] = None
-
-                continue 
-
-            # Layer 2: editability check
-            editability_rules = [
-                r for r in all_rules 
-                if r.target_field_id == field.id and str(r.rule_type) == RuleType.EDITABILITY.value
-            ]
-            
-            is_readonly = field.is_readonly
-            
-            if editability_rules:
-                # "Enable if" logic: field is readonly unless a rule passes
-                is_rule_passed = False
-                for rule in editability_rules:
-                    if self._evaluate_rule(rule.conditions, running_context, type_map):
-                        is_rule_passed = True
-                        break
-                is_readonly = not is_rule_passed
-
-            # Layer 3: mandatory check
-            mandatory_rules = [
-                r for r in all_rules 
-                if r.target_field_id == field.id and str(r.rule_type) == RuleType.MANDATORY.value
-            ]
-            
-            # Start from DB static configuration
-            is_required = field.is_required
-
-            if mandatory_rules:
-                # "Make mandatory if" logic: field becomes required if a rule passes
-                for rule in mandatory_rules:
-                    if self._evaluate_rule(rule.conditions, running_context, type_map):
-                        is_required = True
-                        break
-
-            # Layer 4: values availability
-            possible_values = values_by_field.get(field.id, [])
-            available_values_objs: List[Value] = []
-
-            if field.is_free_value:
-                # Free-value fields
-                raw_input = user_input_map.get(field.id)
-                final_value = raw_input 
-                
-                # Default application logic
-                if is_required and final_value is None and field.default_value is not None:
-                    final_value = field.default_value
-
-                out_options = []
-
-            else:
-                # Fields with a data source
-                for val_obj in possible_values:
-                    # Check rules specific to this value
-                    rules_for_val = [
-                        r for r in rules_by_target_value.get(val_obj.id, [])
-                        if str(r.rule_type) == RuleType.AVAILABILITY.value
-                    ]
-                    
-                    if not rules_for_val:
-                        # No explicit rules means that the Value is available
-                        is_available = True
-                    else:
-                        is_available = False
-                        for rule in rules_for_val:
-                            if self._evaluate_rule(rule.conditions, running_context, type_map):
-                                is_available = True
-                                break # Or logic: a single passed Rule is enough to make the Value available
-                    
-                    if is_available:
-                        available_values_objs.append(val_obj)
-
-                # Validation and auto-selection
-                raw_input = user_input_map.get(field.id)
-                final_value = None
-                valid_str_values = [v.value for v in available_values_objs]
-
-                if raw_input is not None and raw_input in valid_str_values:
-                    final_value = raw_input
-                
-                if final_value is None and is_required:
-                    if len(available_values_objs) == 1:
-                        # Force single option
-                        final_value = available_values_objs[0].value
-                    else:
-                        # Default Value application: look for the first default you find.
-                        final_value = next((val_obj.value for val_obj in available_values_objs if val_obj.is_default), None)
-                
-                out_options = [
-                    ValueOption(id=v.id, value=v.value, label=v.label, is_default=v.is_default)
-                    for v in available_values_objs
-                ]
-
-            # Layer 5: validation (negative pattern: if rule passes -> error message)
-            validation_error = None
-
-            if is_visible and final_value is not None:
-                validation_rules = [
-                    r for r in all_rules 
-                    if r.target_field_id == field.id and str(r.rule_type) == RuleType.VALIDATION.value
-                ]
-
-                for rule in validation_rules:
-                    if self._evaluate_rule(rule.conditions, running_context, type_map):
-                        validation_error = rule.error_message or "Validation error."
-                        break
-
-            # UX purpose
-            if is_required and final_value is None and validation_error is None:
-                validation_error = "Required field."
-            
-            # Finalization
-            running_context[field.id] = final_value
-
-            output_fields.append(FieldOutputState(
+    # Helper methods (field processing, waterfall logic)
+    
+    def _process_field(
+        self,
+        field: Field,
+        all_rules: List[Rule],
+        values_by_field: Dict[int, List[Value]],
+        rules_by_target_value: Dict[int, List[Rule]],
+        user_input_map: Dict[int, Any],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str]
+    ) -> FieldOutputState:
+        """
+        Processes a single field through the waterfall logic:
+        1. Visibility
+        2. Editability
+        3. Mandatory
+        4. Availability
+        5. Validation
+        """
+        
+        # Layer 1: Visibility
+        is_visible = self._evaluate_visibility(field, all_rules, running_context, type_map)
+        
+        if not is_visible:
+            return FieldOutputState(
                 field_id=field.id,
                 field_name=field.name,
                 field_label=field.label,
-                current_value=final_value,
-                available_options=out_options,
-                is_required=is_required,
-                is_readonly=is_readonly,
-                is_hidden=not is_visible,
-                error_message=validation_error
-            ))
-
-        # Check global completeness for the response flag
-        global_complete = True
-        for out_f in output_fields:
-            if out_f.is_required and not out_f.is_hidden and out_f.current_value is None:
-                global_complete = False
-                break
-
-        return CalculationResponse(
-            entity_id=entity.id, 
-            fields=output_fields,
-            is_complete=global_complete
+                current_value=None,
+                available_options=[],
+                is_required=field.is_required,
+                is_readonly=field.is_readonly,
+                is_hidden=True,
+                error_message=None
+            )
+        
+        # Layer 2: Editability
+        is_readonly = self._evaluate_editability(field, all_rules, running_context, type_map)
+        
+        # Layer 3: Mandatory
+        is_required = self._evaluate_mandatory(field, all_rules, running_context, type_map)
+        
+        # Layer 4: Availability & Value selection
+        final_value, available_options = self._evaluate_availability(
+            field=field,
+            values_by_field=values_by_field,
+            rules_by_target_value=rules_by_target_value,
+            user_input_map=user_input_map,
+            running_context=running_context,
+            type_map=type_map,
+            is_required=is_required
         )
+        
+        # Update context before validation
+        running_context[field.id] = final_value
+        
+        # Layer 5: Validation
+        validation_error = self._evaluate_validation(
+            field=field,
+            all_rules=all_rules,
+            final_value=final_value,
+            running_context=running_context,
+            type_map=type_map,
+            is_required=is_required
+        )
+        
+        return FieldOutputState(
+            field_id=field.id,
+            field_name=field.name,
+            field_label=field.label,
+            current_value=final_value,
+            available_options=available_options,
+            is_required=is_required,
+            is_readonly=is_readonly,
+            is_hidden=False,
+            error_message=validation_error
+        )
+    
 
-    def _evaluate_rule(self, conditions: Dict[str, Any], context: Dict[int, Any], type_map: Dict[int, str], debug: bool=False) -> bool:
+    # Helper methods (Rule evaluation layer)
+    
+    def _get_rules_by_type(
+        self, 
+        field_id: int, 
+        rule_type: RuleType, 
+        all_rules: List[Rule]
+    ) -> List[Rule]:
         """
-        Evaluate a SINGLE rule.
-        Logic: All criteria within are ANDed.
+        Helper to filter rules by field and type.
+        Eliminates repetitive list comprehensions.
+        """
+        return [
+            r for r in all_rules
+            if r.target_field_id == field_id 
+            and r.rule_type == rule_type
+        ]
+    
+    def _evaluate_visibility(
+        self,
+        field: Field,
+        all_rules: List[Rule],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str]
+    ) -> bool:
+        """
+        Layer 1: Determines if field is visible.
+        Logic: Hidden unless a VISIBILITY rule passes.
+        """
+        visibility_rules = self._get_rules_by_type(
+            field.id, RuleType.VISIBILITY, all_rules
+        )
+        
+        if not visibility_rules:
+            return not field.is_hidden
+        
+        # Field is hidden unless a rule passes
+        for rule in visibility_rules:
+            if self._evaluate_rule(rule.conditions, running_context, type_map):
+                return True  # Visible
+        
+        return False  # Hidden
+    
+    def _evaluate_editability(
+        self,
+        field: Field,
+        all_rules: List[Rule],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str]
+    ) -> bool:
+        """
+        Layer 2: Determines if field is readonly.
+        Logic: Readonly unless an EDITABILITY rule passes.
+        """
+        editability_rules = self._get_rules_by_type(
+            field.id, RuleType.EDITABILITY, all_rules
+        )
+        
+        if not editability_rules:
+            return field.is_readonly
+        
+        # Field is readonly unless a rule passes
+        for rule in editability_rules:
+            if self._evaluate_rule(rule.conditions, running_context, type_map):
+                return False  # Editable
+        
+        return True  # Readonly
+    
+    def _evaluate_mandatory(
+        self,
+        field: Field,
+        all_rules: List[Rule],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str]
+    ) -> bool:
+        """
+        Layer 3: Determines if field is required.
+        Logic: Starts from field.is_required, becomes required if a MANDATORY rule passes.
+        """
+        mandatory_rules = self._get_rules_by_type(
+            field.id, RuleType.MANDATORY, all_rules
+        )
+        
+        is_required = field.is_required
+        
+        for rule in mandatory_rules:
+            if self._evaluate_rule(rule.conditions, running_context, type_map):
+                is_required = True
+                break
+        
+        return is_required
+    
+    def _evaluate_availability(
+        self,
+        field: Field,
+        values_by_field: Dict[int, List[Value]],
+        rules_by_target_value: Dict[int, List[Rule]],
+        user_input_map: Dict[int, Any],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str],
+        is_required: bool
+    ) -> Tuple[Any, List[ValueOption]]:
+        """
+        Layer 4: Determines available values and selects final value.
+        
+        Returns Tuple of (final_value, available_options)
+        """
+        
+        if field.is_free_value:
+            return self._handle_free_value_field(
+                field, user_input_map, is_required
+            )
+        
+        return self._handle_restricted_value_field(
+            field=field,
+            values_by_field=values_by_field,
+            rules_by_target_value=rules_by_target_value,
+            user_input_map=user_input_map,
+            running_context=running_context,
+            type_map=type_map,
+            is_required=is_required
+        )
+    
+    def _handle_free_value_field(
+        self,
+        field: Field,
+        user_input_map: Dict[int, Any],
+        is_required: bool
+    ) -> Tuple[Any, List[ValueOption]]:
+        """Handles fields with free-text input."""
+        raw_input = user_input_map.get(field.id)
+        final_value = raw_input
+        
+        # Apply default if required and empty
+        if is_required and final_value is None and field.default_value is not None:
+            final_value = field.default_value
+        
+        return final_value, []
+    
+    def _handle_restricted_value_field(
+        self,
+        field: Field,
+        values_by_field: Dict[int, List[Value]],
+        rules_by_target_value: Dict[int, List[Rule]],
+        user_input_map: Dict[int, Any],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str],
+        is_required: bool
+    ) -> Tuple[Any, List[ValueOption]]:
+        """Handles fields with predefined value options."""
+        
+        possible_values = values_by_field.get(field.id, [])
+        available_values: List[Value] = []
+        
+        # Filter available values based on rules
+        for val_obj in possible_values:
+            if self._is_value_available(
+                val_obj, rules_by_target_value, running_context, type_map
+            ):
+                available_values.append(val_obj)
+        
+        # Select final value
+        raw_input = user_input_map.get(field.id)
+        valid_str_values = [v.value for v in available_values]
+        
+        final_value = None
+        if raw_input is not None and raw_input in valid_str_values:
+            final_value = raw_input
+        
+        # Auto-selection logic for required fields
+        if final_value is None and is_required:
+            final_value = self._auto_select_value(available_values)
+        
+        # Build output options
+        out_options = [
+            ValueOption(
+                id=v.id, 
+                value=v.value, 
+                label=v.label, 
+                is_default=v.is_default
+            )
+            for v in available_values
+        ]
+        
+        return final_value, out_options
+    
+    def _is_value_available(
+        self,
+        value: Value,
+        rules_by_target_value: Dict[int, List[Rule]],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str]
+    ) -> bool:
+        """
+        Determines if a specific Value is available based on AVAILABILITY rules.
+        Logic: Available unless explicit rules exist, then at least one must pass (OR).
+        """
+        rules_for_value = [
+            r for r in rules_by_target_value.get(value.id, [])
+            if r.rule_type == RuleType.AVAILABILITY
+        ]
+        
+        if not rules_for_value:
+            return True  # No rules = available by default
+        
+        # OR logic: at least one rule must pass
+        for rule in rules_for_value:
+            if self._evaluate_rule(rule.conditions, running_context, type_map):
+                return True  # Value available
+        
+        return False  # Value not available
+    
+    def _auto_select_value(self, available_values: List[Value]) -> Optional[Any]:
+        """
+        Auto-selects a value for required fields.
+        Priority: single option > default value > None
+        """
+        if len(available_values) == 1:
+            return available_values[0].value
+        
+        # Find first default value
+        return next(
+            (v.value for v in available_values if v.is_default), 
+            None
+        )
+    
+    def _evaluate_validation(
+        self,
+        field: Field,
+        all_rules: List[Rule],
+        final_value: Any,
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str],
+        is_required: bool
+    ) -> Optional[str]:
+        """
+        Layer 5: Validates the final value.
+        Logic: If a VALIDATION rule passes, return error message (negative pattern).
+        """
+        
+        if final_value is not None:
+            validation_rules = self._get_rules_by_type(
+                field.id, RuleType.VALIDATION, all_rules
+            )
+            
+            for rule in validation_rules:
+                if self._evaluate_rule(rule.conditions, running_context, type_map):
+                    return rule.error_message or "Validation error."
+        
+        # Required field check
+        if is_required and final_value is None:
+            return "Required field."
+        
+        return None
+    
+
+    # Helper methods (Rule evaluation engine)
+    
+    def _evaluate_rule(
+        self, 
+        conditions: Dict[str, Any], 
+        context: Dict[int, Any], 
+        type_map: Dict[int, str]
+    ) -> bool:
+        """
+        Evaluates a single rule.
+        Logic: All criteria are ANDed together.
         """
         criteria_list = conditions.get("criteria", [])
-        if not criteria_list:
-            # Empty rule = True
-            return True
-
-        for criteria in criteria_list:
-            if not self._check_criterion(criteria, context, type_map, debug):
-                return False # One failed criterion is enough to invalidate the AND
         
-        return True # All criteria are passed
-
-    def _check_criterion(self, criterion: Dict[str, Any], context: Dict[int, Any], type_map: Dict[int, str], debug: bool=False) -> bool:
-        # Note: here we assume that JSON uses “field_id” as the key.
+        if not criteria_list:
+            return True  # Empty rule = always passes
+        
+        for criterion in criteria_list:
+            if not self._check_criterion(criterion, context, type_map):
+                return False  # One failed criterion invalidates the AND
+        
+        return True
+    
+    def _check_criterion(
+        self, 
+        criterion: Dict[str, Any], 
+        context: Dict[int, Any], 
+        type_map: Dict[int, str]
+    ) -> bool:
+        """
+        Evaluates a single criterion within a rule.
+        Handles type-specific comparisons (string, number, date).
+        """
         target_field_id = criterion.get("field_id")
         operator = criterion.get("operator")
         expected_val = criterion.get("value")
+        
+        # Guard checks: ensure all required fields are present
         if target_field_id is None:
             return False
-
-        # Retrieve value from current context
+        
+        if operator is None or not isinstance(operator, str):
+            return False  # operator must be a non-empty string
+        
         actual_val = context.get(int(target_field_id))
-
+        
         if actual_val is None:
-            # If the dependent field has no value, the criterion fails.
-            return False
-
+            return False  # Dependent field has no value
+        
+        # Resolve field type
         f_type_raw = type_map.get(target_field_id, FieldType.STRING.value)
         f_type_val = getattr(f_type_raw, "value", f_type_raw)
         f_type = str(f_type_val).lower().strip()
-
-        def compare_as_string(val1, op, val2):
-            s1, s2 = str(val1), str(val2)
-            if op == "EQUALS":       return s1 == s2
-            if op == "NOT_EQUALS":   return s1 != s2
-            if op == "GREATER_THAN": return s1 > s2
-            if op == "LESS_THAN":    return s1 < s2
-            if op == "IN":
-                if isinstance(val2, list):
-                    return s1 in [str(x) for x in val2]
-                return s1 in s2
-            return False
-
+        
         try:
-            # Date handling
             if f_type == FieldType.DATE.value:
-                if expected_val is None:
-                    return False
-                
-                d_actual = actual_val
-                if not isinstance(d_actual, (date, datetime)):
-                    d_actual = date.fromisoformat(str(actual_val).strip())
-
-                if operator == "IN":
-                    if isinstance(expected_val, list):
-                        # Convert every list element to date
-                        target_dates = []
-                        for x in expected_val:
-                            try:
-                                if isinstance(x, (date, datetime)):
-                                    target_dates.append(x)
-                                else:
-                                    target_dates.append(date.fromisoformat(str(x)))
-                            except ValueError:
-                                continue # Ignore wrong items
-                        return d_actual in target_dates
-                    else:
-                        # If 'IN' but not a real list
-                        return d_actual == date.fromisoformat(str(expected_val))
-                
-                d_expected = expected_val
-                if not isinstance(d_expected, (date, datetime)):
-                    d_expected = date.fromisoformat(str(expected_val))
-
-                if operator == "GREATER_THAN": return d_actual > d_expected
-                if operator == "LESS_THAN":    return d_actual < d_expected
-                if operator == "EQUALS":       return d_actual == d_expected
-                if operator == "NOT_EQUALS":   return d_actual != d_expected
-            
-            # Number handling
+                return self._compare_dates(actual_val, operator, expected_val)
             elif f_type == FieldType.NUMBER.value:
-                if expected_val is None:
-                    return False
-
-                n_actual = float(actual_val)
-
-                if operator == "IN":
-                    if isinstance(expected_val, list):
-                        # Convert every list element to date
-                        target_numbers = []
-                        for x in expected_val:
-                            try:
-                                target_numbers.append(float(x))
-                            except (ValueError, TypeError):
-                                continue # Ignore wrong items
-                        return n_actual in target_numbers
-                    else:
-                        # If 'IN' but not a real list
-                        return n_actual == float(expected_val)
-
-                n_expected = float(expected_val)
-
-                if operator == "GREATER_THAN": return n_actual > n_expected
-                if operator == "LESS_THAN":    return n_actual < n_expected
-                if operator == "EQUALS":       return n_actual == n_expected
-                if operator == "NOT_EQUALS":   return n_actual != n_expected
-            # String/boolean handling
+                return self._compare_numbers(actual_val, operator, expected_val)
             else:
-                return compare_as_string(actual_val, operator, expected_val)
+                return self._compare_strings(actual_val, operator, expected_val)
+        
+        except (ValueError, TypeError):
+            # Fallback to string comparison
+            return self._compare_strings(actual_val, operator, expected_val)
+    
 
-        except (ValueError, TypeError) as e:
-            # Fallback to String as extrema ratio
-            return compare_as_string(actual_val, operator, expected_val)
-
+    # Helper methods (type-specific comparisons)
+    
+    def _compare_strings(
+        self, 
+        actual: Any, 
+        operator: str, 
+        expected: Any
+    ) -> bool:
+        """String comparison logic."""
+        s_actual, s_expected = str(actual), str(expected)
+        
+        if operator == "EQUALS":
+            return s_actual == s_expected
+        elif operator == "NOT_EQUALS":
+            return s_actual != s_expected
+        elif operator == "GREATER_THAN":
+            return s_actual > s_expected
+        elif operator == "LESS_THAN":
+            return s_actual < s_expected
+        elif operator == "IN":
+            if isinstance(expected, list):
+                return s_actual in [str(x) for x in expected]
+            return s_actual in s_expected
+        
         return False
+    
+    def _compare_numbers(
+        self, 
+        actual: Any, 
+        operator: str, 
+        expected: Any
+    ) -> bool:
+        """Number comparison logic."""
+        if expected is None:
+            return False
+        
+        n_actual = float(actual)
+        
+        if operator == "IN":
+            if isinstance(expected, list):
+                target_numbers = []
+                for x in expected:
+                    try:
+                        target_numbers.append(float(x))
+                    except (ValueError, TypeError):
+                        continue
+                return n_actual in target_numbers
+            else:
+                return n_actual == float(expected)
+        
+        n_expected = float(expected)
+        
+        if operator == "GREATER_THAN":
+            return n_actual > n_expected
+        elif operator == "LESS_THAN":
+            return n_actual < n_expected
+        elif operator == "EQUALS":
+            return n_actual == n_expected
+        elif operator == "NOT_EQUALS":
+            return n_actual != n_expected
+        
+        return False
+    
+    def _compare_dates(
+        self, 
+        actual: Any, 
+        operator: str, 
+        expected: Any
+    ) -> bool:
+        """Date comparison logic."""
+        if expected is None:
+            return False
+        
+        # Parse actual date
+        d_actual = actual
+        if not isinstance(d_actual, (date, datetime)):
+            d_actual = date.fromisoformat(str(actual).strip())
+        
+        if operator == "IN":
+            if isinstance(expected, list):
+                target_dates = []
+                for x in expected:
+                    try:
+                        if isinstance(x, (date, datetime)):
+                            target_dates.append(x)
+                        else:
+                            target_dates.append(date.fromisoformat(str(x)))
+                    except ValueError:
+                        continue
+                return d_actual in target_dates
+            else:
+                return d_actual == date.fromisoformat(str(expected))
+        
+        # Parse expected date
+        d_expected = expected
+        if not isinstance(d_expected, (date, datetime)):
+            d_expected = date.fromisoformat(str(expected))
+        
+        if operator == "GREATER_THAN":
+            return d_actual > d_expected
+        elif operator == "LESS_THAN":
+            return d_actual < d_expected
+        elif operator == "EQUALS":
+            return d_actual == d_expected
+        elif operator == "NOT_EQUALS":
+            return d_actual != d_expected
+        
+        return False
+    
+
+    # Helper methods (utility)
+    
+    def _check_completeness(self, output_fields: List[FieldOutputState]) -> bool:
+        """Checks if all required visible fields have values and validation errors."""
+        for field in output_fields:
+            # Missing mandatory Value
+            if field.is_required and not field.is_hidden and field.current_value is None:
+                return False
+            
+            # Check validation errors
+            if field.error_message is not None:
+                return False
+            
+        return True

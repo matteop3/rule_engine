@@ -9,7 +9,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.PROJECT_DESCRIPTION,
-    version="0.2.0"
+    version="0.1.0"
 )
 
 # Router registration
@@ -24,4 +24,4 @@ app.include_router(configurations.router)
 
 @app.get("/")
 def health_check() -> dict[str, str]:
-    return {"status": "ok", "message": "Rule Engine is running"}
+    return {"status": "ok", "message": f"{settings.PROJECT_NAME} is running"}

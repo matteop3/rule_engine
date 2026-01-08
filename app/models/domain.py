@@ -18,7 +18,7 @@ class VersionStatus(str, enum.Enum):
 class UserRole(str, enum.Enum):
     ADMIN = "admin"     # God-user (all permissions)
     AUTHOR = "author"   # Product manager (manage everything except for users)
-    USER = "user"       # Regular user (use configurator and manage own Configurations)
+    USER = "user"       # Regular user (use configurator and manage own configurations)
 
 
 class FieldType(str, enum.Enum):

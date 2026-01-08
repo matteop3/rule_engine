@@ -114,6 +114,7 @@ def update_rule(
     """
     Updates an existing Rule.
     Includes validation to ensure target Field and Value belong to the correct Version.
+    Note: Changing 'entity_version_id' is forbidden. Rules belongs strictly to their creation version.
     """
     # Verify current user's role
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
@@ -125,37 +126,46 @@ def update_rule(
     # Security check: Ensure the Version containing this Rule is editable
     check_version_editable(db_rule.entity_version_id, db)
 
+    # The Version must be immutable
+    final_version_id = db_rule.entity_version_id
+
     # Determine final state of IDs (mix of new input and existing DB data)
-    final_version_id = rule_in.entity_version_id if rule_in.entity_version_id is not None else db_rule.entity_version_id
     final_target_field_id = rule_in.target_field_id if rule_in.target_field_id is not None else db_rule.target_field_id
     final_target_value_id = rule_in.target_value_id if rule_in.target_value_id is not None else db_rule.target_value_id
+    
+    # Validate target Field consistency
+    # If the user is changing the Field, we must verify it belongs to the same Rule's Version.
+    should_validate_field = (
+        rule_in.target_field_id is not None and 
+        rule_in.target_field_id != db_rule.target_field_id
+    )
 
-    # Validate consistency (target Field belongs to the Version)
-    # If the user is changing the Version or the Field, we must verify the relationship
-    if rule_in.entity_version_id or rule_in.target_field_id:
+    if should_validate_field:
         field_check = db.query(Field).filter(
             Field.id == final_target_field_id,
             Field.entity_version_id == final_version_id
         ).first()
+        
         if not field_check:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, 
-                detail="Target Field does not belong to the specified Entity Version."
+                detail=f"New Target Field (ID {final_target_field_id}) does not belong to the Entity Version of this Rule (ID {final_version_id})."
             )
-
-    # Validate consistency (target Value belongs to target Field)
-    # If the user is changing the Field or the Value, we must verify the relationship
+    
+    # Validate target Value consistency
+    # If the user is changing the Field or the Value, we must verify the relationship Value -> Field
     if rule_in.target_field_id or rule_in.target_value_id:
-        # Note: if target_value_id is None (Rule-level), we skip this check
+        # Check only if a target Value is set (Rule-level vs Value-level)
         if final_target_value_id is not None:
             value_check = db.query(Value).filter(
                 Value.id == final_target_value_id,
                 Value.field_id == final_target_field_id
             ).first()
+            
             if not value_check:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, 
-                    detail="Target Value does not belong to the Target Field."
+                    detail=f"Target Value (ID {final_target_value_id}) does not belong to the Target Field (ID {final_target_field_id})."
                 )
 
     # Apply updates

@@ -63,6 +63,7 @@ class RuleUpdate(BaseSchema):
     error_message: Optional[str] = None
     target_field_id: Optional[int] = None
     target_value_id: Optional[int] = None
+    # entity_version_id is not included because moving rules between versions is forbidden.
 
 class RuleRead(RuleBase):
     """ Output schema for API responses. """

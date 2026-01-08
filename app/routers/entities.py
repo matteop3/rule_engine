@@ -94,7 +94,7 @@ def update_entity(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Entity with this name already exists.")
     
     # Update fields
-    # exclude_unset=True ensures we don't overwrite existing data with None unless explicitly sent
+    # exclude_unset=True ensures don't overwrite existing data with None unless explicitly sent
     update_data = entity_in.model_dump(exclude_unset=True)
     
     for key, value in update_data.items():

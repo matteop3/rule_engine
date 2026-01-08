@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
-from app.models.domain import Field, EntityVersion, Value, Rule, User, UserRole
+from app.models.domain import Field, Value, Rule, User, UserRole
 from app.schemas import FieldCreate, FieldRead, FieldUpdate
 from .utils import check_version_editable
 
@@ -123,8 +123,7 @@ def update_field(
                 )
             )
         
-        # Do not clear the default_value here, otherwise 
-        # if the user has passed one it will be blanked.
+        # Do not clear the default_value here, otherwise if the user has passed one it will be blanked.
 
     # SCENARIO B: from free Field to a Field with a data source
     # Ensure the DB is cleaned of any old default_value
