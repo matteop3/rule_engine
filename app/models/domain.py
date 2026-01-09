@@ -187,6 +187,7 @@ class Configuration(Base, AuditMixin):
     entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_complete: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     
     # Payload: list of inputs [{"field_id": 1, "value": "Red"}, ...]
     data: Mapped[List[Dict[str, Any]]] = mapped_column(JSON)

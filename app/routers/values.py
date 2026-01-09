@@ -5,7 +5,7 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models.domain import Value, Field, Rule, User, UserRole
 from app.schemas import ValueCreate, ValueRead, ValueUpdate
-from .utils import check_version_editable
+from app.dependencies import fetch_version_by_id, get_editable_version
 
 router = APIRouter(
     prefix="/values",
@@ -30,8 +30,9 @@ def create_value(
             detail=f"Field with id {value_data.field_id} not found."
         )
 
-    # Security check: is the Version containing this Field editable?
-    check_version_editable(field.entity_version_id, db)
+    # Security check: is the version editable?
+    version = fetch_version_by_id(db, field.entity_version_id)
+    get_editable_version(version)
 
     # Prevent the creation of the Value if I am associating it with a free-value Field
     if field.is_free_value:
@@ -113,8 +114,9 @@ def update_value(
             detail="Corrupted Data: Value has no parent Field."
         )
 
-    # Security check
-    check_version_editable(parent_field.entity_version_id, db)
+    # Security check: is the version editable?
+    version = fetch_version_by_id(db, parent_field.entity_version_id)
+    get_editable_version(version)
 
     # If changing the Field_id, validate the new parent Field
     if value_in.field_id is not None and value_in.field_id != db_value.field_id:
@@ -185,8 +187,9 @@ def delete_value(
             detail="Corrupted Data: Value has no parent Field."
         )
 
-    # Security check
-    check_version_editable(parent_field.entity_version_id, db)
+    # Security check: is the version editable?
+    version = fetch_version_by_id(db, parent_field.entity_version_id)
+    get_editable_version(version)
 
     # Check for Rules targeting this value explicitly (target)
     rules_targeting_value = db.query(Rule).filter(Rule.target_value_id == value_id).count()

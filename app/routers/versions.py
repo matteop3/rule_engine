@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, get_version_or_404, validate_version_is_draft
 from app.models.domain import EntityVersion, VersionStatus, User, UserRole
 from app.schemas import VersionCreate, VersionRead, VersionUpdate, VersionClone
 from app.services.versioning import VersioningService
@@ -29,40 +29,6 @@ def get_versioning_service() -> VersioningService:
 # ============================================================
 # HELPERS
 # ============================================================
-
-def get_version_or_404(db: Session, version_id: int) -> EntityVersion:
-    """
-    Retrieves a version by ID.
-    
-    Raises:
-        HTTPException(404): If version doesn't exist
-    """
-    version = db.query(EntityVersion).filter(
-        EntityVersion.id == version_id
-    ).first()
-    
-    if not version:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="Version not found."
-        )
-    
-    return version
-
-
-def validate_version_is_draft(version: EntityVersion) -> None:
-    """
-    Enforces that a version is in DRAFT status.
-    
-    Raises:
-        HTTPException(409): If version is not DRAFT
-    """
-    if version.status != VersionStatus.DRAFT:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Operation not allowed on {version.status.value} version. Only DRAFT versions can be modified."
-        )
-
 
 def handle_service_error(e: ValueError) -> HTTPException:
     """
@@ -150,7 +116,7 @@ def read_version(
     """
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
     
-    return get_version_or_404(db, version_id)
+    return get_version_or_404(version_id)
 
 
 @router.post("/", response_model=VersionRead, status_code=status.HTTP_201_CREATED)
@@ -321,7 +287,7 @@ def update_version_metadata(
     """
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
     
-    version = get_version_or_404(db, version_id)
+    version = get_version_or_404(version_id)
     
     # Enforce DRAFT-only modification policy
     validate_version_is_draft(version)
@@ -371,7 +337,7 @@ def delete_version(
     """
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
     
-    version = get_version_or_404(db, version_id)
+    version = get_version_or_404(version_id)
     
     # Enforce DRAFT-only deletion policy
     if version.status != VersionStatus.DRAFT:

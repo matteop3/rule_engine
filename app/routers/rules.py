@@ -5,7 +5,7 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.models.domain import Rule, Field, Value, User, UserRole
 from app.schemas import RuleCreate, RuleRead, RuleUpdate
-from .utils import check_version_editable
+from app.dependencies import fetch_version_by_id, get_editable_version
 
 router = APIRouter(
     prefix="/rules",
@@ -26,8 +26,9 @@ def create_rule(
     # Verify current user's role
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
 
-    # Security check: ensure the version is in DRAFT status
-    check_version_editable(rule_data.entity_version_id, db)
+    # Security check: is the version editable?
+    version = fetch_version_by_id(db, rule_data.entity_version_id)
+    get_editable_version(version)
     
     # Validate target Field belongs to the Version
     target_field = db.query(Field).filter(
@@ -123,8 +124,9 @@ def update_rule(
     if not db_rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
 
-    # Security check: Ensure the Version containing this Rule is editable
-    check_version_editable(db_rule.entity_version_id, db)
+    # Security check: is the version editable?
+    version = fetch_version_by_id(db, db_rule.entity_version_id)
+    get_editable_version(version)
 
     # The Version must be immutable
     final_version_id = db_rule.entity_version_id
@@ -194,8 +196,9 @@ def delete_rule(
     if not db_rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
 
-    # Security check: ensure the version is editable before deleting
-    check_version_editable(db_rule.entity_version_id, db)
+    # Security check: is the version editable?
+    version = fetch_version_by_id(db, db_rule.entity_version_id)
+    get_editable_version(version)
 
     db.delete(db_rule)
     db.commit()

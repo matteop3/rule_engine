@@ -3,14 +3,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
-from app.models.domain import Field, Value, Rule, User, UserRole
+from app.models.domain import EntityVersion, Field, Value, Rule, User, UserRole
 from app.schemas import FieldCreate, FieldRead, FieldUpdate
-from .utils import check_version_editable
+from app.dependencies import fetch_version_by_id, get_editable_version
 
 router = APIRouter(
     prefix="/fields",
     tags=["Fields"]
 )
+
+
+# ============================================================
+# CRUD endpoints
+# ============================================================
 
 @router.get("/", response_model=List[FieldRead])
 def read_fields(
@@ -66,7 +71,8 @@ def create_field(
     require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
 
     # Security check: is the version editable?
-    check_version_editable(field_data.entity_version_id, db)
+    version = fetch_version_by_id(db, field_data.entity_version_id)
+    get_editable_version(version)
 
     # Ensure data consistency: default_value on Field model is allowed ONLY for free-text fields.
     if not field_data.is_free_value and field_data.default_value is not None:
@@ -103,7 +109,8 @@ def update_field(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found.")
 
     # Security check: is the parent version editable?
-    check_version_editable(db_field.entity_version_id, db)
+    version = fetch_version_by_id(db, db_field.entity_version_id)
+    get_editable_version(version)
 
     # State transition analysis
     old_is_free = db_field.is_free_value
@@ -177,8 +184,9 @@ def delete_field(
     if not db_field:
         raise HTTPException(status_code=404, detail="Field not found.")
 
-    # Security check
-    check_version_editable(db_field.entity_version_id, db)
+    # Security check: is the version editable?
+    version = fetch_version_by_id(db, db_field.entity_version_id)
+    get_editable_version(version)
 
     # Guardrail: check for Values
     values_count = db.query(Value).filter(Value.field_id == field_id).count()

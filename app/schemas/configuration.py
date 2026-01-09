@@ -17,6 +17,7 @@ class ConfigurationCreate(ConfigurationBase):
 class ConfigurationRead(ConfigurationBase, AuditSchemaMixin):
     id: str # UUID
     entity_version_id: int
+    is_complete: bool
 
 class ConfigurationUpdate(BaseSchema):
     """ Allows updating name or data, but not the version linkage. """
