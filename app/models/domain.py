@@ -1,6 +1,29 @@
-# app/models/domain.py
+"""
+Domain Models for Rule Engine.
+
+This module defines the core SQLAlchemy ORM models for the rule engine system:
+
+Entities:
+    - Entity: Logical containers for versioned configurations
+    - EntityVersion: Versioned snapshots with Fields and Rules
+    - Field: Configurable properties of entities
+    - Value: Possible values for Fields
+    - Rule: Business logic rules that control field behavior
+    - User: System users with role-based access control
+    - Configuration: User-saved configuration snapshots
+
+Enums:
+    - VersionStatus: Lifecycle states (DRAFT, PUBLISHED, ARCHIVED)
+    - UserRole: Access control roles (ADMIN, AUTHOR, USER)
+    - FieldType: Data types for fields (STRING, NUMBER, BOOLEAN, DATE)
+    - RuleType: Rule categories (VISIBILITY, AVAILABILITY, EDITABILITY, MANDATORY, VALIDATION)
+
+All models use SQLAlchemy 2.0 Mapped syntax with type hints for improved type safety.
+The AuditMixin provides automatic tracking of creation/update timestamps and users.
+"""
+
 from typing import List, Dict, Optional, Any
-from sqlalchemy import String, Boolean, ForeignKey, Integer, Text, JSON, DateTime, func
+from sqlalchemy import String, Boolean, ForeignKey, Integer, Text, JSON, DateTime, func, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 from app.database import Base
@@ -8,20 +31,42 @@ import enum
 import uuid
 
 
-# --- ENUMS ---
+# ============================================================
+# ENUMS
+# ============================================================
+
 class VersionStatus(str, enum.Enum):
-    DRAFT = "DRAFT"         # On working, editable
-    PUBLISHED = "PUBLISHED" # Active, read-only, used by the engine
-    ARCHIVED = "ARCHIVED"   # Old, read-only, preserved for history
+    """
+    Lifecycle status for EntityVersion.
+
+    - DRAFT: Work in progress, editable by ADMIN/AUTHOR
+    - PUBLISHED: Active version, read-only, used by rule engine
+    - ARCHIVED: Historical version, read-only, preserved for audit trail
+    """
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+    ARCHIVED = "ARCHIVED"
 
 
 class UserRole(str, enum.Enum):
-    ADMIN = "admin"     # God-user (all permissions)
-    AUTHOR = "author"   # Product manager (manage everything except for users)
-    USER = "user"       # Regular user (use configurator and manage own configurations)
+    """
+    Role-based access control levels.
+
+    - ADMIN: Full system access (all permissions including user management)
+    - AUTHOR: Product manager (manage entities, versions, rules, configurations)
+    - USER: Regular user (use configurator and manage own configurations)
+    """
+    ADMIN = "admin"
+    AUTHOR = "author"
+    USER = "user"
 
 
 class FieldType(str, enum.Enum):
+    """
+    Data types for Field values.
+
+    Defines the expected type of user input for a field.
+    """
     STRING = "string"
     NUMBER = "number"
     BOOLEAN = "boolean"
@@ -29,172 +74,351 @@ class FieldType(str, enum.Enum):
 
 
 class RuleType(str, enum.Enum):
-    VISIBILITY = "visibility"     # Show/hide Field
-    AVAILABILITY = "availability" # Filter available options (multi-choice fields)
-    EDITABILITY = "editability"   # Read-only / Writable
-    MANDATORY = "mandatory"       # Required / Optional
-    VALIDATION = "validation"     # Content validity
+    """
+    Categories of business logic rules.
+
+    - VISIBILITY: Controls whether a field is shown or hidden
+    - AVAILABILITY: Filters available options for multi-choice fields
+    - EDITABILITY: Controls whether a field is read-only or writable
+    - MANDATORY: Controls whether a field is required or optional
+    - VALIDATION: Validates field content against business rules
+    """
+    VISIBILITY = "visibility"
+    AVAILABILITY = "availability"
+    EDITABILITY = "editability"
+    MANDATORY = "mandatory"
+    VALIDATION = "validation"
 
 
-# --- MIXINS ---
+# ============================================================
+# MIXINS
+# ============================================================
+
 class AuditMixin:
-    """ Add creation and editing automatic tracking. """
+    """
+    Provides automatic audit trail tracking for models.
+
+    Adds timestamp fields (created_at, updated_at) and user tracking
+    (created_by_id, updated_by_id) to any model that inherits this mixin.
+
+    Timestamps are automatically managed by SQLAlchemy:
+    - created_at: Set on insert via server_default
+    - updated_at: Set on update via onupdate
+    """
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
-        server_default=func.now(), 
-        nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="Timestamp when record was created"
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), 
-        onupdate=func.now(), 
-        nullable=True
+        DateTime(timezone=True),
+        onupdate=func.now(),
+        nullable=True,
+        comment="Timestamp when record was last updated"
     )
-    created_by_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
-    updated_by_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_by_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment="ID of user who created this record"
+    )
+    updated_by_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment="ID of user who last updated this record"
+    )
 
 
-# --- TABLES ---
+# ============================================================
+# DOMAIN MODELS
+# ============================================================
+
 class Entity(Base, AuditMixin):
-    """ Entities logical container. """
+    """
+    Entity: Logical container for versioned configurations.
+
+    An Entity represents a configurable product or domain object (e.g., "Car", "Laptop").
+    Each Entity can have multiple versions to support iterative development and A/B testing.
+
+    Relationships:
+        - versions: One-to-many with EntityVersion (cascade delete)
+    """
     __tablename__ = "entities"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    # Relation 1-to-N with its versions
-    versions: Mapped[List["EntityVersion"]] = relationship(back_populates="entity", cascade="all, delete-orphan")
+
+    # Relationships
+    versions: Mapped[List["EntityVersion"]] = relationship(
+        back_populates="entity",
+        cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Entity id={self.id} name='{self.name}'>"
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class EntityVersion(Base, AuditMixin):
     """
-    A specific snapshot of the Entity configuration. 
-    It contains the Fields and Rules valid for this version.
+    EntityVersion: A specific snapshot of an Entity's configuration.
+
+    Represents a version of an Entity with its associated Fields and Rules.
+    Supports versioning workflow: DRAFT → PUBLISHED → ARCHIVED.
+    Only one PUBLISHED version per Entity is allowed at a time.
+
+    Relationships:
+        - entity: Many-to-one with Entity
+        - fields: One-to-many with Field (cascade delete)
+        - rules: One-to-many with Rule (cascade delete)
+        - configurations: One-to-many with Configuration (cascade delete)
     """
     __tablename__ = "entity_versions"
+    __table_args__ = (
+        Index('ix_entity_status', 'entity_id', 'status'),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     entity_id: Mapped[int] = mapped_column(ForeignKey("entities.id"))
-    
-    version_number: Mapped[int] = mapped_column(Integer)
+
+    version_number: Mapped[int] = mapped_column(Integer, comment="Sequential version number")
     status: Mapped[VersionStatus] = mapped_column(String(20), default=VersionStatus.DRAFT)
     changelog: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    # Relations
+    # Relationships
     entity: Mapped["Entity"] = relationship(back_populates="versions")
-    fields: Mapped[List["Field"]] = relationship(back_populates="entity_version", cascade="all, delete-orphan")
-    rules: Mapped[List["Rule"]] = relationship(back_populates="entity_version", cascade="all, delete-orphan")
+    fields: Mapped[List["Field"]] = relationship(
+        back_populates="entity_version",
+        cascade="all, delete-orphan"
+    )
+    rules: Mapped[List["Rule"]] = relationship(
+        back_populates="entity_version",
+        cascade="all, delete-orphan"
+    )
+    configurations: Mapped[List["Configuration"]] = relationship(
+        back_populates="entity_version",
+        cascade="all, delete-orphan"
+    )
 
-    # By deleting a DRAFT Version all associated Configurations are deleted.
-    configurations: Mapped[List["Configuration"]] = relationship(back_populates="entity_version", cascade="all, delete-orphan")
+    def __repr__(self) -> str:
+        return (
+            f"<EntityVersion id={self.id} entity_id={self.entity_id} "
+            f"v{self.version_number} status={self.status.value}>"
+        )
+
+    def __str__(self) -> str:
+        return f"v{self.version_number} ({self.status.value})"
 
 
 class Field(Base):
-    """ Represents a choice of an Entity. """
+    """
+    Field: Represents a configurable property of an Entity.
+
+    A Field can be either:
+    - Free-value: User enters arbitrary text (default_value on Field)
+    - Option-based: User selects from predefined Values (default via Value.is_default)
+
+    Relationships:
+        - entity_version: Many-to-one with EntityVersion
+        - values: One-to-many with Value (cascade delete)
+    """
     __tablename__ = "fields"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"))
-    
-    name: Mapped[str] = mapped_column(String(100))
-    label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    data_type: Mapped[str] = mapped_column(String(50), default="string")
+
+    name: Mapped[str] = mapped_column(String(100), comment="Internal field name")
+    label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Display label for UI")
+    data_type: Mapped[FieldType] = mapped_column(String(50), default=FieldType.STRING)
     is_required: Mapped[bool] = mapped_column(Boolean, default=False)
     is_readonly: Mapped[bool] = mapped_column(Boolean, default=False)
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_free_value: Mapped[bool] = mapped_column(Boolean, default=False)    
-    default_value: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    
-    # Ordering purpose
-    step: Mapped[int] = mapped_column(Integer, default=0)
-    sequence: Mapped[int] = mapped_column(Integer, default=0)
+    is_free_value: Mapped[bool] = mapped_column(Boolean, default=False, comment="If True, user can enter any value")
+    default_value: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Default value for free-value fields only"
+    )
 
-    # Relations
+    # UI ordering: step groups fields into sections, sequence orders fields within a step
+    step: Mapped[int] = mapped_column(Integer, default=0, comment="Grouping step for UI sections")
+    sequence: Mapped[int] = mapped_column(Integer, default=0, comment="Display order within step")
+
+    # Relationships
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="fields")
-    values: Mapped[List["Value"]] = relationship(back_populates="field", cascade="all, delete-orphan")
+    values: Mapped[List["Value"]] = relationship(
+        back_populates="field",
+        cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Field id={self.id} name='{self.name}' "
+            f"type={self.data_type.value} is_free_value={self.is_free_value}>"
+        )
+
+    def __str__(self) -> str:
+        return self.label or self.name
 
 
 class Value(Base):
-    """ Represents a possible value of a specific Field. """
+    """
+    Value: Represents a possible option for an option-based Field.
+
+    Values are only used when Field.is_free_value is False.
+    One Value can be marked as default via is_default flag.
+
+    Relationships:
+        - field: Many-to-one with Field
+    """
     __tablename__ = "values"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     field_id: Mapped[int] = mapped_column(ForeignKey("fields.id"))
-    
-    value: Mapped[str] = mapped_column(String(255))
-    label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    value: Mapped[str] = mapped_column(String(255), comment="Internal value")
+    label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Display label for UI")
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Relations
+    # Relationships
     field: Mapped["Field"] = relationship(back_populates="values")
+
+    def __repr__(self) -> str:
+        return f"<Value id={self.id} field_id={self.field_id} value='{self.value}' is_default={self.is_default}>"
+
+    def __str__(self) -> str:
+        return self.label or self.value
 
 
 class Rule(Base):
     """
-    Represents a specific condition to make a Value 
-    avalable or a Field visible and editable.
+    Rule: Business logic that controls Field and Value behavior.
+
+    Rules define conditional logic to control field visibility, availability,
+    editability, mandatory state, or validation based on other field values.
+
+    Condition structure: {"criteria": [{"field_id": 1, "operator": "eq", "value": "Red"}, ...]}
+
+    Relationships:
+        - entity_version: Many-to-one with EntityVersion
+        - target_field: Many-to-one with Field (the field this rule affects)
+        - target_value: Many-to-one with Value (optional, specific value this rule affects)
     """
     __tablename__ = "rules"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"))
-    
+
     target_field_id: Mapped[int] = mapped_column(ForeignKey("fields.id"))
     target_value_id: Mapped[Optional[int]] = mapped_column(ForeignKey("values.id"), nullable=True)
-    
-    rule_type: Mapped[str] = mapped_column(String(50), default=RuleType.AVAILABILITY)    
+
+    rule_type: Mapped[RuleType] = mapped_column(String(50), default=RuleType.AVAILABILITY)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    conditions: Mapped[dict] = mapped_column(JSON)
+    conditions: Mapped[dict] = mapped_column(JSON, comment="JSON condition criteria")
     error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
-    # Relations
+    # Relationships
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="rules")
     target_field: Mapped["Field"] = relationship(foreign_keys=[target_field_id])
     target_value: Mapped["Value"] = relationship(foreign_keys=[target_value_id])
 
+    def __repr__(self) -> str:
+        return (
+            f"<Rule id={self.id} type={self.rule_type.value} "
+            f"target_field={self.target_field_id} target_value={self.target_value_id}>"
+        )
+
+    def __str__(self) -> str:
+        return f"{self.rule_type.value}: {self.description or 'Unnamed rule'}"
+
 
 class User(Base, AuditMixin):
-    """ Represents a user of the systems. """
+    """
+    User: System user with role-based access control.
+
+    Users authenticate via email/password and have one of three roles:
+    ADMIN, AUTHOR, or USER (see UserRole enum for details).
+
+    Soft delete: is_active=False instead of actual deletion.
+
+    Relationships:
+        - configurations: One-to-many with Configuration (cascade delete)
+    """
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    
+
     role: Mapped[UserRole] = mapped_column(String(50), default=UserRole.USER)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # Relations
+    # Relationships
     configurations: Mapped[List["Configuration"]] = relationship(
-        back_populates="owner", 
+        back_populates="owner",
         cascade="all, delete-orphan",
-        foreign_keys="[Configuration.user_id]" # Specify which FK use
+        foreign_keys="[Configuration.user_id]"
     )
+
+    def __repr__(self) -> str:
+        return f"<User id={self.id} email='{self.email}' role={self.role.value} is_active={self.is_active}>"
+
+    def __str__(self) -> str:
+        return self.email
 
 
 class Configuration(Base, AuditMixin):
     """
-    Stores a user's session/quote.
-    Uses UUID for secure external access.
-    Stores raw input data (re-hydration strategy).
+    Configuration: User-saved configuration snapshot.
+
+    Stores a user's input state for a specific EntityVersion.
+    Uses UUID for secure external access (shareable links).
+    Stores raw input data as JSON for re-hydration strategy.
+
+    Data format: [{"field_id": 1, "value": "Red"}, {"field_id": 2, "value": "Large"}, ...]
+
+    Relationships:
+        - entity_version: Many-to-one with EntityVersion
+        - owner: Many-to-one with User
     """
     __tablename__ = "configurations"
+    __table_args__ = (
+        Index('ix_user_version', 'user_id', 'entity_version_id'),
+        Index('ix_complete', 'is_complete'),
+    )
 
-    # UUID primary key
+    # UUID primary key for secure external access
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    
+
     entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
-    name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    is_complete: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    
-    # Payload: list of inputs [{"field_id": 1, "value": "Red"}, ...]
-    data: Mapped[List[Dict[str, Any]]] = mapped_column(JSON)
+    name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="User-defined name")
+    is_complete: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        index=True,
+        comment="True if all required fields are filled and validation passes"
+    )
 
-    # Relations
+    # Payload: list of field inputs
+    data: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, comment="Raw input data for re-hydration")
+
+    # Relationships
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="configurations")
     owner: Mapped["User"] = relationship(
         back_populates="configurations",
-        foreign_keys=[user_id] # Specify which FK use
+        foreign_keys=[user_id]
     )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Configuration id={self.id} user_id={self.user_id} "
+            f"version_id={self.entity_version_id} is_complete={self.is_complete}>"
+        )
+
+    def __str__(self) -> str:
+        return self.name or f"Configuration {self.id[:8]}"

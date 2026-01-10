@@ -1,20 +1,31 @@
+import logging
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-import logging
+
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_rule_engine_service, fetch_version_by_id
 from app.schemas.engine import CalculationRequest, CalculationResponse
-from app.models.domain import User, UserRole, VersionStatus, EntityVersion
+from app.models.domain import User, UserRole, VersionStatus
 from app.services.rule_engine import RuleEngineService
-from app.dependencies import get_rule_engine_service
+
+
+# ============================================================
+# LOGGING SETUP
+# ============================================================
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# ROUTER SETUP
+# ============================================================
 
 router = APIRouter(
     prefix="/engine",
     tags=["Engine"]
 )
-
-logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -95,54 +106,61 @@ def calculate_state(
 ):
     """
     Triggers the Rule Engine calculation.
-    
+
     Workflow:
     1. Resolves target version (explicit or PUBLISHED by default)
     2. Evaluates all rules in waterfall sequence
     3. Returns calculated field states with available options
-    
+
     Access Control:
     - USER: Can only calculate on PUBLISHED versions
     - AUTHOR/ADMIN: Can calculate on any version (including DRAFT for preview)
-    
+
     Request Body:
         entity_id: The entity to calculate
         entity_version_id (optional): Specific version to use (defaults to PUBLISHED)
         current_state: List of field inputs (field_id + value)
-    
+
     Returns:
         CalculationResponse: Full field states with:
         - available_options (filtered by rules)
         - is_required, is_readonly, is_hidden flags
         - validation errors
         - is_complete flag (all required fields filled and no validation errors)
-    
+
     Raises:
         HTTPException(400): Invalid input data or business logic error
         HTTPException(403): User lacks permission for requested version
-        HTTPException(404): Entity or version not found
+        HTTPException(404): Entity or version not found (via fetch_version_by_id)
         HTTPException(500): Unexpected server error
     """
+    logger.info(
+        f"Calculation request by user {current_user.id} (role: {current_user.role.value}): "
+        f"entity_id={request.entity_id}, version_id={request.entity_version_id or 'PUBLISHED'}"
+    )
 
     # Access control
     if request.entity_version_id is not None:
-        version = db.query(EntityVersion).filter(
-            EntityVersion.id == request.entity_version_id
-        ).first()
-        
-        # Fail immediately if version doesn't exist
-        if not version:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Entity Version {request.entity_version_id} not found."
-            )
-        
-        # Safely validate permissions
+        # Fetch version (raises 404 if not found)
+        version = fetch_version_by_id(db, request.entity_version_id)
+
+        # Validate permissions
         validate_user_can_calculate_version(current_user, request, version.status)
-    
+        logger.debug(
+            f"Access granted: user {current_user.id} can calculate on version {version.id} "
+            f"(status: {version.status.value})"
+        )
+
     # Calculation
     try:
         response: CalculationResponse = engine_service.calculate_state(db, request)
+
+        logger.info(
+            f"Calculation successful for user {current_user.id}: "
+            f"entity_id={request.entity_id}, is_complete={response.is_complete}, "
+            f"fields_count={len(response.fields)}"
+        )
+
         return response
     
     except ValueError as e:
