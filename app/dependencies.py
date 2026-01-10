@@ -21,7 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import get_db
 from app.services.auth import AuthService
-from app.models.domain import User, UserRole, EntityVersion, VersionStatus, Entity, Field
+from app.models.domain import User, UserRole, EntityVersion, VersionStatus, Entity, Field, Rule, Value
 from app.core.security import SECRET_KEY, ALGORITHM
 from app.services.rule_engine import RuleEngineService
 from app.services.users import UserService
@@ -233,6 +233,136 @@ def fetch_field_by_id(db: Session, field_id: int) -> Field:
         )
     return field
 
+def fetch_rule_by_id(db: Session, rule_id: int) -> Rule:
+    """
+    Helper: Get a Rule by its ID.
+    Raises:
+        HTTPException(400): Invalid ID
+        HTTPException(404): If not found
+    """
+    if rule_id <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid rule ID"
+        )
+
+    rule = db.query(Rule).filter(Rule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rule {rule_id} not found."
+        )
+    return rule
+
+def fetch_value_by_id(db: Session, value_id: int) -> Value:
+    """
+    Helper: Get a Value by its ID.
+    Raises:
+        HTTPException(400): Invalid ID
+        HTTPException(404): If not found
+    """
+    if value_id <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid value ID"
+        )
+
+    value = db.query(Value).filter(Value.id == value_id).first()
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Value {value_id} not found."
+        )
+    return value
+
+def validate_field_belongs_to_version(db: Session, field_id: int, version_id: int) -> Field:
+    """
+    Helper: Validates that a Field belongs to a specific Version.
+    Raises:
+        HTTPException(400): If field doesn't belong to version
+    Returns:
+        Field: The validated field
+    """
+    field = db.query(Field).filter(
+        Field.id == field_id,
+        Field.entity_version_id == version_id
+    ).first()
+
+    if not field:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Field {field_id} not found in Version {version_id}."
+        )
+    return field
+
+def validate_value_belongs_to_field(db: Session, value_id: int, field_id: int) -> Value:
+    """
+    Helper: Validates that a Value belongs to a specific Field.
+    Raises:
+        HTTPException(400): If value doesn't belong to field
+    Returns:
+        Value: The validated value
+    """
+    value = db.query(Value).filter(
+        Value.id == value_id,
+        Value.field_id == field_id
+    ).first()
+
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Value {value_id} not found or does not belong to Field {field_id}."
+        )
+    return value
+
+def validate_value_not_used_in_rules(db: Session, value: Value) -> None:
+    """
+    Helper: Validates that a Value is not used in any Rules.
+    Checks both explicit target_value_id and implicit usage in conditions JSON.
+
+    Raises:
+        HTTPException(409): If value is used in rules
+    """
+    # Check explicit usage (target_value_id)
+    rules_targeting_value = db.query(Rule).filter(Rule.target_value_id == value.id).count()
+    if rules_targeting_value > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete Value because it is the explicit target of {rules_targeting_value} Rules."
+        )
+
+    # Deep scan: check usage in JSON conditions (implicit usage)
+    parent_field = value.field
+    if not parent_field:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Corrupted Data: Value has no parent Field."
+        )
+
+    entity_rules = db.query(Rule).filter(
+        Rule.entity_version_id == parent_field.entity_version_id
+    ).all()
+
+    value_str_to_check = str(value.value)
+
+    for rule in entity_rules:
+        criteria_list = rule.conditions.get("criteria", [])
+
+        for criterion in criteria_list:
+            crit_field_id = criterion.get("field_id")
+
+            if crit_field_id == value.field_id:
+                crit_value = str(criterion.get("value", ""))
+
+                if crit_value == value_str_to_check:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Cannot delete Value '{value.value}' because it is used as a condition criteria "
+                            f"in Rule ID {rule.id}. Please update or delete that rule first."
+                        )
+                    )
+
 def validate_version_is_draft(version: EntityVersion) -> None:
     """
     Helper: Validates a version is DRAFT.
@@ -363,3 +493,74 @@ def get_editable_field(
     version = fetch_version_by_id(db, field.entity_version_id)
     validate_version_is_draft(version)
     return field
+
+
+# ============================================================
+# RULES DEPENDENCIES (HTTP context)
+# ============================================================
+
+def get_rule_or_404(
+    rule_id: Annotated[int, Path(description="Rule ID", gt=0)],
+    db: Session = Depends(get_db)
+) -> Rule:
+    """
+    Dependency: Retrieves a Rule by ID.
+    Raises:
+        HTTPException(400): Invalid ID
+        HTTPException(404): If rule doesn't exist
+    """
+    return fetch_rule_by_id(db, rule_id)
+
+def get_editable_rule(
+    rule: Rule = Depends(get_rule_or_404),
+    db: Session = Depends(get_db)
+) -> Rule:
+    """
+    Dependency: Retrieves a Rule and validates its version is DRAFT.
+
+    Raises:
+        HTTPException(404): If rule doesn't exist
+        HTTPException(409): If version is not DRAFT
+    """
+    version = fetch_version_by_id(db, rule.entity_version_id)
+    validate_version_is_draft(version)
+    return rule
+
+
+# ============================================================
+# VALUES DEPENDENCIES (HTTP context)
+# ============================================================
+
+def get_value_or_404(
+    value_id: Annotated[int, Path(description="Value ID", gt=0)],
+    db: Session = Depends(get_db)
+) -> Value:
+    """
+    Dependency: Retrieves a Value by ID.
+    Raises:
+        HTTPException(400): Invalid ID
+        HTTPException(404): If value doesn't exist
+    """
+    return fetch_value_by_id(db, value_id)
+
+def get_editable_value(
+    value: Value = Depends(get_value_or_404),
+    db: Session = Depends(get_db)
+) -> Value:
+    """
+    Dependency: Retrieves a Value and validates its version is DRAFT.
+
+    Raises:
+        HTTPException(404): If value doesn't exist
+        HTTPException(409): If version is not DRAFT
+    """
+    parent_field = value.field
+    if not parent_field:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Corrupted Data: Value has no parent Field."
+        )
+
+    version = fetch_version_by_id(db, parent_field.entity_version_id)
+    validate_version_is_draft(version)
+    return value

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_role, get_user_service, get_user_or_404
+from app.exceptions import DatabaseError
 from app.models.domain import User, UserRole
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.users import UserService
@@ -54,7 +55,13 @@ def create_user(
         )
 
     # Create new User
-    new_user = user_service.create_user(db, user_in, current_user.id)
+    try:
+        new_user = user_service.create_user(db, user_in, current_user.id)
+    except DatabaseError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred"
+        )
 
     logger.info(f"User {new_user.id} created successfully: email={user_in.email}, role={user_in.role.value}")
 
@@ -135,7 +142,13 @@ def update_user(
             logger.warning(f"Update user {user.id} failed: email {user_in.email} already in use")
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Email already in use.")
 
-    updated_user = user_service.update_user(db, user, user_in, current_user.id)
+    try:
+        updated_user = user_service.update_user(db, user, user_in, current_user.id)
+    except DatabaseError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred"
+        )
 
     logger.info(f"User {user.id} updated successfully by admin {current_user.id}")
 
@@ -163,7 +176,13 @@ def delete_user(
             detail="You cannot delete your own account."
         )
 
-    user_service.soft_delete_user(db, user, current_user.id)
+    try:
+        user_service.soft_delete_user(db, user, current_user.id)
+    except DatabaseError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred"
+        )
 
     logger.info(f"User {user.id} soft-deleted successfully by admin {current_user.id}")
 

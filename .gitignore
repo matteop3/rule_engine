@@ -5,9 +5,15 @@ __pycache__/
 .pytest_cache/
 venv/
 .venv/
+*.egg-info/
+dist/
+build/
+.eggs/
 
 # Environment variables
 .env
+.env.local
+.env.*.local
 
 # Database
 *.db
@@ -16,3 +22,22 @@ venv/
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# mypy / type checking
+.mypy_cache/
+
+# OS
+.DS_Store
+Thumbs.db

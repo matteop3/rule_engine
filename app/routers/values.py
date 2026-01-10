@@ -1,41 +1,146 @@
+import logging
 from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
-from app.models.domain import Value, Field, Rule, User, UserRole
+from app.dependencies import (
+    require_admin_or_author,
+    fetch_version_by_id,
+    fetch_field_by_id,
+    validate_version_is_draft,
+    validate_value_not_used_in_rules,
+    get_value_or_404,
+    get_editable_value,
+    db_transaction
+)
+from app.models.domain import Value, Field, User
 from app.schemas import ValueCreate, ValueRead, ValueUpdate
-from app.dependencies import fetch_version_by_id, get_editable_version
+
+
+# ============================================================
+# LOGGING SETUP
+# ============================================================
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# ROUTER SETUP
+# ============================================================
 
 router = APIRouter(
     prefix="/values",
     tags=["Values"]
 )
 
+
+# ============================================================
+# ENDPOINTS
+# ============================================================
+
+@router.get("/", response_model=List[ValueRead])
+def list_values(
+    field_id: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_author)
+):
+    """
+    Retrieve Values for a specific Field.
+
+    Access Control:
+        - Only ADMIN and AUTHOR can view values
+
+    Query Parameters:
+        field_id: Filter by field (optional)
+        skip: Pagination offset
+        limit: Maximum results (max 100)
+
+    Returns:
+        List[ValueRead]: List of values
+    """
+    logger.info(
+        f"Listing values by user {current_user.id}: "
+        f"field={field_id}, skip={skip}, limit={limit}"
+    )
+
+    # Cap limit to prevent abuse
+    original_limit = limit
+    limit = min(limit, 100)
+
+    if original_limit > 100:
+        logger.warning(f"Limit capped from {original_limit} to 100")
+
+    query = db.query(Value)
+
+    if field_id:
+        query = query.filter(Value.field_id == field_id)
+
+    values = query.offset(skip).limit(limit).all()
+
+    logger.info(f"Returning {len(values)} values")
+
+    return values
+
+
+@router.get("/{value_id}", response_model=ValueRead)
+def read_value(
+    value: Value = Depends(get_value_or_404),
+    current_user: User = Depends(require_admin_or_author)
+):
+    """
+    Retrieve a single Value.
+
+    Access Control:
+        - Only ADMIN and AUTHOR can view value details
+
+    Returns:
+        ValueRead: The requested value
+    """
+    logger.debug(f"Reading value {value.id} by user {current_user.id}")
+    return value
+
+
 @router.post("/", response_model=ValueRead, status_code=status.HTTP_201_CREATED)
 def create_value(
-    value_data: ValueCreate, 
+    value_data: ValueCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(require_admin_or_author)
 ):
-    """ Create a new Value related to a Field. """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+    """
+    Create a new Value related to a Field.
+
+    Restrictions:
+        - The version must be DRAFT
+        - Parent Field must exist
+        - Cannot create values for free-value Fields
+
+    Access Control:
+        - Only ADMIN and AUTHOR can create values
+
+    Returns:
+        ValueRead: The created value
+    """
+    logger.info(
+        f"Creating value for field {value_data.field_id} "
+        f"by user {current_user.id} (role: {current_user.role.value})"
+    )
 
     # Check integrity: does parent Field exist?
-    field = db.query(Field).filter(Field.id == value_data.field_id).first()
-    if not field:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail=f"Field with id {value_data.field_id} not found."
-        )
+    field = fetch_field_by_id(db, value_data.field_id)
 
     # Security check: is the version editable?
     version = fetch_version_by_id(db, field.entity_version_id)
-    get_editable_version(version)
+    validate_version_is_draft(version)
 
-    # Prevent the creation of the Value if I am associating it with a free-value Field
+    # Prevent creation of Value for free-value Fields
     if field.is_free_value:
+        logger.warning(
+            f"Value creation failed: field {field.id} ('{field.name}') is free-value"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -45,97 +150,76 @@ def create_value(
         )
 
     # Value creation
-    new_value = Value(**value_data.model_dump()) 
-    
-    db.add(new_value)
-    db.commit()
+    with db_transaction(db, f"create_value for field {field.id}"):
+        new_value = Value(**value_data.model_dump())
+        db.add(new_value)
+        db.flush()
+
+        logger.info(
+            f"Value {new_value.id} created successfully: "
+            f"value='{value_data.value}', field={field.id}"
+        )
+
     db.refresh(new_value)
-    
     return new_value
 
 
-@router.get("/", response_model=List[ValueRead])
-def read_values(
-    field_id: Optional[int] = None, 
-    skip: int = 0, 
-    limit: int = 100, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
-):
-    """ Retrieve the values of a Field. """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
-
-    query = db.query(Value)
-    
-    if field_id:
-        query = query.filter(Value.field_id == field_id)
-        
-    return query.offset(skip).limit(limit).all()
-
-
-@router.get("/{value_id}", response_model=ValueRead)
-def read_value(
-    value_id: int, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
-):
-    """ Retrieve a single Value. """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
-
-    value = db.query(Value).filter(Value.id == value_id).first()
-    if not value:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Value not found.")
-    return value
-
-
-@router.put("/{value_id}", response_model=ValueRead)
+@router.patch("/{value_id}", response_model=ValueRead)
 def update_value(
-    value_id: int, 
-    value_in: ValueUpdate, 
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user) # Auth required
+    value_update: ValueUpdate,
+    value: Value = Depends(get_editable_value),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_author)
 ):
-    """ Updates an existing Value. """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+    """
+    Updates an existing Value.
 
-    db_value = db.query(Value).filter(Value.id == value_id).first()
-    if not db_value:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Value not found.")
+    Restrictions:
+        - The version must be DRAFT
+        - Cannot move value to a different version (must belong to same version)
+        - Cannot move value to a free-value Field
 
-    # To check security, we need the parent field to access the entity_version_id
-    parent_field = db_value.field
+    Access Control:
+        - Only ADMIN and AUTHOR can update values
+
+    Returns:
+        ValueRead: The updated value
+    """
+    logger.info(
+        f"Updating value {value.id} by user {current_user.id} "
+        f"(role: {current_user.role.value})"
+    )
+
+    parent_field = value.field
     if not parent_field:
-        # Should not happen if DB integrity is preserved
+        logger.error(f"Value {value.id} has no parent field")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Corrupted Data: Value has no parent Field."
         )
 
-    # Security check: is the version editable?
-    version = fetch_version_by_id(db, parent_field.entity_version_id)
-    get_editable_version(version)
-
     # If changing the Field_id, validate the new parent Field
-    if value_in.field_id is not None and value_in.field_id != db_value.field_id:
-        new_field = db.query(Field).filter(Field.id == value_in.field_id).first()
-        if not new_field:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail="New Field not found."
-            )
-        
+    if value_update.field_id is not None and value_update.field_id != value.field_id:
+        logger.debug(f"Validating field change from {value.field_id} to {value_update.field_id}")
+
+        new_field = fetch_field_by_id(db, value_update.field_id)
+
         # Check integrity: cannot move value to a Free Field
         if new_field.is_free_value:
+            logger.warning(
+                f"Update value {value.id} failed: cannot move to free-value field {new_field.id}"
+            )
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
-                detail="Cannot assign Value to a Field with a free value."
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot assign Value to a Field with free value."
             )
 
-        # If new_field does not belongs to the same version -> Error
+        # If new_field does not belong to the same version -> Error
         if new_field.entity_version_id != parent_field.entity_version_id:
+            logger.warning(
+                f"Update value {value.id} failed: version mismatch "
+                f"({parent_field.entity_version_id} vs {new_field.entity_version_id})"
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -146,86 +230,56 @@ def update_value(
             )
 
     # Apply updates
-    update_data = value_in.model_dump(exclude_unset=True)
+    update_data = value_update.model_dump(exclude_unset=True)
 
-    for key, value in update_data.items():
-        setattr(db_value, key, value)
+    if not update_data:
+        logger.warning(f"Empty update request for value {value.id}")
+        return value
 
-    # Save
-    db.commit()
-    db.refresh(db_value)
+    # Update fields
+    with db_transaction(db, f"update_value {value.id}"):
+        for key, val in update_data.items():
+            setattr(value, key, val)
 
-    return db_value
+        logger.info(f"Value {value.id} updated successfully")
+
+    db.refresh(value)
+    return value
 
 
 @router.delete("/{value_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_value(
-    value_id: int, 
+    value: Value = Depends(get_editable_value),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(require_admin_or_author)
 ):
     """
     Delete a Value.
-    Strict policy: 
-    1. Cannot delete if it is the explicit target of a Rule.
-    2. Cannot delete if it is used as a condition criteria in any Rule (deep scan).
+
+    Strict Policy:
+        - Cannot delete if it is the explicit target of a Rule
+        - Cannot delete if it is used as a condition criteria in any Rule (deep scan)
+        - The version must be DRAFT
+
+    Access Control:
+        - Only ADMIN and AUTHOR can delete values
+
+    Returns:
+        204 No Content on success
     """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+    logger.info(
+        f"Deleting value {value.id} by user {current_user.id} "
+        f"(role: {current_user.role.value})"
+    )
 
-    db_value = db.query(Value).filter(Value.id == value_id).first()
-    if not db_value:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="Value not found."
-        )
+    # Validate value is not used in any rules (explicit or implicit)
+    validate_value_not_used_in_rules(db, value)
 
-    parent_field = db_value.field 
-    if not parent_field:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail="Corrupted Data: Value has no parent Field."
-        )
+    # Delete value
+    with db_transaction(db, f"delete_value {value.id}"):
+        value_text = value.value
+        db.delete(value)
 
-    # Security check: is the version editable?
-    version = fetch_version_by_id(db, parent_field.entity_version_id)
-    get_editable_version(version)
-
-    # Check for Rules targeting this value explicitly (target)
-    rules_targeting_value = db.query(Rule).filter(Rule.target_value_id == value_id).count()
-    if rules_targeting_value > 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot delete Value because it is the explicit target of {rules_targeting_value} Rules."
-        )
-
-    # Deep scan: check usage in JSON conditions (implicit usage)
-    entity_rules = db.query(Rule).filter(
-        Rule.entity_version_id == parent_field.entity_version_id
-    ).all()
-    
-    value_str_to_check = str(db_value.value) 
-
-    for rule in entity_rules:
-        criteria_list = rule.conditions.get("criteria", [])
-        
-        for criterion in criteria_list:
-            crit_field_id = criterion.get("field_id")
-            
-            if crit_field_id == db_value.field_id:
-                crit_value = str(criterion.get("value", ""))
-                
-                if crit_value == value_str_to_check:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
-                            f"Cannot delete Value '{db_value.value}' because it is used as a condition criteria "
-                            f"in Rule ID {rule.id}. Please update or delete that rule first."
-                        )
-                    )
-
-    # If all checks pass
-    db.delete(db_value)
-    db.commit()
+        logger.info(f"Value {value.id} ('{value_text}') deleted successfully")
 
     return None

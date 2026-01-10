@@ -4,8 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 import uuid
 
-from fastapi import HTTPException, status
-
+from app.exceptions import DatabaseError
 from app.models.domain import User
 from app.schemas.user import UserCreate, UserUpdate
 from app.core.security import get_password_hash
@@ -57,7 +56,7 @@ class UserService:
             The newly created User object
 
         Raises:
-            HTTPException(500): On database errors
+            DatabaseError: On database errors
         """
         logger.info(f"Creating new user: email={user_in.email}, role={user_in.role.value}")
 
@@ -80,10 +79,7 @@ class UserService:
         except SQLAlchemyError as e:
             db.rollback()
             logger.error(f"Database error creating user: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}"
-            )
+            raise DatabaseError("Failed to create user")
 
     def update_user(self, db: Session, user: User, user_in: UserUpdate, updater_id: str) -> User:
         """
@@ -99,7 +95,7 @@ class UserService:
             The updated User object
 
         Raises:
-            HTTPException(500): On database errors
+            DatabaseError: On database errors
         """
         logger.info(f"Updating user {user.id}")
 
@@ -125,10 +121,7 @@ class UserService:
         except SQLAlchemyError as e:
             db.rollback()
             logger.error(f"Database error updating user {user.id}: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}"
-            )
+            raise DatabaseError("Failed to update user")
 
     def soft_delete_user(self, db: Session, user: User, deleter_id: str) -> None:
         """
@@ -140,7 +133,7 @@ class UserService:
             deleter_id: ID of the user performing the deletion
 
         Raises:
-            HTTPException(500): On database errors
+            DatabaseError: On database errors
         """
         original_email = user.email
         logger.info(f"Soft-deleting user {user.id} (email: {original_email})")
@@ -160,7 +153,4 @@ class UserService:
         except SQLAlchemyError as e:
             db.rollback()
             logger.error(f"Database error soft-deleting user {user.id}: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}"
-            )
+            raise DatabaseError("Failed to delete user")

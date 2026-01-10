@@ -1,206 +1,250 @@
+import logging
 from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
-from app.models.domain import Rule, Field, Value, User, UserRole
+from app.dependencies import (
+    require_admin_or_author,
+    fetch_version_by_id,
+    validate_version_is_draft,
+    validate_field_belongs_to_version,
+    validate_value_belongs_to_field,
+    get_rule_or_404,
+    get_editable_rule,
+    db_transaction
+)
+from app.models.domain import Rule, Field, Value, User
 from app.schemas import RuleCreate, RuleRead, RuleUpdate
-from app.dependencies import fetch_version_by_id, get_editable_version
+
+
+# ============================================================
+# LOGGING SETUP
+# ============================================================
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# ROUTER SETUP
+# ============================================================
 
 router = APIRouter(
     prefix="/rules",
     tags=["Rules"]
 )
 
-@router.post("/", response_model=RuleRead, status_code=status.HTTP_201_CREATED)
-def create_rule(
-    rule_data: RuleCreate, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
-):
-    """
-    Creates a new Rule in a DRAFT version.
-    Includes validation to ensure target Field and Value belong to 
-    the specified Entity Version.
-    """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
 
-    # Security check: is the version editable?
-    version = fetch_version_by_id(db, rule_data.entity_version_id)
-    get_editable_version(version)
-    
-    # Validate target Field belongs to the Version
-    target_field = db.query(Field).filter(
-        Field.id == rule_data.target_field_id,
-        Field.entity_version_id == rule_data.entity_version_id
-    ).first()
-    
-    if not target_field:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="Target Field not found in this Version."
-        )
-
-    # Check target Value existence and ownership
-    # The target Value must belong to the target Field (if specified)
-    if rule_data.target_value_id is not None:
-        target_value = db.query(Value).filter(
-            Value.id == rule_data.target_value_id,
-            Value.field_id == rule_data.target_field_id
-        ).first()
-
-        if not target_value:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
-                detail=f"Target Value {rule_data.target_value_id} not found or does not belong to Field."
-            )
-
-    # Create the Rule
-    new_rule = Rule(**rule_data.model_dump()) 
-    
-    db.add(new_rule)
-    db.commit()
-    db.refresh(new_rule)
-    
-    return new_rule
-
+# ============================================================
+# ENDPOINTS
+# ============================================================
 
 @router.get("/", response_model=List[RuleRead])
-def read_rules(
-    entity_version_id: Optional[int] = None, 
-    skip: int = 0, 
-    limit: int = 100, 
+def list_rules(
+    entity_version_id: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(require_admin_or_author)
 ):
     """
-    Retrieve a list of rules. 
-    Can filter by entity_version_id (recommended).
+    Retrieve a list of Rules.
+
+    Access Control:
+        - Only ADMIN and AUTHOR can view rules
+
+    Query Parameters:
+        entity_version_id: Filter by version (optional but recommended)
+        skip: Pagination offset
+        limit: Maximum results (max 100)
+
+    Returns:
+        List[RuleRead]: List of rules
     """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+    logger.info(
+        f"Listing rules by user {current_user.id}: "
+        f"version={entity_version_id}, skip={skip}, limit={limit}"
+    )
+
+    # Cap limit to prevent abuse
+    original_limit = limit
+    limit = min(limit, 100)
+
+    if original_limit > 100:
+        logger.warning(f"Limit capped from {original_limit} to 100")
 
     query = db.query(Rule)
     if entity_version_id:
         query = query.filter(Rule.entity_version_id == entity_version_id)
-        
-    return query.offset(skip).limit(limit).all()
+
+    rules = query.offset(skip).limit(limit).all()
+
+    logger.info(f"Returning {len(rules)} rules")
+
+    return rules
 
 
 @router.get("/{rule_id}", response_model=RuleRead)
 def read_rule(
-    rule_id: int, 
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user) # Auth required
+    rule: Rule = Depends(get_rule_or_404),
+    current_user: User = Depends(require_admin_or_author)
 ):
-    """ Retrieve a single Rule. """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+    """
+    Retrieve a single Rule.
 
-    rule = db.query(Rule).filter(Rule.id == rule_id).first()
-    if not rule:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
-    
+    Access Control:
+        - Only ADMIN and AUTHOR can view rule details
+
+    Returns:
+        RuleRead: The requested rule
+    """
+    logger.debug(f"Reading rule {rule.id} by user {current_user.id}")
     return rule
+
+
+@router.post("/", response_model=RuleRead, status_code=status.HTTP_201_CREATED)
+def create_rule(
+    rule_data: RuleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_author)
+):
+    """
+    Creates a new Rule in a DRAFT version.
+
+    Restrictions:
+        - The version must be DRAFT
+        - Target Field must belong to the specified Version
+        - Target Value (if specified) must belong to the Target Field
+
+    Access Control:
+        - Only ADMIN and AUTHOR can create rules
+
+    Returns:
+        RuleRead: The created rule
+    """
+    logger.info(
+        f"Creating rule for version {rule_data.entity_version_id} "
+        f"by user {current_user.id} (role: {current_user.role.value})"
+    )
+
+    # Security check: is the version editable?
+    version = fetch_version_by_id(db, rule_data.entity_version_id)
+    validate_version_is_draft(version)
+
+    # Validate target Field belongs to the Version
+    validate_field_belongs_to_version(db, rule_data.target_field_id, rule_data.entity_version_id)
+
+    # Check target Value existence and ownership (if specified)
+    if rule_data.target_value_id is not None:
+        validate_value_belongs_to_field(db, rule_data.target_value_id, rule_data.target_field_id)
+
+    # Create the Rule
+    with db_transaction(db, f"create_rule for version {version.id}"):
+        new_rule = Rule(**rule_data.model_dump())
+        db.add(new_rule)
+        db.flush()
+
+        logger.info(
+            f"Rule {new_rule.id} created successfully: "
+            f"target_field={rule_data.target_field_id}, target_value={rule_data.target_value_id}"
+        )
+
+    db.refresh(new_rule)
+    return new_rule
 
 
 @router.patch("/{rule_id}", response_model=RuleRead)
 def update_rule(
-    rule_id: int, 
-    rule_in: RuleUpdate, 
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user) # Auth required
+    rule_update: RuleUpdate,
+    rule: Rule = Depends(get_editable_rule),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_author)
 ):
     """
     Updates an existing Rule.
-    Includes validation to ensure target Field and Value belong to the correct Version.
-    Note: Changing 'entity_version_id' is forbidden. Rules belongs strictly to their creation version.
+
+    Restrictions:
+        - The version must be DRAFT
+        - Cannot change entity_version_id (rules belong strictly to their creation version)
+        - New target Field must belong to the same Version
+        - New target Value must belong to the new target Field
+
+    Access Control:
+        - Only ADMIN and AUTHOR can update rules
+
+    Returns:
+        RuleRead: The updated rule
     """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
-
-    db_rule = db.query(Rule).filter(Rule.id == rule_id).first()
-    if not db_rule:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
-
-    # Security check: is the version editable?
-    version = fetch_version_by_id(db, db_rule.entity_version_id)
-    get_editable_version(version)
-
-    # The Version must be immutable
-    final_version_id = db_rule.entity_version_id
-
-    # Determine final state of IDs (mix of new input and existing DB data)
-    final_target_field_id = rule_in.target_field_id if rule_in.target_field_id is not None else db_rule.target_field_id
-    final_target_value_id = rule_in.target_value_id if rule_in.target_value_id is not None else db_rule.target_value_id
-    
-    # Validate target Field consistency
-    # If the user is changing the Field, we must verify it belongs to the same Rule's Version.
-    should_validate_field = (
-        rule_in.target_field_id is not None and 
-        rule_in.target_field_id != db_rule.target_field_id
+    logger.info(
+        f"Updating rule {rule.id} by user {current_user.id} "
+        f"(role: {current_user.role.value})"
     )
 
-    if should_validate_field:
-        field_check = db.query(Field).filter(
-            Field.id == final_target_field_id,
-            Field.entity_version_id == final_version_id
-        ).first()
-        
-        if not field_check:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
-                detail=f"New Target Field (ID {final_target_field_id}) does not belong to the Entity Version of this Rule (ID {final_version_id})."
-            )
-    
-    # Validate target Value consistency
-    # If the user is changing the Field or the Value, we must verify the relationship Value -> Field
-    if rule_in.target_field_id or rule_in.target_value_id:
+    # The Version must be immutable
+    final_version_id = rule.entity_version_id
+
+    # Determine final state of IDs (mix of new input and existing DB data)
+    final_target_field_id = rule_update.target_field_id if rule_update.target_field_id is not None else rule.target_field_id
+    final_target_value_id = rule_update.target_value_id if rule_update.target_value_id is not None else rule.target_value_id
+
+    # Validate target Field consistency (if being changed)
+    if rule_update.target_field_id is not None and rule_update.target_field_id != rule.target_field_id:
+        logger.debug(f"Validating new target field {final_target_field_id}")
+        validate_field_belongs_to_version(db, final_target_field_id, final_version_id)
+
+    # Validate target Value consistency (if Field or Value is being changed)
+    if rule_update.target_field_id or rule_update.target_value_id:
         # Check only if a target Value is set (Rule-level vs Value-level)
         if final_target_value_id is not None:
-            value_check = db.query(Value).filter(
-                Value.id == final_target_value_id,
-                Value.field_id == final_target_field_id
-            ).first()
-            
-            if not value_check:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, 
-                    detail=f"Target Value (ID {final_target_value_id}) does not belong to the Target Field (ID {final_target_field_id})."
-                )
+            logger.debug(f"Validating target value {final_target_value_id} belongs to field {final_target_field_id}")
+            validate_value_belongs_to_field(db, final_target_value_id, final_target_field_id)
 
     # Apply updates
-    update_data = rule_in.model_dump(exclude_unset=True)
+    update_data = rule_update.model_dump(exclude_unset=True)
 
-    for key, value in update_data.items():
-        setattr(db_rule, key, value)
+    if not update_data:
+        logger.warning(f"Empty update request for rule {rule.id}")
+        return rule
 
-    db.commit()
-    db.refresh(db_rule)
+    # Update fields
+    with db_transaction(db, f"update_rule {rule.id}"):
+        for key, value in update_data.items():
+            setattr(rule, key, value)
 
-    return db_rule
+        logger.info(f"Rule {rule.id} updated successfully")
+
+    db.refresh(rule)
+    return rule
 
 
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_rule(
-    rule_id: int, 
+    rule: Rule = Depends(get_editable_rule),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Auth required
+    current_user: User = Depends(require_admin_or_author)
 ):
-    """ Delete a Rule. """
-    # Verify current user's role
-    require_role(current_user, [UserRole.ADMIN, UserRole.AUTHOR])
+    """
+    Delete a Rule.
 
-    db_rule = db.query(Rule).filter(Rule.id == rule_id).first()
-    if not db_rule:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
+    Restrictions:
+        - The version must be DRAFT
 
-    # Security check: is the version editable?
-    version = fetch_version_by_id(db, db_rule.entity_version_id)
-    get_editable_version(version)
+    Access Control:
+        - Only ADMIN and AUTHOR can delete rules
 
-    db.delete(db_rule)
-    db.commit()
-    
+    Returns:
+        204 No Content on success
+    """
+    logger.info(
+        f"Deleting rule {rule.id} by user {current_user.id} "
+        f"(role: {current_user.role.value})"
+    )
+
+    # Delete rule
+    with db_transaction(db, f"delete_rule {rule.id}"):
+        db.delete(rule)
+
+        logger.info(f"Rule {rule.id} deleted successfully")
+
     return None

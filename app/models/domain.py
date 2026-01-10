@@ -422,3 +422,55 @@ class Configuration(Base, AuditMixin):
 
     def __str__(self) -> str:
         return self.name or f"Configuration {self.id[:8]}"
+
+
+class RefreshToken(Base):
+    """
+    RefreshToken: Long-lived token for obtaining new access tokens.
+
+    Stores refresh tokens with expiration and revocation support.
+    Each token is unique and can be revoked individually for security.
+
+    Relationships:
+        - user: Many-to-one with User
+    """
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        Index('ix_user_active', 'user_id', 'is_revoked'),
+        Index('ix_token_hash', 'token_hash', unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    # Store hash of token for security (don't store plaintext)
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+
+    # Expiration and revocation
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_revoked: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Audit trail
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Optional: track client info for security
+    user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+
+    # Relationships
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"<RefreshToken id={self.id} user_id={self.user_id} "
+            f"is_revoked={self.is_revoked} expires_at={self.expires_at}>"
+        )
+
+    def __str__(self) -> str:
+        return f"RefreshToken {self.id} for user {self.user_id}"
