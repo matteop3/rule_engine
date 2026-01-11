@@ -1,206 +1,349 @@
-#!/usr/bin/env python3
 """
-Test script for Refresh Token and Rate Limiting features.
+Test suite for Refresh Token and Rate Limiting features.
 
-This script tests:
+Tests:
 1. Login endpoint returns both access and refresh tokens
 2. Refresh endpoint works correctly
-3. Rate limiting is enforced on login endpoint
-4. Rate limiting is enforced on refresh endpoint
+3. Invalid credentials handling
+4. Rate limiting enforcement (when enabled)
 """
 
-import requests
-import time
-from typing import Optional
+import pytest
+from fastapi.testclient import TestClient
 
-BASE_URL = "http://localhost:8000"
-AUTH_URL = f"{BASE_URL}/auth"
-
-# Test credentials (make sure a user exists with these credentials)
-TEST_EMAIL = "test@example.com"
-TEST_PASSWORD = "TestPassword123!"
+from app.models.domain import User, UserRole
+from app.core.security import get_password_hash
 
 
-def print_section(title: str):
-    """Print a section header."""
-    print(f"\n{'=' * 60}")
-    print(f"  {title}")
-    print('=' * 60)
+# ============================================================
+# FIXTURES
+# ============================================================
+
+@pytest.fixture(scope="function")
+def test_user(db_session):
+    """
+    Creates a test user with valid hashed password.
+    """
+    user = User(
+        email="testuser@example.com",
+        hashed_password=get_password_hash("TestPassword123!"),
+        role=UserRole.USER,
+        is_active=True
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
 
 
-def test_login() -> tuple[Optional[str], Optional[str]]:
-    """Test login endpoint and check for both tokens."""
-    print_section("TEST 1: Login with Refresh Token")
+@pytest.fixture(scope="function")
+def inactive_user(db_session):
+    """
+    Creates an inactive test user.
+    """
+    user = User(
+        email="inactive@example.com",
+        hashed_password=get_password_hash("TestPassword123!"),
+        role=UserRole.USER,
+        is_active=False
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
 
-    try:
-        response = requests.post(
-            f"{AUTH_URL}/token",
+
+# ============================================================
+# LOGIN TESTS
+# ============================================================
+
+def test_login_success(client: TestClient, test_user):
+    """
+    Test successful login returns both access and refresh tokens.
+    """
+    response = client.post(
+        "/auth/token",
+        data={
+            "username": "testuser@example.com",
+            "password": "TestPassword123!"
+        }
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify both tokens are present
+    assert "access_token" in data
+    assert "refresh_token" in data
+    assert data["token_type"] == "bearer"
+
+    # Tokens should be non-empty strings
+    assert len(data["access_token"]) > 0
+    assert len(data["refresh_token"]) > 0
+
+
+def test_login_wrong_password(client: TestClient, test_user):
+    """
+    Test login with wrong password returns 401.
+    """
+    response = client.post(
+        "/auth/token",
+        data={
+            "username": "testuser@example.com",
+            "password": "WrongPassword123!"
+        }
+    )
+
+    assert response.status_code == 401
+    assert "Incorrect email" in response.json()["detail"]
+
+
+def test_login_nonexistent_user(client: TestClient):
+    """
+    Test login with non-existent email returns 401.
+    """
+    response = client.post(
+        "/auth/token",
+        data={
+            "username": "nonexistent@example.com",
+            "password": "AnyPassword123!"
+        }
+    )
+
+    assert response.status_code == 401
+
+
+def test_login_inactive_user(client: TestClient, inactive_user):
+    """
+    Test login with inactive user returns 401.
+    """
+    response = client.post(
+        "/auth/token",
+        data={
+            "username": "inactive@example.com",
+            "password": "TestPassword123!"
+        }
+    )
+
+    assert response.status_code == 401
+
+
+# ============================================================
+# REFRESH TOKEN TESTS
+# ============================================================
+
+def test_refresh_token_success(client: TestClient, test_user):
+    """
+    Test refresh endpoint returns new access token.
+    """
+    # First, login to get tokens
+    login_response = client.post(
+        "/auth/token",
+        data={
+            "username": "testuser@example.com",
+            "password": "TestPassword123!"
+        }
+    )
+    assert login_response.status_code == 200
+    refresh_token = login_response.json()["refresh_token"]
+
+    # Use refresh token to get new access token
+    refresh_response = client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {refresh_token}"}
+    )
+
+    assert refresh_response.status_code == 200
+    data = refresh_response.json()
+
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+
+def test_refresh_token_invalid(client: TestClient, test_user):
+    """
+    Test refresh with invalid token returns 401.
+    """
+    response = client.post(
+        "/auth/refresh",
+        headers={"Authorization": "Bearer invalid_token_here"}
+    )
+
+    assert response.status_code == 401
+    assert "Invalid or expired" in response.json()["detail"]
+
+
+def test_refresh_token_missing_header(client: TestClient):
+    """
+    Test refresh without Authorization header returns 403.
+    """
+    response = client.post("/auth/refresh")
+
+    # HTTPBearer returns 403 when header is missing
+    assert response.status_code == 403
+
+
+def test_access_token_works(client: TestClient, db_session, test_user):
+    """
+    Test that the access token can be used to access protected endpoints.
+    """
+    # Login to get access token
+    login_response = client.post(
+        "/auth/token",
+        data={
+            "username": "testuser@example.com",
+            "password": "TestPassword123!"
+        }
+    )
+    access_token = login_response.json()["access_token"]
+
+    # Create test data for a protected endpoint
+    from app.models.domain import Entity, EntityVersion, VersionStatus
+
+    entity = Entity(name="Test Entity", description="Test")
+    db_session.add(entity)
+    db_session.commit()
+
+    version = EntityVersion(entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED)
+    db_session.add(version)
+    db_session.commit()
+
+    # Try to access configurations endpoint (protected)
+    response = client.get(
+        f"/configurations/?entity_version_id={version.id}",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+
+    assert response.status_code == 200
+
+
+def test_multiple_refresh_tokens(client: TestClient, test_user):
+    """
+    Test that user can have multiple valid refresh tokens (multiple devices).
+    """
+    # Login twice (simulating two devices)
+    tokens = []
+    for _ in range(2):
+        response = client.post(
+            "/auth/token",
             data={
-                "username": TEST_EMAIL,
-                "password": TEST_PASSWORD
+                "username": "testuser@example.com",
+                "password": "TestPassword123!"
             }
         )
+        assert response.status_code == 200
+        tokens.append(response.json()["refresh_token"])
 
-        print(f"Status Code: {response.status_code}")
-
-        if response.status_code == 200:
-            data = response.json()
-            print(f"✓ Login successful!")
-            print(f"  - Access Token: {data.get('access_token', 'N/A')[:50]}...")
-            print(f"  - Refresh Token: {data.get('refresh_token', 'N/A')[:50]}...")
-            print(f"  - Token Type: {data.get('token_type', 'N/A')}")
-
-            return data.get('access_token'), data.get('refresh_token')
-        else:
-            print(f"✗ Login failed: {response.text}")
-            return None, None
-
-    except Exception as e:
-        print(f"✗ Error: {e}")
-        return None, None
+    # Both refresh tokens should work
+    for refresh_token in tokens:
+        response = client.post(
+            "/auth/refresh",
+            headers={"Authorization": f"Bearer {refresh_token}"}
+        )
+        assert response.status_code == 200
 
 
-def test_refresh(refresh_token: str) -> Optional[str]:
-    """Test refresh endpoint."""
-    print_section("TEST 2: Refresh Access Token")
+# ============================================================
+# RATE LIMITING TESTS
+# ============================================================
+# Note: These tests only work when RATE_LIMIT_ENABLED=true in settings.
+# In test environment, rate limiting is typically disabled.
+# These tests verify the behavior IF rate limiting is enabled.
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """
+    Reset rate limiter state before and after EVERY test.
+    This ensures rate limit tests are isolated.
+    autouse=True means it runs for every test in this module.
+    """
+    from app.core.rate_limit import limiter
+
+    # Reset before test
     try:
-        response = requests.post(
-            f"{AUTH_URL}/refresh",
-            headers={
-                "Authorization": f"Bearer {refresh_token}"
+        if hasattr(limiter, '_storage') and limiter._storage:
+            limiter._storage.reset()
+        # Also clear the limiter's internal state
+        if hasattr(limiter, 'reset'):
+            limiter.reset()
+    except Exception:
+        pass
+
+    yield
+
+    # Reset after test
+    try:
+        if hasattr(limiter, '_storage') and limiter._storage:
+            limiter._storage.reset()
+        if hasattr(limiter, 'reset'):
+            limiter.reset()
+    except Exception:
+        pass
+
+
+def test_rate_limit_login_endpoint(client: TestClient, test_user):
+    """
+    Test that login endpoint enforces rate limiting when enabled.
+
+    Note: This test may pass even if rate limiting triggers,
+    as we're testing the mechanism exists, not that it's enabled.
+    """
+    from app.core.config import settings
+
+    if not settings.RATE_LIMIT_ENABLED:
+        pytest.skip("Rate limiting is disabled in test environment")
+
+    # Make multiple requests to trigger rate limit
+    rate_limited = False
+    for i in range(settings.RATE_LIMIT_LOGIN_ATTEMPTS + 2):
+        response = client.post(
+            "/auth/token",
+            data={
+                "username": "testuser@example.com",
+                "password": "WrongPassword!"  # Wrong password to not lock account
             }
         )
 
-        print(f"Status Code: {response.status_code}")
-
-        if response.status_code == 200:
+        if response.status_code == 429:
+            rate_limited = True
             data = response.json()
-            print(f"✓ Token refreshed successfully!")
-            print(f"  - New Access Token: {data.get('access_token', 'N/A')[:50]}...")
-            return data.get('access_token')
-        else:
-            print(f"✗ Refresh failed: {response.text}")
-            return None
+            assert data["error"] == "rate_limit_exceeded"
+            break
 
-    except Exception as e:
-        print(f"✗ Error: {e}")
-        return None
+    assert rate_limited, "Rate limiting should have been triggered"
 
 
-def test_login_rate_limit():
-    """Test login rate limiting."""
-    print_section("TEST 3: Login Rate Limiting (5 attempts / 15 min)")
+def test_rate_limit_refresh_endpoint(client: TestClient, test_user):
+    """
+    Test that refresh endpoint enforces rate limiting when enabled.
+    """
+    from app.core.config import settings
 
-    print("Attempting 6 consecutive logins to trigger rate limit...")
+    if not settings.RATE_LIMIT_ENABLED:
+        pytest.skip("Rate limiting is disabled in test environment")
 
-    for i in range(6):
-        try:
-            response = requests.post(
-                f"{AUTH_URL}/token",
-                data={
-                    "username": TEST_EMAIL,
-                    "password": "wrong_password"  # Use wrong password to not lock account
-                }
-            )
+    # First get a valid refresh token
+    login_response = client.post(
+        "/auth/token",
+        data={
+            "username": "testuser@example.com",
+            "password": "TestPassword123!"
+        }
+    )
+    refresh_token = login_response.json()["refresh_token"]
 
-            print(f"  Attempt {i+1}: Status {response.status_code}", end="")
+    # Make multiple requests to trigger rate limit
+    rate_limited = False
+    for i in range(settings.RATE_LIMIT_REFRESH_ATTEMPTS + 2):
+        response = client.post(
+            "/auth/refresh",
+            headers={"Authorization": f"Bearer {refresh_token}"}
+        )
 
-            if response.status_code == 429:
-                print(" - ✓ RATE LIMITED!")
-                print(f"    Response: {response.json()}")
-                return True
-            elif response.status_code == 401:
-                print(" - Failed (expected)")
-            else:
-                print(f" - {response.text}")
+        if response.status_code == 429:
+            rate_limited = True
+            data = response.json()
+            assert data["error"] == "rate_limit_exceeded"
+            break
 
-            time.sleep(0.5)  # Small delay between requests
-
-        except Exception as e:
-            print(f"  Attempt {i+1}: Error - {e}")
-
-    print("✗ Rate limiting was NOT triggered after 6 attempts")
-    return False
-
-
-def test_refresh_rate_limit(refresh_token: str):
-    """Test refresh rate limiting."""
-    print_section("TEST 4: Refresh Rate Limiting (10 attempts / 5 min)")
-
-    print("Attempting 12 consecutive refresh requests to trigger rate limit...")
-
-    for i in range(12):
-        try:
-            response = requests.post(
-                f"{AUTH_URL}/refresh",
-                headers={
-                    "Authorization": f"Bearer {refresh_token}"
-                }
-            )
-
-            print(f"  Attempt {i+1}: Status {response.status_code}", end="")
-
-            if response.status_code == 429:
-                print(" - ✓ RATE LIMITED!")
-                print(f"    Response: {response.json()}")
-                return True
-            elif response.status_code == 200:
-                print(" - Success")
-            else:
-                print(f" - {response.text}")
-
-            time.sleep(0.3)  # Small delay between requests
-
-        except Exception as e:
-            print(f"  Attempt {i+1}: Error - {e}")
-
-    print("✗ Rate limiting was NOT triggered after 12 attempts")
-    return False
-
-
-def main():
-    """Run all tests."""
-    print("\n" + "=" * 60)
-    print("  REFRESH TOKEN & RATE LIMITING TEST SUITE")
-    print("=" * 60)
-    print(f"\nBase URL: {BASE_URL}")
-    print(f"Test User: {TEST_EMAIL}")
-    print("\n⚠️  Make sure:")
-    print("  1. The server is running (uvicorn app.main:app)")
-    print("  2. Test user exists with correct password")
-    print("  3. RATE_LIMIT_ENABLED=true in .env")
-
-    input("\nPress Enter to start tests...")
-
-    # Test 1: Login
-    access_token, refresh_token = test_login()
-
-    if not access_token or not refresh_token:
-        print("\n✗ Cannot continue tests without valid tokens")
-        print("  Please ensure test user exists and credentials are correct")
-        return
-
-    # Test 2: Refresh
-    new_access_token = test_refresh(refresh_token)
-
-    if not new_access_token:
-        print("\n✗ Refresh token test failed")
-
-    # Test 3: Login Rate Limiting
-    input("\nPress Enter to test login rate limiting (will make 6 requests)...")
-    test_login_rate_limit()
-
-    # Test 4: Refresh Rate Limiting
-    input("\nPress Enter to test refresh rate limiting (will make 12 requests)...")
-    test_refresh_rate_limit(refresh_token)
-
-    print_section("TESTS COMPLETED")
-    print("\n✓ All features have been tested!")
-    print("\nNote: If rate limiting didn't trigger, check:")
-    print("  - RATE_LIMIT_ENABLED=true in .env")
-    print("  - Server was restarted after configuration changes")
-
-
-if __name__ == "__main__":
-    main()
+    assert rate_limited, "Rate limiting should have been triggered"

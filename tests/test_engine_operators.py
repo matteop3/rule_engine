@@ -189,3 +189,259 @@ def test_multiple_conditions_and_logic(db_session, setup_operator_scenario):
     ))
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
+
+
+# ============================================================
+# ADDITIONAL OPERATOR TESTS
+# ============================================================
+
+def test_operator_equals_string(db_session, setup_operator_scenario):
+    """ Verifica operatore EQUALS con stringhe """
+    ids = setup_operator_scenario
+    service = RuleEngineService()
+
+    # REGOLA: Target visibile solo se f_str == "MATCH"
+    rule = Rule(
+        entity_version_id=ids["v_id"],
+        target_field_id=ids["f_target"],
+        rule_type=RuleType.VISIBILITY.value,
+        conditions={"criteria": [{"field_id": ids["f_str"], "operator": "EQUALS", "value": "MATCH"}]}
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    # Caso POSITIVO: Valore uguale -> Visibile
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_str"], value="MATCH")]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is False
+
+    # Caso NEGATIVO: Valore diverso -> Nascosto
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_str"], value="DIFFERENT")]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is True
+
+
+def test_operator_equals_number(db_session, setup_operator_scenario):
+    """ Verifica operatore EQUALS con numeri """
+    ids = setup_operator_scenario
+    service = RuleEngineService()
+
+    # REGOLA: Target obbligatorio se f_num == 100
+    rule = Rule(
+        entity_version_id=ids["v_id"],
+        target_field_id=ids["f_target"],
+        rule_type=RuleType.MANDATORY.value,
+        conditions={"criteria": [{"field_id": ids["f_num"], "operator": "EQUALS", "value": 100}]}
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    # Caso POSITIVO: Valore uguale -> Obbligatorio
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_num"], value=100)]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_required is True
+
+    # Caso NEGATIVO: Valore diverso -> Non obbligatorio
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_num"], value=99)]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_required is False
+
+
+def test_operator_greater_than_number(db_session, setup_operator_scenario):
+    """ Verifica operatore GREATER_THAN con numeri """
+    ids = setup_operator_scenario
+    service = RuleEngineService()
+
+    # REGOLA: Target visibile se f_num > 50
+    rule = Rule(
+        entity_version_id=ids["v_id"],
+        target_field_id=ids["f_target"],
+        rule_type=RuleType.VISIBILITY.value,
+        conditions={"criteria": [{"field_id": ids["f_num"], "operator": "GREATER_THAN", "value": 50}]}
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    # Caso POSITIVO: 51 > 50 -> Visibile
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_num"], value=51)]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is False
+
+    # Caso NEGATIVO: 50 non è > 50 -> Nascosto
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_num"], value=50)]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is True
+
+    # Caso NEGATIVO: 49 < 50 -> Nascosto
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_num"], value=49)]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is True
+
+
+def test_operator_less_than_number(db_session, setup_operator_scenario):
+    """ Verifica operatore LESS_THAN con numeri """
+    ids = setup_operator_scenario
+    service = RuleEngineService()
+
+    # REGOLA: Target obbligatorio se f_num < 10
+    rule = Rule(
+        entity_version_id=ids["v_id"],
+        target_field_id=ids["f_target"],
+        rule_type=RuleType.MANDATORY.value,
+        conditions={"criteria": [{"field_id": ids["f_num"], "operator": "LESS_THAN", "value": 10}]}
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    # Caso POSITIVO: 5 < 10 -> Obbligatorio
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_num"], value=5)]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_required is True
+
+    # Caso NEGATIVO: 10 non è < 10 -> Non obbligatorio
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_num"], value=10)]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_required is False
+
+    # Caso NEGATIVO: 15 > 10 -> Non obbligatorio
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_num"], value=15)]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_required is False
+
+
+def test_operator_in_list_strings(db_session, setup_operator_scenario):
+    """ Verifica operatore IN con lista di stringhe """
+    ids = setup_operator_scenario
+    service = RuleEngineService()
+
+    # REGOLA: Target visibile solo se f_str è IN ["A", "B", "C"]
+    rule = Rule(
+        entity_version_id=ids["v_id"],
+        target_field_id=ids["f_target"],
+        rule_type=RuleType.VISIBILITY.value,
+        conditions={"criteria": [{"field_id": ids["f_str"], "operator": "IN", "value": ["A", "B", "C"]}]}
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    # Caso POSITIVO: "B" è nella lista
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_str"], value="B")]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is False
+
+    # Caso NEGATIVO: "X" non è nella lista
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_str"], value="X")]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is True
+
+
+def test_operator_equals_date(db_session, setup_operator_scenario):
+    """ Verifica operatore EQUALS con date """
+    ids = setup_operator_scenario
+    service = RuleEngineService()
+
+    target_date = "2024-06-15"
+
+    # REGOLA: Target obbligatorio se f_date == 2024-06-15
+    rule = Rule(
+        entity_version_id=ids["v_id"],
+        target_field_id=ids["f_target"],
+        rule_type=RuleType.MANDATORY.value,
+        conditions={"criteria": [{"field_id": ids["f_date"], "operator": "EQUALS", "value": target_date}]}
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    # Caso POSITIVO: Stessa data -> Obbligatorio
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_date"], value="2024-06-15")]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_required is True
+
+    # Caso NEGATIVO: Data diversa -> Non obbligatorio
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_date"], value="2024-06-16")]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_required is False
+
+
+def test_operator_greater_than_date(db_session, setup_operator_scenario):
+    """ Verifica operatore GREATER_THAN con date """
+    ids = setup_operator_scenario
+    service = RuleEngineService()
+
+    target_date = "2024-01-01"
+
+    # REGOLA: Target visibile se f_date > 2024-01-01
+    rule = Rule(
+        entity_version_id=ids["v_id"],
+        target_field_id=ids["f_target"],
+        rule_type=RuleType.VISIBILITY.value,
+        conditions={"criteria": [{"field_id": ids["f_date"], "operator": "GREATER_THAN", "value": target_date}]}
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    # Caso POSITIVO: Data successiva -> Visibile
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_date"], value="2024-06-01")]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is False
+
+    # Caso NEGATIVO: Stessa data -> Nascosto
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_date"], value="2024-01-01")]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is True
+
+    # Caso NEGATIVO: Data precedente -> Nascosto
+    resp = service.calculate_state(db_session, CalculationRequest(
+        entity_id=ids["e_id"],
+        current_state=[FieldInputState(field_id=ids["f_date"], value="2023-12-31")]
+    ))
+    f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
+    assert f_out.is_hidden is True

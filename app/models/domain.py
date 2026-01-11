@@ -364,8 +364,15 @@ class User(Base, AuditMixin):
         foreign_keys="[Configuration.user_id]"
     )
 
+    @property
+    def role_display(self) -> str:
+        """Returns the role as a string, handling both Enum and string storage."""
+        if hasattr(self.role, 'value'):
+            return self.role.value
+        return str(self.role)
+
     def __repr__(self) -> str:
-        return f"<User id={self.id} email='{self.email}' role={self.role.value} is_active={self.is_active}>"
+        return f"<User id={self.id} email='{self.email}' role={self.role_display} is_active={self.is_active}>"
 
     def __str__(self) -> str:
         return self.email

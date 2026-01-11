@@ -267,7 +267,7 @@ def create_configuration(
     """
     logger.info(
         f"Creating configuration for version {config_in.entity_version_id} "
-        f"by user {current_user.id} (role: {current_user.role.value})"
+        f"by user {current_user.id} (role: {current_user.role_display})"
     )
 
     # Validation phase
@@ -334,7 +334,7 @@ def list_configurations(
         List[ConfigurationRead]: Filtered configurations, newest first
     """
     logger.info(
-        f"Listing configurations: user={current_user.id}, role={current_user.role.value}, "
+        f"Listing configurations: user={current_user.id}, role={current_user.role_display}, "
         f"version_id={entity_version_id}, filter_user_id={user_id}"
     )
 

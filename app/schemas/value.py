@@ -24,8 +24,16 @@ class ValueRead(ValueBase):
     id: int
     field_id: int
 
-class ValueUpdate(ValueCreate):
-    """ Schema to update a Value (PUT). """
-    # In a PUT, I expect the client to send all fields, 
-    # so inheriting from ValueBase is correct.
-    pass
+class ValueUpdate(BaseSchema):
+    """Schema for updating a Value (PATCH). All fields optional."""
+    value: Optional[str] = Field(None, max_length=255)
+    label: Optional[str] = Field(None, max_length=255)
+    is_default: Optional[bool] = None
+    field_id: Optional[int] = None
+
+    @field_validator('value')
+    @classmethod
+    def value_must_not_be_empty(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip() == "":
+            raise ValueError("The value cannot be empty or just whitespace")
+        return v

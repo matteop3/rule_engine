@@ -126,7 +126,7 @@ def create_value(
     """
     logger.info(
         f"Creating value for field {value_data.field_id} "
-        f"by user {current_user.id} (role: {current_user.role.value})"
+        f"by user {current_user.id} (role: {current_user.role_display})"
     )
 
     # Check integrity: does parent Field exist?
@@ -187,7 +187,7 @@ def update_value(
     """
     logger.info(
         f"Updating value {value.id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     parent_field = value.field
@@ -269,7 +269,7 @@ def delete_value(
     """
     logger.info(
         f"Deleting value {value.id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     # Validate value is not used in any rules (explicit or implicit)

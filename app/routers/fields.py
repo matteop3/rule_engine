@@ -121,7 +121,7 @@ def create_field(
     """
     logger.info(
         f"Creating field '{field_data.name}' for version {field_data.entity_version_id} "
-        f"by user {current_user.id} (role: {current_user.role.value})"
+        f"by user {current_user.id} (role: {current_user.role_display})"
     )
 
     # Security check: is the version editable?
@@ -180,7 +180,7 @@ def update_field(
     """
     logger.info(
         f"Updating field {field.id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     # State transition analysis
@@ -268,7 +268,7 @@ def delete_field(
     """
     logger.info(
         f"Deleting field {field.id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     # Guardrail: check for Values

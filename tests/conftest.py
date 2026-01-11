@@ -37,16 +37,16 @@ def db_session():
 def client(db_session):
     """
     Client HTTP che sovrascrive la dipendenza get_db per usare il DB di test.
+    La sessione viene chiusa dalla fixture db_session, non qui.
     """
     def override_get_db():
-        try:
-            yield db_session
-        finally:
-            db_session.close()
+        yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
         yield c
+    # Cleanup: rimuove l'override per evitare side effects tra test
+    app.dependency_overrides.clear()
 
 # 2. SEED DATA FIXTURE
 # Inserisce i dati della Polizza Auto nel DB di test

@@ -3,8 +3,6 @@ from pydantic import BaseModel, model_validator, field_validator
 from .base_schema import BaseSchema
 from app.models.domain import RuleType
 
-# Define valid rule types
-RuleTypeLiteral = Literal['availability', 'visibility', 'editability', 'mandatory', 'validation']
 CriterionOperator = Literal['EQUALS', 'NOT_EQUALS', 'GREATER_THAN', 'LESS_THAN', 'IN']
 
 # Strict validation models
@@ -56,14 +54,34 @@ class RuleCreate(RuleBase):
         return self
 
 class RuleUpdate(BaseSchema):
-    """ Schema for updating existing rule. All fields optional. """
+    """
+    Schema for updating existing rule (PATCH). All fields optional.
+
+    Note: entity_version_id is not included because moving rules between versions is forbidden.
+    Full consistency validation (rule_type vs target_value_id) is performed at the service layer
+    where the existing rule data is available.
+    """
     conditions: Optional[RuleConditions] = None
     description: Optional[str] = None
     rule_type: Optional[RuleType] = None
     error_message: Optional[str] = None
     target_field_id: Optional[int] = None
     target_value_id: Optional[int] = None
-    # entity_version_id is not included because moving rules between versions is forbidden.
+
+    @model_validator(mode='after')
+    def check_partial_rule_type_consistency(self):
+        """
+        Validates consistency when both rule_type and target_value_id are explicitly provided.
+        When only one is provided, full validation happens at the router/service layer.
+        """
+        # Only validate if both fields are explicitly set in this update
+        if self.rule_type is not None and self.target_value_id is not None:
+            if self.rule_type != RuleType.AVAILABILITY:
+                raise ValueError(
+                    f"Consistency error: if 'target_value_id' is provided, "
+                    f"rule_type must be '{RuleType.AVAILABILITY}'. Got '{self.rule_type}'."
+                )
+        return self
 
 class RuleRead(RuleBase):
     """ Output schema for API responses. """

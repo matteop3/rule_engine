@@ -140,7 +140,11 @@ class AuthService:
 
         # Check if expired
         now_utc = datetime.now(timezone.utc)
-        if db_token.expires_at < now_utc:
+        # Handle timezone-naive datetimes from SQLite
+        expires_at = db_token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now_utc:
             logger.warning(f"Refresh token {db_token.id} has expired")
             return None
 

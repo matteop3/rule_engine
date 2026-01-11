@@ -135,7 +135,7 @@ def calculate_state(
         HTTPException(500): Unexpected server error
     """
     logger.info(
-        f"Calculation request by user {current_user.id} (role: {current_user.role.value}): "
+        f"Calculation request by user {current_user.id} (role: {current_user.role_display}): "
         f"entity_id={request.entity_id}, version_id={request.entity_version_id or 'PUBLISHED'}"
     )
 

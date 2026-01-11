@@ -1,8 +1,12 @@
-from typing import List, Dict, Any, Optional, Tuple
+import logging
+from typing import List, Dict, Any, Optional, Tuple, Callable
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import SQLAlchemyError
 from app.models.domain import Entity, Field, FieldType, Value, Rule, RuleType, EntityVersion, VersionStatus
 from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOutputState, ValueOption
 from datetime import date, datetime
+
+logger = logging.getLogger(__name__)
 
 
 class RuleEngineService:
@@ -13,21 +17,31 @@ class RuleEngineService:
     """
     
     def calculate_state(
-        self, 
-        db: Session, 
+        self,
+        db: Session,
         request: CalculationRequest
     ) -> CalculationResponse:
         """
         CPQ core engine.
         Finds the target Version (PUBLISHED or explicit) and executes waterfall logic.
         """
-        
+        logger.info(
+            "Starting state calculation for entity_id=%s, version_id=%s",
+            request.entity_id,
+            request.entity_version_id
+        )
+
         # Resolve target version
         target_version = self._resolve_target_version(db, request)
+        logger.debug("Resolved target version: %s", target_version.id)
         
         # Load all data for the version (with optimized queries)
         fields_db, all_values, all_rules = self._load_version_data(db, target_version.id)
-        
+        logger.debug(
+            "Loaded version data: %d fields, %d values, %d rules",
+            len(fields_db), len(all_values), len(all_rules)
+        )
+
         # Build indexing structures
         type_map = self._build_type_map(fields_db)
         values_by_field = self._build_values_index(all_values)
@@ -54,7 +68,12 @@ class RuleEngineService:
         
         # Check global completeness
         is_complete = self._check_completeness(output_fields)
-        
+
+        logger.info(
+            "State calculation completed for entity_id=%s: %d fields processed, is_complete=%s",
+            request.entity_id, len(output_fields), is_complete
+        )
+
         return CalculationResponse(
             entity_id=request.entity_id,
             fields=output_fields,
@@ -67,106 +86,152 @@ class RuleEngineService:
     # ============================================================
     
     def _resolve_target_version(
-        self, 
-        db: Session, 
+        self,
+        db: Session,
         request: CalculationRequest
     ) -> EntityVersion:
         """
         Resolves the target EntityVersion based on request parameters.
-        
+
         - If entity_version_id is provided: preview mode (explicit version)
         - Otherwise: production mode (PUBLISHED version)
         """
-        # Check entity existence
-        entity = db.query(Entity).filter(Entity.id == request.entity_id).first()
-        if not entity:
-            raise ValueError(f"Entity {request.entity_id} not found.")
-        
-        # Preview mode
-        if request.entity_version_id is not None:
-            target_version = db.query(EntityVersion).filter(
-                EntityVersion.id == request.entity_version_id
-            ).first()
-            
-            if not target_version:
-                raise ValueError(f"Version {request.entity_version_id} not found.")
-            
-            if target_version.entity_id != request.entity_id:
-                raise ValueError(
-                    f"Version {request.entity_version_id} does not belong to "
-                    f"Entity {request.entity_id}."
+        try:
+            # Check entity existence
+            entity = db.query(Entity).filter(Entity.id == request.entity_id).first()
+            if not entity:
+                logger.warning("Entity %s not found", request.entity_id)
+                raise ValueError(f"Entity {request.entity_id} not found.")
+
+            # Preview mode
+            if request.entity_version_id is not None:
+                logger.debug(
+                    "Preview mode: resolving explicit version %s",
+                    request.entity_version_id
                 )
-            
-            return target_version
-        
-        # Production mode
-        target_version = db.query(EntityVersion).filter(
-            EntityVersion.entity_id == request.entity_id,
-            EntityVersion.status == VersionStatus.PUBLISHED
-        ).first()
-        
-        if not target_version:
-            raise ValueError(
-                f"Entity {request.entity_id} has no PUBLISHED version ready for calculation."
+                target_version = db.query(EntityVersion).filter(
+                    EntityVersion.id == request.entity_version_id
+                ).first()
+
+                if not target_version:
+                    logger.warning("Version %s not found", request.entity_version_id)
+                    raise ValueError(f"Version {request.entity_version_id} not found.")
+
+                if target_version.entity_id != request.entity_id:
+                    logger.warning(
+                        "Version %s does not belong to entity %s",
+                        request.entity_version_id, request.entity_id
+                    )
+                    raise ValueError(
+                        f"Version {request.entity_version_id} does not belong to "
+                        f"Entity {request.entity_id}."
+                    )
+
+                return target_version
+
+            # Production mode
+            logger.debug(
+                "Production mode: resolving PUBLISHED version for entity %s",
+                request.entity_id
             )
-        
-        return target_version
+            target_version = db.query(EntityVersion).filter(
+                EntityVersion.entity_id == request.entity_id,
+                EntityVersion.status == VersionStatus.PUBLISHED
+            ).first()
+
+            if not target_version:
+                logger.warning(
+                    "Entity %s has no PUBLISHED version", request.entity_id
+                )
+                raise ValueError(
+                    f"Entity {request.entity_id} has no PUBLISHED version ready for calculation."
+                )
+
+            return target_version
+
+        except SQLAlchemyError as e:
+            logger.error(
+                "Database error while resolving version for entity %s: %s",
+                request.entity_id, str(e)
+            )
+            raise
     
     def _load_version_data(
-        self, 
-        db: Session, 
+        self,
+        db: Session,
         version_id: int
     ) -> Tuple[List[Field], List[Value], List[Rule]]:
         """
         Loads all Fields, Values, and Rules for a given version.
-        
+
         Note: avoid N+1 by loading Values and Rules separately
         instead of relying on lazy loading through relationships.
         """
-        # Load fields ordered by execution sequence
-        fields_db = db.query(Field).filter(
-            Field.entity_version_id == version_id
-        ).order_by(Field.step, Field.sequence).all()
-        
-        field_ids = [f.id for f in fields_db]
-        
-        # Batch load all values
-        all_values = db.query(Value).filter(
-            Value.field_id.in_(field_ids)
-        ).all() if field_ids else []
-        
-        # Batch load all rules
-        all_rules = db.query(Rule).filter(
-            Rule.entity_version_id == version_id
-        ).all()
-        
-        return fields_db, all_values, all_rules
+        try:
+            # Load fields ordered by execution sequence
+            fields_db = db.query(Field).filter(
+                Field.entity_version_id == version_id
+            ).order_by(Field.step, Field.sequence).all()
+
+            field_ids = [f.id for f in fields_db]
+
+            # Batch load all values
+            all_values = db.query(Value).filter(
+                Value.field_id.in_(field_ids)
+            ).all() if field_ids else []
+
+            # Batch load all rules
+            all_rules = db.query(Rule).filter(
+                Rule.entity_version_id == version_id
+            ).all()
+
+            return fields_db, all_values, all_rules
+
+        except SQLAlchemyError as e:
+            logger.error(
+                "Database error while loading version data for version %s: %s",
+                version_id, str(e)
+            )
+            raise
     
     def _build_type_map(self, fields: List[Field]) -> Dict[int, str]:
         """Creates a mapping of field_id -> data_type string."""
         return {f.id: f.data_type for f in fields}
-    
+
+    def _build_index(
+        self,
+        items: List[Any],
+        key_extractor: Callable[[Any], Optional[int]]
+    ) -> Dict[int, List[Any]]:
+        """
+        Generic index builder - DRY pattern for grouping items by key.
+
+        Args:
+            items: List of objects to index
+            key_extractor: Function to extract the grouping key from each item
+
+        Returns:
+            Dictionary mapping key -> list of items with that key
+        """
+        index: Dict[int, List[Any]] = {}
+        for item in items:
+            key = key_extractor(item)
+            if key is not None:
+                if key not in index:
+                    index[key] = []
+                index[key].append(item)
+        return index
+
     def _build_values_index(self, values: List[Value]) -> Dict[int, List[Value]]:
         """Creates a mapping of field_id -> list of Value objects."""
-        index: Dict[int, List[Value]] = {}
-        for v in values:
-            if v.field_id not in index:
-                index[v.field_id] = []
-            index[v.field_id].append(v)
-        return index
-    
+        return self._build_index(values, lambda v: v.field_id)
+
     def _build_rules_index(self, rules: List[Rule]) -> Dict[int, List[Rule]]:
         """
         Creates a mapping of target_value_id -> list of Rule objects.
         Only indexes rules with a target_value_id (availability rules).
         """
-        index: Dict[int, List[Rule]] = {}
-        for r in rules:
-            if r.target_value_id is not None:
-                if r.target_value_id not in index:
-                    index[r.target_value_id] = []
-                index[r.target_value_id].append(r)
-        return index
+        return self._build_index(rules, lambda r: r.target_value_id)
     
     def _normalize_user_input(
         self, 
@@ -211,11 +276,13 @@ class RuleEngineService:
         4. Availability
         5. Validation
         """
-        
+        logger.debug("Processing field %s (id=%s)", field.name, field.id)
+
         # Layer 1: Visibility
         is_visible = self._evaluate_visibility(field, all_rules, running_context, type_map)
-        
+
         if not is_visible:
+            logger.debug("Field %s is hidden", field.name)
             return FieldOutputState(
                 field_id=field.id,
                 field_name=field.name,
@@ -257,7 +324,17 @@ class RuleEngineService:
             type_map=type_map,
             is_required=is_required
         )
-        
+
+        if validation_error:
+            logger.debug(
+                "Field %s has validation error: %s", field.name, validation_error
+            )
+
+        logger.debug(
+            "Field %s processed: value=%s, required=%s, readonly=%s",
+            field.name, final_value, is_required, is_readonly
+        )
+
         return FieldOutputState(
             field_id=field.id,
             field_name=field.name,
@@ -274,11 +351,11 @@ class RuleEngineService:
     # ============================================================
     # RULE EVALUATION LAYERS (DRY Pattern)
     # ============================================================
-    
+
     def _get_rules_by_type(
-        self, 
-        field_id: int, 
-        rule_type: RuleType, 
+        self,
+        field_id: int,
+        rule_type: RuleType,
         all_rules: List[Rule]
     ) -> List[Rule]:
         """
@@ -287,10 +364,61 @@ class RuleEngineService:
         """
         return [
             r for r in all_rules
-            if r.target_field_id == field_id 
+            if r.target_field_id == field_id
             and r.rule_type == rule_type
         ]
-    
+
+    def _any_rule_passes(
+        self,
+        rules: List[Rule],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str]
+    ) -> bool:
+        """
+        DRY helper: checks if at least one rule passes (OR logic).
+
+        Returns True if any rule's conditions are satisfied.
+        """
+        for rule in rules:
+            if self._evaluate_rule(rule.conditions, running_context, type_map):
+                return True
+        return False
+
+    def _evaluate_boolean_layer(
+        self,
+        field: Field,
+        all_rules: List[Rule],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str],
+        rule_type: RuleType,
+        default_when_no_rules: bool,
+        value_when_rule_passes: bool
+    ) -> bool:
+        """
+        Generic boolean layer evaluation - DRY pattern for visibility/editability/mandatory.
+
+        Args:
+            field: The field being evaluated
+            all_rules: All rules for the version
+            running_context: Current field values
+            type_map: Field type mapping
+            rule_type: The type of rules to evaluate
+            default_when_no_rules: Value to return when no rules exist
+            value_when_rule_passes: Value to return when a rule passes
+
+        Returns:
+            Boolean result of the layer evaluation
+        """
+        rules = self._get_rules_by_type(field.id, rule_type, all_rules)
+
+        if not rules:
+            return default_when_no_rules
+
+        if self._any_rule_passes(rules, running_context, type_map):
+            return value_when_rule_passes
+
+        return not value_when_rule_passes
+
     def _evaluate_visibility(
         self,
         field: Field,
@@ -302,20 +430,16 @@ class RuleEngineService:
         Layer 1: Determines if field is visible.
         Logic: Hidden unless a VISIBILITY rule passes.
         """
-        visibility_rules = self._get_rules_by_type(
-            field.id, RuleType.VISIBILITY, all_rules
+        return self._evaluate_boolean_layer(
+            field=field,
+            all_rules=all_rules,
+            running_context=running_context,
+            type_map=type_map,
+            rule_type=RuleType.VISIBILITY,
+            default_when_no_rules=not field.is_hidden,
+            value_when_rule_passes=True  # Visible when rule passes
         )
-        
-        if not visibility_rules:
-            return not field.is_hidden
-        
-        # Field is hidden unless a rule passes
-        for rule in visibility_rules:
-            if self._evaluate_rule(rule.conditions, running_context, type_map):
-                return True  # Visible
-        
-        return False  # Hidden
-    
+
     def _evaluate_editability(
         self,
         field: Field,
@@ -327,20 +451,16 @@ class RuleEngineService:
         Layer 2: Determines if field is readonly.
         Logic: Readonly unless an EDITABILITY rule passes.
         """
-        editability_rules = self._get_rules_by_type(
-            field.id, RuleType.EDITABILITY, all_rules
+        return self._evaluate_boolean_layer(
+            field=field,
+            all_rules=all_rules,
+            running_context=running_context,
+            type_map=type_map,
+            rule_type=RuleType.EDITABILITY,
+            default_when_no_rules=field.is_readonly,
+            value_when_rule_passes=False  # Editable (not readonly) when rule passes
         )
-        
-        if not editability_rules:
-            return field.is_readonly
-        
-        # Field is readonly unless a rule passes
-        for rule in editability_rules:
-            if self._evaluate_rule(rule.conditions, running_context, type_map):
-                return False  # Editable
-        
-        return True  # Readonly
-    
+
     def _evaluate_mandatory(
         self,
         field: Field,
@@ -352,18 +472,13 @@ class RuleEngineService:
         Layer 3: Determines if field is required.
         Logic: Starts from field.is_required, becomes required if a MANDATORY rule passes.
         """
-        mandatory_rules = self._get_rules_by_type(
-            field.id, RuleType.MANDATORY, all_rules
-        )
-        
-        is_required = field.is_required
-        
-        for rule in mandatory_rules:
-            if self._evaluate_rule(rule.conditions, running_context, type_map):
-                is_required = True
-                break
-        
-        return is_required
+        # Mandatory has special logic: starts from field default, can only become True
+        rules = self._get_rules_by_type(field.id, RuleType.MANDATORY, all_rules)
+
+        if self._any_rule_passes(rules, running_context, type_map):
+            return True
+
+        return field.is_required
     
     def _evaluate_availability(
         self,
@@ -592,122 +707,111 @@ class RuleEngineService:
                 return self._compare_numbers(actual_val, operator, expected_val)
             else:
                 return self._compare_strings(actual_val, operator, expected_val)
-        
-        except (ValueError, TypeError):
-            # Fallback to string comparison
+
+        except (ValueError, TypeError) as e:
+            logger.debug(
+                "Type conversion error for field %s, falling back to string comparison: %s",
+                target_field_id, str(e)
+            )
             return self._compare_strings(actual_val, operator, expected_val)
     
 
     # ============================================================
-    # TYPE-SPECIFIC COMPARISONS
+    # TYPE-SPECIFIC COMPARISONS (DRY Pattern)
     # ============================================================
-    
+
+    # Operator mapping - DRY pattern for comparison operations
+    _COMPARISON_OPERATORS: Dict[str, Callable[[Any, Any], bool]] = {
+        "EQUALS": lambda a, e: a == e,
+        "NOT_EQUALS": lambda a, e: a != e,
+        "GREATER_THAN": lambda a, e: a > e,
+        "LESS_THAN": lambda a, e: a < e,
+    }
+
+    def _apply_operator(
+        self,
+        actual: Any,
+        operator: str,
+        expected: Any,
+        convert_for_in: Callable[[Any], Any]
+    ) -> bool:
+        """
+        Generic operator application - DRY pattern for all comparisons.
+
+        Args:
+            actual: The actual value (already converted to target type)
+            operator: The comparison operator
+            expected: The expected value(s)
+            convert_for_in: Function to convert items for IN operator
+        """
+        # Handle IN operator specially
+        if operator == "IN":
+            if isinstance(expected, list):
+                converted_list = []
+                for x in expected:
+                    try:
+                        converted_list.append(convert_for_in(x))
+                    except (ValueError, TypeError):
+                        continue
+                return actual in converted_list
+            return actual == convert_for_in(expected)
+
+        # Standard operators
+        op_func = self._COMPARISON_OPERATORS.get(operator)
+        if op_func:
+            return op_func(actual, expected)
+
+        return False
+
     def _compare_strings(
-        self, 
-        actual: Any, 
-        operator: str, 
+        self,
+        actual: Any,
+        operator: str,
         expected: Any
     ) -> bool:
         """String comparison logic."""
-        s_actual, s_expected = str(actual), str(expected)
-        
-        if operator == "EQUALS":
-            return s_actual == s_expected
-        elif operator == "NOT_EQUALS":
-            return s_actual != s_expected
-        elif operator == "GREATER_THAN":
-            return s_actual > s_expected
-        elif operator == "LESS_THAN":
-            return s_actual < s_expected
-        elif operator == "IN":
-            if isinstance(expected, list):
-                return s_actual in [str(x) for x in expected]
-            return s_actual in s_expected
-        
-        return False
-    
+        s_actual = str(actual)
+
+        # Special case: IN for strings can also mean substring check
+        if operator == "IN" and not isinstance(expected, list):
+            return s_actual in str(expected)
+
+        s_expected = str(expected) if not isinstance(expected, list) else expected
+        return self._apply_operator(s_actual, operator, s_expected, str)
+
     def _compare_numbers(
-        self, 
-        actual: Any, 
-        operator: str, 
+        self,
+        actual: Any,
+        operator: str,
         expected: Any
     ) -> bool:
         """Number comparison logic."""
         if expected is None:
             return False
-        
+
         n_actual = float(actual)
-        
-        if operator == "IN":
-            if isinstance(expected, list):
-                target_numbers = []
-                for x in expected:
-                    try:
-                        target_numbers.append(float(x))
-                    except (ValueError, TypeError):
-                        continue
-                return n_actual in target_numbers
-            else:
-                return n_actual == float(expected)
-        
-        n_expected = float(expected)
-        
-        if operator == "GREATER_THAN":
-            return n_actual > n_expected
-        elif operator == "LESS_THAN":
-            return n_actual < n_expected
-        elif operator == "EQUALS":
-            return n_actual == n_expected
-        elif operator == "NOT_EQUALS":
-            return n_actual != n_expected
-        
-        return False
-    
+        n_expected = float(expected) if not isinstance(expected, list) else expected
+        return self._apply_operator(n_actual, operator, n_expected, float)
+
     def _compare_dates(
-        self, 
-        actual: Any, 
-        operator: str, 
+        self,
+        actual: Any,
+        operator: str,
         expected: Any
     ) -> bool:
         """Date comparison logic."""
         if expected is None:
             return False
-        
-        # Parse actual date
-        d_actual = actual
-        if not isinstance(d_actual, (date, datetime)):
-            d_actual = date.fromisoformat(str(actual).strip())
-        
-        if operator == "IN":
-            if isinstance(expected, list):
-                target_dates = []
-                for x in expected:
-                    try:
-                        if isinstance(x, (date, datetime)):
-                            target_dates.append(x)
-                        else:
-                            target_dates.append(date.fromisoformat(str(x)))
-                    except ValueError:
-                        continue
-                return d_actual in target_dates
-            else:
-                return d_actual == date.fromisoformat(str(expected))
-        
-        # Parse expected date
-        d_expected = expected
-        if not isinstance(d_expected, (date, datetime)):
-            d_expected = date.fromisoformat(str(expected))
-        
-        if operator == "GREATER_THAN":
-            return d_actual > d_expected
-        elif operator == "LESS_THAN":
-            return d_actual < d_expected
-        elif operator == "EQUALS":
-            return d_actual == d_expected
-        elif operator == "NOT_EQUALS":
-            return d_actual != d_expected
-        
-        return False
+
+        def parse_date(val: Any) -> date:
+            """Helper to parse date values."""
+            if isinstance(val, (date, datetime)):
+                return val if isinstance(val, date) else val.date()
+            return date.fromisoformat(str(val).strip())
+
+        d_actual = parse_date(actual)
+        d_expected = parse_date(expected) if not isinstance(expected, list) else expected
+        return self._apply_operator(d_actual, operator, d_expected, parse_date)
     
 
     # ============================================================

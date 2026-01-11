@@ -125,7 +125,7 @@ def create_rule(
     """
     logger.info(
         f"Creating rule for version {rule_data.entity_version_id} "
-        f"by user {current_user.id} (role: {current_user.role.value})"
+        f"by user {current_user.id} (role: {current_user.role_display})"
     )
 
     # Security check: is the version editable?
@@ -178,7 +178,7 @@ def update_rule(
     """
     logger.info(
         f"Updating rule {rule.id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     # The Version must be immutable
@@ -238,7 +238,7 @@ def delete_rule(
     """
     logger.info(
         f"Deleting rule {rule.id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     # Delete rule

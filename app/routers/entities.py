@@ -53,7 +53,7 @@ def create_entity(
     """
     logger.info(
         f"Creating entity '{entity.name}' by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     # Check if entity with same name already exists
@@ -156,7 +156,7 @@ def update_entity(
     """
     logger.info(
         f"Updating entity {entity.id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     # Check name uniqueness if name is being changed
@@ -212,7 +212,7 @@ def delete_entity(
     """
     logger.info(
         f"Deleting entity {entity.id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     # Guardrail: check for dependencies

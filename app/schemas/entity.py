@@ -2,22 +2,24 @@ from typing import Optional
 from pydantic import Field
 from .base_schema import BaseSchema, AuditSchemaMixin
 
+
 class EntityBase(BaseSchema):
+    """Base properties shared by Entity schemas."""
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
 
+
 class EntityCreate(EntityBase):
-    """ Schema to create an Entity (POST). """
-    # In a POST, I expect the client to send all fields, so 
-    # inheriting from EntityBase (which has name) is correct.
+    """Schema for creating an Entity (POST)."""
     pass
+
 
 class EntityRead(EntityBase, AuditSchemaMixin):
-    """ Schema to read an Entity (GET). """
+    """Schema for reading Entity data (GET responses)."""
     id: int
 
-class EntityUpdate(EntityBase):
-    """ Schema to update an Entity (PUT). """
-    # In a PUT, I expect the client to send all fields, so 
-    # inheriting from EntityBase (which has name) is correct.
-    pass
+
+class EntityUpdate(BaseSchema):
+    """Schema for updating an Entity (PUT with partial update behavior). All fields optional."""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None

@@ -108,7 +108,7 @@ def read_versions(
     """
     logger.info(
         f"Listing versions for entity {entity_id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     # Cap limit to prevent abuse
@@ -177,7 +177,7 @@ def create_version_draft(
     """
     logger.info(
         f"Creating DRAFT version for entity {version_in.entity_id} "
-        f"by user {current_user.id} (role: {current_user.role.value})"
+        f"by user {current_user.id} (role: {current_user.role_display})"
     )
 
     try:
@@ -225,7 +225,7 @@ def publish_version(
     """
     logger.info(
         f"Publishing version {version_id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     try:
@@ -274,7 +274,7 @@ def clone_version(
     """
     logger.info(
         f"Cloning version {version_id} by user {current_user.id} "
-        f"(role: {current_user.role.value})"
+        f"(role: {current_user.role_display})"
     )
 
     try:

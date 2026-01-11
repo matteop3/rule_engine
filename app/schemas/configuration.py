@@ -1,25 +1,30 @@
-from typing import List, Optional, Any, Dict
-from pydantic import BaseModel
+from typing import List, Optional
 from .base_schema import BaseSchema, AuditSchemaMixin
+from .engine import FieldInputState
 
-# Reuse engine input structure
-class ConfigItem(BaseModel):
-    field_id: int
-    value: Any
 
 class ConfigurationBase(BaseSchema):
+    """Base properties for Configuration schemas."""
     name: Optional[str] = None
-    data: List[ConfigItem] 
+    data: List[FieldInputState]
+
 
 class ConfigurationCreate(ConfigurationBase):
+    """Schema for creating a new Configuration (POST)."""
     entity_version_id: int
 
+
 class ConfigurationRead(ConfigurationBase, AuditSchemaMixin):
-    id: str # UUID
+    """Schema for reading Configuration data (GET responses)."""
+    id: str  # UUID
     entity_version_id: int
     is_complete: bool
 
+
 class ConfigurationUpdate(BaseSchema):
-    """ Allows updating name or data, but not the version linkage. """
+    """
+    Schema for updating a Configuration (PATCH).
+    Allows updating name or data, but not the version linkage.
+    """
     name: Optional[str] = None
-    data: Optional[List[ConfigItem]] = None
+    data: Optional[List[FieldInputState]] = None

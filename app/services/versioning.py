@@ -1,8 +1,13 @@
+import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
-from sqlalchemy.orm import Session, joinedload
-from app.models.domain import Entity, EntityVersion, Field, Value, Rule, VersionStatus
 import copy
+
+from sqlalchemy.orm import Session, joinedload
+
+from app.models.domain import Entity, EntityVersion, Field, Value, Rule, VersionStatus
+
+logger = logging.getLogger(__name__)
 
 class VersioningService:
     """
@@ -19,10 +24,10 @@ class VersioningService:
     # ============================================================
 
     def create_draft_version(
-            self, 
-            db: Session, 
-            entity_id: int, 
-            user_id: str, 
+            self,
+            db: Session,
+            entity_id: int,
+            user_id: str,
             changelog: Optional[str] = None
     ) -> EntityVersion:
         """
@@ -32,23 +37,26 @@ class VersioningService:
         - Single Draft Policy (only one draft per entity)
         - Auto-increment version number
         """
+        logger.debug("Creating draft version", extra={
+            "entity_id": entity_id,
+            "user_id": user_id
+        })
+
         self._check_entity_exists(db, entity_id)
         self._check_draft_constraint(db, entity_id)
-        
-        next_num = self._calculate_next_version_number(db, entity_id)
 
-        # Create the object
-        new_version = EntityVersion(
-            entity_id=entity_id,
-            version_number=next_num,
-            status=VersionStatus.DRAFT,
-            changelog=changelog,
-            created_by_id=user_id,
-            updated_by_id=user_id
-        )
-        
+        next_num = self._calculate_next_version_number(db, entity_id)
+        new_version = self._create_version_entity(entity_id, next_num, user_id, changelog)
+
         db.add(new_version)
-        db.flush() # Get the new ID
+        db.flush()
+
+        logger.info("Draft version created", extra={
+            "version_id": new_version.id,
+            "entity_id": entity_id,
+            "version_number": next_num,
+            "user_id": user_id
+        })
 
         return new_version        
 
@@ -60,11 +68,13 @@ class VersioningService:
         - Status check (only DRAFT can be published)
         - Single Published Policy (archives the previous one)
         """
-        version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
+        logger.debug("Publishing version", extra={
+            "version_id": version_id,
+            "user_id": user_id
+        })
 
-        if not version:
-            raise ValueError(f"Version {version_id} not found.")
-        
+        version = self._get_version_by_id(db, version_id)
+
         if version.status != VersionStatus.DRAFT:
             raise ValueError("Only DRAFT Versions can be published.")
 
@@ -73,26 +83,42 @@ class VersioningService:
             EntityVersion.entity_id == version.entity_id,
             EntityVersion.status == VersionStatus.PUBLISHED
         ).first()
-        
+
         if current_published:
             current_published.status = VersionStatus.ARCHIVED
-        
+            logger.info("Previous version archived", extra={
+                "archived_version_id": current_published.id,
+                "version_number": current_published.version_number
+            })
+
         # Publish the new Version
         version.status = VersionStatus.PUBLISHED
         version.published_at = datetime.now(timezone.utc)
         version.updated_by_id = user_id
+
+        logger.info("Version published", extra={
+            "version_id": version_id,
+            "entity_id": version.entity_id,
+            "version_number": version.version_number,
+            "user_id": user_id
+        })
 
         return version
 
     def clone_version(self, db: Session, source_version_id: int, user_id: str, new_changelog: Optional[str] = None) -> EntityVersion:
         """
         Performs a deep copy of a source version into a new DRAFT version.
-        
+
         Handles:
         - ID remapping for Fields, Values, and Rules
         - JSON criteria rewriting
         - Eager loading to avoid N+1 queries
-        """        
+        """
+        logger.debug("Cloning version", extra={
+            "source_version_id": source_version_id,
+            "user_id": user_id
+        })
+
         # Fetch source version with eager loading (avoid N+1)
         source_version = db.query(EntityVersion).options(
             joinedload(EntityVersion.fields).joinedload(Field.values),
@@ -103,20 +129,15 @@ class VersioningService:
             raise ValueError(f"Source version {source_version_id} not found.")
 
         self._check_draft_constraint(db, source_version.entity_id)
-        
-        next_num = self._calculate_next_version_number(db, source_version.entity_id)
 
-        # Create the new Version container
-        new_version = EntityVersion(
-            entity_id=source_version.entity_id,
-            version_number=next_num,
-            status=VersionStatus.DRAFT,
-            changelog=new_changelog or f"Cloned from v{source_version.version_number}.",
-            created_by_id=user_id,
-            updated_by_id=user_id
+        next_num = self._calculate_next_version_number(db, source_version.entity_id)
+        changelog = new_changelog or f"Cloned from v{source_version.version_number}."
+
+        new_version = self._create_version_entity(
+            source_version.entity_id, next_num, user_id, changelog
         )
         db.add(new_version)
-        db.flush() # Flush to generate new_version.id
+        db.flush()
 
         # Mapping dictionaries (old ID -> new ID)
         field_map: Dict[int, int] = {}
@@ -186,12 +207,47 @@ class VersioningService:
             )
             db.add(new_rule)
 
+        logger.info("Version cloned", extra={
+            "new_version_id": new_version.id,
+            "source_version_id": source_version_id,
+            "entity_id": source_version.entity_id,
+            "version_number": next_num,
+            "fields_cloned": len(field_map),
+            "values_cloned": len(value_map),
+            "rules_cloned": len(source_version.rules),
+            "user_id": user_id
+        })
+
         return new_version
 
 
     # ============================================================
     # PRIVATE HELPERS
     # ============================================================
+
+    def _create_version_entity(
+        self,
+        entity_id: int,
+        version_number: int,
+        user_id: str,
+        changelog: Optional[str] = None
+    ) -> EntityVersion:
+        """Creates a new EntityVersion object in DRAFT status."""
+        return EntityVersion(
+            entity_id=entity_id,
+            version_number=version_number,
+            status=VersionStatus.DRAFT,
+            changelog=changelog,
+            created_by_id=user_id,
+            updated_by_id=user_id
+        )
+
+    def _get_version_by_id(self, db: Session, version_id: int) -> EntityVersion:
+        """Fetches a version by ID. Raises ValueError if not found."""
+        version = db.query(EntityVersion).filter(EntityVersion.id == version_id).first()
+        if not version:
+            raise ValueError(f"Version {version_id} not found.")
+        return version
 
     def _rewrite_conditions(self, conditions: Dict[str, Any], field_map: Dict[int, int]) -> Dict[str, Any]:
         """
