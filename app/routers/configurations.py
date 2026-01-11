@@ -137,10 +137,10 @@ def validate_user_can_save_version(user: User, version: EntityVersion) -> None:
     Raises:
         HTTPException(400): If regular user tries to save non-PUBLISHED version
     """
-    if user.role == UserRole.USER and version.status != VersionStatus.PUBLISHED:
+    if user.role == UserRole.USER and version.status != VersionStatus.PUBLISHED.value:
         logger.warning(
             f"User {user.id} (role: USER) attempted to save configuration "
-            f"for non-PUBLISHED version {version.id} (status: {version.status.value})"
+            f"for non-PUBLISHED version {version.id} (status: {version.status})"
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

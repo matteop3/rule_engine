@@ -3,7 +3,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.database import engine, Base
-from app.routers import entities, fields, values, rules, engine as engine_router, versions, configurations, auth
+from app.routers import entities, fields, values, rules, engine as engine_router, versions, configurations, auth, users
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 
 # DB tables creation
@@ -21,6 +21,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # Router registration
 app.include_router(auth.router)
+app.include_router(users.router)
 app.include_router(entities.router)
 app.include_router(versions.router)
 app.include_router(fields.router)

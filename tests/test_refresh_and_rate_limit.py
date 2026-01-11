@@ -246,16 +246,14 @@ def test_multiple_refresh_tokens(client: TestClient, test_user):
 # ============================================================
 # RATE LIMITING TESTS
 # ============================================================
-# Note: These tests only work when RATE_LIMIT_ENABLED=true in settings.
-# In test environment, rate limiting is typically disabled.
-# These tests verify the behavior IF rate limiting is enabled.
+# These tests temporarily enable rate limiting regardless of settings
+# to ensure the rate limiting logic is always tested.
 
 @pytest.fixture(autouse=True)
 def reset_rate_limiter():
     """
     Reset rate limiter state before and after EVERY test.
-    This ensures rate limit tests are isolated.
-    autouse=True means it runs for every test in this module.
+    autouse=True ensures this runs for all tests in this module.
     """
     from app.core.rate_limit import limiter
 
@@ -263,7 +261,6 @@ def reset_rate_limiter():
     try:
         if hasattr(limiter, '_storage') and limiter._storage:
             limiter._storage.reset()
-        # Also clear the limiter's internal state
         if hasattr(limiter, 'reset'):
             limiter.reset()
     except Exception:
@@ -281,17 +278,37 @@ def reset_rate_limiter():
         pass
 
 
-def test_rate_limit_login_endpoint(client: TestClient, test_user):
+@pytest.fixture
+def enable_rate_limiting():
     """
-    Test that login endpoint enforces rate limiting when enabled.
-
-    Note: This test may pass even if rate limiting triggers,
-    as we're testing the mechanism exists, not that it's enabled.
+    Fixture that temporarily enables rate limiting for a test.
+    Restores the original state after the test completes.
     """
+    from app.core.rate_limit import limiter
     from app.core.config import settings
 
-    if not settings.RATE_LIMIT_ENABLED:
-        pytest.skip("Rate limiting is disabled in test environment")
+    # Store original state
+    original_enabled = limiter.enabled
+    original_setting = settings.RATE_LIMIT_ENABLED
+
+    # Enable rate limiting
+    limiter.enabled = True
+    settings.RATE_LIMIT_ENABLED = True
+
+    yield
+
+    # Restore original state
+    limiter.enabled = original_enabled
+    settings.RATE_LIMIT_ENABLED = original_setting
+
+
+def test_rate_limit_login_endpoint(client: TestClient, test_user, enable_rate_limiting):
+    """
+    Test that login endpoint enforces rate limiting.
+
+    This test temporarily enables rate limiting to verify the mechanism works.
+    """
+    from app.core.config import settings
 
     # Make multiple requests to trigger rate limit
     rate_limited = False
@@ -313,14 +330,13 @@ def test_rate_limit_login_endpoint(client: TestClient, test_user):
     assert rate_limited, "Rate limiting should have been triggered"
 
 
-def test_rate_limit_refresh_endpoint(client: TestClient, test_user):
+def test_rate_limit_refresh_endpoint(client: TestClient, test_user, enable_rate_limiting):
     """
-    Test that refresh endpoint enforces rate limiting when enabled.
+    Test that refresh endpoint enforces rate limiting.
+
+    This test temporarily enables rate limiting to verify the mechanism works.
     """
     from app.core.config import settings
-
-    if not settings.RATE_LIMIT_ENABLED:
-        pytest.skip("Rate limiting is disabled in test environment")
 
     # First get a valid refresh token
     login_response = client.post(
@@ -347,3 +363,105 @@ def test_rate_limit_refresh_endpoint(client: TestClient, test_user):
             break
 
     assert rate_limited, "Rate limiting should have been triggered"
+
+
+def test_rate_limit_response_format(client: TestClient, test_user, enable_rate_limiting):
+    """
+    Test that rate limit response has the correct format.
+
+    Verifies:
+    - HTTP 429 status code
+    - JSON body with 'error' and 'detail' fields
+    """
+    from app.core.config import settings
+
+    # Trigger rate limit
+    for _ in range(settings.RATE_LIMIT_LOGIN_ATTEMPTS + 2):
+        response = client.post(
+            "/auth/token",
+            data={"username": "testuser@example.com", "password": "wrong"}
+        )
+        if response.status_code == 429:
+            break
+
+    assert response.status_code == 429
+    data = response.json()
+
+    # Verify response structure
+    assert "error" in data
+    assert data["error"] == "rate_limit_exceeded"
+    assert "detail" in data
+    assert "retry_after" in data
+
+
+def test_rate_limit_resets_after_window(client: TestClient, test_user, enable_rate_limiting):
+    """
+    Test that rate limit state can be reset (simulating window expiration).
+
+    Note: We can't wait for actual window expiration in tests,
+    so we manually reset the limiter state to verify behavior.
+    """
+    from app.core.config import settings
+    from app.core.rate_limit import limiter
+
+    # Trigger rate limit
+    for _ in range(settings.RATE_LIMIT_LOGIN_ATTEMPTS + 2):
+        response = client.post(
+            "/auth/token",
+            data={"username": "testuser@example.com", "password": "wrong"}
+        )
+        if response.status_code == 429:
+            break
+
+    assert response.status_code == 429
+
+    # Reset limiter (simulating window expiration)
+    try:
+        if hasattr(limiter, '_storage') and limiter._storage:
+            limiter._storage.reset()
+    except Exception:
+        pass
+
+    # Should be able to make requests again
+    response = client.post(
+        "/auth/token",
+        data={
+            "username": "testuser@example.com",
+            "password": "TestPassword123!"
+        }
+    )
+
+    # Should not be rate limited anymore
+    assert response.status_code != 429
+
+
+def test_rate_limit_disabled_when_setting_false(client: TestClient, test_user):
+    """
+    Test that rate limiting can be disabled via settings.
+
+    When RATE_LIMIT_ENABLED is False, requests should not be rate limited.
+    """
+    from app.core.rate_limit import limiter
+    from app.core.config import settings
+
+    # Disable rate limiting
+    original_enabled = limiter.enabled
+    original_setting = settings.RATE_LIMIT_ENABLED
+
+    limiter.enabled = False
+    settings.RATE_LIMIT_ENABLED = False
+
+    try:
+        # Make many requests - none should be rate limited
+        for _ in range(20):
+            response = client.post(
+                "/auth/token",
+                data={"username": "testuser@example.com", "password": "wrong"}
+            )
+            # Should get 401 (wrong password), never 429 (rate limited)
+            assert response.status_code == 401, \
+                "Rate limiting triggered when it should be disabled"
+    finally:
+        # Restore original state
+        limiter.enabled = original_enabled
+        settings.RATE_LIMIT_ENABLED = original_setting

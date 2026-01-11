@@ -148,7 +148,7 @@ def calculate_state(
         validate_user_can_calculate_version(current_user, request, version.status)
         logger.debug(
             f"Access granted: user {current_user.id} can calculate on version {version.id} "
-            f"(status: {version.status.value})"
+            f"(status: {version.status})"
         )
 
     # Calculation

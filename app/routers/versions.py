@@ -150,7 +150,7 @@ def read_version(
 
     logger.debug(
         f"Version {version_id} retrieved: entity_id={version.entity_id}, "
-        f"status={version.status.value}, version_number={version.version_number}"
+        f"status={version.status}, version_number={version.version_number}"
     )
 
     return version

@@ -207,11 +207,11 @@ class EntityVersion(Base, AuditMixin):
     def __repr__(self) -> str:
         return (
             f"<EntityVersion id={self.id} entity_id={self.entity_id} "
-            f"v{self.version_number} status={self.status.value}>"
+            f"v{self.version_number} status={self.status}>"
         )
 
     def __str__(self) -> str:
-        return f"v{self.version_number} ({self.status.value})"
+        return f"v{self.version_number} ({self.status})"
 
 
 class Field(Base):

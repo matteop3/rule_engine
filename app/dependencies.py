@@ -369,11 +369,11 @@ def validate_version_is_draft(version: EntityVersion) -> None:
     Raises:
         HTTPException(409): If not DRAFT
     """
-    if version.status != VersionStatus.DRAFT:
+    if version.status != VersionStatus.DRAFT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Version {version.id} is {version.status.value}. "
+                f"Version {version.id} is {version.status}. "
                 "Only DRAFT versions can be modified. "
                 "Clone this version to make changes."
             )
