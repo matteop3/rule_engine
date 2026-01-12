@@ -141,13 +141,15 @@ def engine_scenario(db_session, admin_user):
     )
 
     # VALIDATION: Must be adult (18+)
+    # Note: VALIDATION rules use "negative pattern" - the condition describes the INVALID state
+    # So we check if birthdate > adult_date (i.e., born too recently = minor = invalid)
     adult_date = date.today() - timedelta(days=18*365)
     rule_validation = Rule(
         entity_version_id=version.id,
         target_field_id=field_birthdate.id,
         rule_type=RuleType.VALIDATION.value,
         description="Must be at least 18 years old",
-        conditions={"criteria": [{"field_id": field_birthdate.id, "operator": "LESS_THAN_OR_EQUAL", "value": str(adult_date)}]},
+        conditions={"criteria": [{"field_id": field_birthdate.id, "operator": "GREATER_THAN", "value": str(adult_date)}]},
         error_message="Must be at least 18 years old"
     )
 

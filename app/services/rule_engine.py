@@ -725,7 +725,9 @@ class RuleEngineService:
         "EQUALS": lambda a, e: a == e,
         "NOT_EQUALS": lambda a, e: a != e,
         "GREATER_THAN": lambda a, e: a > e,
+        "GREATER_THAN_OR_EQUAL": lambda a, e: a >= e,
         "LESS_THAN": lambda a, e: a < e,
+        "LESS_THAN_OR_EQUAL": lambda a, e: a <= e,
     }
 
     def _apply_operator(
