@@ -11,7 +11,7 @@ def test_engine_minorenne_validation(db_session, setup_insurance_scenario):
     data_map = setup_insurance_scenario
     service = RuleEngineService()
 
-    # Creiamo un input con data di nascita = Oggi (quindi 0 anni -> Minorenne)
+    # Create an input with birth date = Today (0 years old -> Underage)
     payload = CalculationRequest(
         entity_id=data_map["entity_id"],
         current_state=[
@@ -26,7 +26,7 @@ def test_engine_minorenne_validation(db_session, setup_insurance_scenario):
 
     assert field_out.error_message == "Minorenne"
     assert response.is_complete is False
-    #print("\n✅ Test Minorenne superato: Errore rilevato correttamente.")
+    #print("\n✅ Test Underage passed: Error detected correctly.")
 
 
 def test_engine_mandatory_rule(db_session, setup_insurance_scenario):
@@ -36,7 +36,7 @@ def test_engine_mandatory_rule(db_session, setup_insurance_scenario):
     data_map = setup_insurance_scenario
     service = RuleEngineService()
 
-    # CASO A: Valore Basso (40.000) -> Satellitare NON obbligatorio
+    # CASE A: Low value (40,000) -> Satellite NOT required
     payload_low = CalculationRequest(
         entity_id=data_map["entity_id"],
         current_state=[
@@ -45,9 +45,9 @@ def test_engine_mandatory_rule(db_session, setup_insurance_scenario):
     )
     resp_low = service.calculate_state(db_session, payload_low)
     sat_low = next(f for f in resp_low.fields if f.field_id == data_map["fields"]["satellitare"])
-    assert sat_low.is_required is False # Default del campo
+    assert sat_low.is_required is False # Field default
 
-    # CASO B: Valore Alto (60.000) -> Satellitare DIVENTA obbligatorio
+    # CASE B: High value (60,000) -> Satellite BECOMES required
     payload_high = CalculationRequest(
         entity_id=data_map["entity_id"],
         current_state=[
@@ -58,10 +58,10 @@ def test_engine_mandatory_rule(db_session, setup_insurance_scenario):
     sat_high = next(f for f in resp_high.fields if f.field_id == data_map["fields"]["satellitare"])
     
     assert sat_high.is_required is True
-    # Dato che non abbiamo fornito un valore per il satellitare, is_complete deve essere False
+    # Since no value was provided for satellite field, is_complete must be False
     assert resp_high.is_complete is False
-    
-    #print("\n✅ Test Mandatory superato: Il campo è diventato obbligatorio dinamicamente.")
+
+    #print("\n✅ Test Mandatory passed: Field became required dynamically.")
 
 
 def test_engine_visibility_logic(db_session, setup_insurance_scenario):
@@ -71,7 +71,7 @@ def test_engine_visibility_logic(db_session, setup_insurance_scenario):
     data_map = setup_insurance_scenario
     service = RuleEngineService()
 
-    # CASO A: Tipo = AUTO -> Infortuni Visibile
+    # CASE A: Type = AUTO -> Infortuni Visible
     payload_auto = CalculationRequest(
         entity_id=data_map["entity_id"],
         current_state=[
@@ -82,7 +82,7 @@ def test_engine_visibility_logic(db_session, setup_insurance_scenario):
     inf_auto = next(f for f in resp_auto.fields if f.field_id == data_map["fields"]["infortuni"])
     assert inf_auto.is_hidden is False
 
-    # CASO B: Tipo = MOTO -> Infortuni Nascosto
+    # CASE B: Type = MOTO -> Infortuni Hidden
     payload_moto = CalculationRequest(
         entity_id=data_map["entity_id"],
         current_state=[
@@ -93,10 +93,10 @@ def test_engine_visibility_logic(db_session, setup_insurance_scenario):
     inf_moto = next(f for f in resp_moto.fields if f.field_id == data_map["fields"]["infortuni"])
     
     assert inf_moto.is_hidden is True
-    # Quando è nascosto, il valore deve essere resettato a None
+    # When hidden, the value must be reset to None
     assert inf_moto.current_value is None
-    
-    #print("\n✅ Test Visibility superato: Campo nascosto correttamente su MOTO.")
+
+    #print("\n✅ Test Visibility passed: Field hidden correctly on MOTO.")
 
 def test_engine_availability_filter(db_session, setup_insurance_scenario):
     """
@@ -118,7 +118,7 @@ def test_engine_availability_filter(db_session, setup_insurance_scenario):
     # Verifichiamo le opzioni disponibili
     available_values = [opt.value for opt in massimale_field.available_options]
     
-    assert "VIP" in available_values      # Deve esserci
-    assert "MINIMO" not in available_values # NON deve esserci
-    
-    #print("\n✅ Test Availability superato: Opzione MINIMO rimossa per CAMION.")
+    assert "VIP" in available_values      # Must be present
+    assert "MINIMO" not in available_values # Must NOT be present
+
+    #print("\n✅ Test Availability passed: Option MINIMO removed for CAMION.")

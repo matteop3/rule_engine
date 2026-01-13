@@ -7,7 +7,7 @@ from app.schemas.engine import CalculationRequest, FieldInputState
 def setup_stress_scenario(db_session):
     """
     Scenario A -> B -> C (Domino)
-    Scenario X <-> Y (Circolare/Sequenza)
+    Scenario X <-> Y (Circular/Sequence)
     """
     entity = Entity(name="Stress Test", description="Complex Logic")
     db_session.add(entity)
@@ -17,14 +17,14 @@ def setup_stress_scenario(db_session):
     db_session.add(version)
     db_session.commit()
 
-    # --- CAMPI PER DOMINO (A, B, C) ---
-    # Sequenza: 1, 2, 3
+    # --- FIELDS FOR DOMINO (A, B, C) ---
+    # Sequence: 1, 2, 3
     f_a = Field(entity_version_id=version.id, name="A", label="Driver", data_type="string", sequence=1, is_free_value=True)
     f_b = Field(entity_version_id=version.id, name="B", label="Middle", data_type="string", sequence=2, is_free_value=True)
     f_c = Field(entity_version_id=version.id, name="C", label="Tail",   data_type="string", sequence=3, is_free_value=True)
 
-    # --- CAMPI PER SEQUENCE CHECK (X, Y) ---
-    # X (Seq 10) dipende da Y (Seq 20)
+    # --- FIELDS FOR SEQUENCE CHECK (X, Y) ---
+    # X (Seq 10) depends on Y (Seq 20)
     f_x = Field(entity_version_id=version.id, name="X", label="Early", data_type="string", sequence=10, is_free_value=True)
     f_y = Field(entity_version_id=version.id, name="Y", label="Late",  data_type="string", sequence=20, is_free_value=True)
 
@@ -39,26 +39,26 @@ def setup_stress_scenario(db_session):
 
 def test_stress_domino_effect(db_session, setup_stress_scenario):
     """
-    Testa la propagazione delle modifiche nello stesso ciclo.
-    Regola 1: Se A == 'HIDE', nascondi B.
-    Regola 2: Se B è NULL (o nascosto), nascondi C.
-    
-    Input: A='HIDE', B='Valore', C='Valore'
-    Output Atteso: B nascosto E C nascosto.
+    Test the propagation of changes within the same cycle.
+    Rule 1: If A == 'HIDE', hide B.
+    Rule 2: If B is NULL (or hidden), hide C.
+
+    Input: A='HIDE', B='Value', C='Value'
+    Expected Output: B hidden AND C hidden.
     """
     ids = setup_stress_scenario
     service = RuleEngineService()
 
-    # R1: Logica POSITIVA -> Definisco quando B è VISIBILE.
-    # Voglio nascondere B se A='HIDE'. Quindi B è visibile se A != 'HIDE'.
+    # R1: POSITIVE logic -> Define when B is VISIBLE.
+    # I want to hide B if A='HIDE'. So B is visible if A != 'HIDE'.
     r1 = Rule(
         entity_version_id=ids["v_id"], target_field_id=ids["B"], rule_type=RuleType.VISIBILITY.value,
         conditions={"criteria": [{"field_id": ids["A"], "operator": "NOT_EQUALS", "value": "HIDE"}]}
     )
     
-    # R2: Logica POSITIVA -> Definisco quando C è VISIBILE.
-    # C è visibile solo se B ha il valore 'SHOW'.
-    # Se B viene nascosto dalla regola sopra, il suo valore nel contesto diventerà None -> Regola Falsa -> C Nascosto.
+    # R2: POSITIVE logic -> Define when C is VISIBLE.
+    # C is visible only if B has the value 'SHOW'.
+    # If B is hidden by the rule above, its value in the context becomes None -> Rule False -> C Hidden.
     r2 = Rule(
         entity_version_id=ids["v_id"], target_field_id=ids["C"], rule_type=RuleType.VISIBILITY.value,
         conditions={"criteria": [{"field_id": ids["B"], "operator": "EQUALS", "value": "SHOW"}]}
@@ -71,7 +71,7 @@ def test_stress_domino_effect(db_session, setup_stress_scenario):
         entity_id=ids["e_id"],
         current_state=[
             FieldInputState(field_id=ids["A"], value="HIDE"),
-            FieldInputState(field_id=ids["B"], value="SHOW"), # Inserisco SHOW, ma verrà nascosto
+            FieldInputState(field_id=ids["B"], value="SHOW"), # Insert SHOW, but it will be hidden
             FieldInputState(field_id=ids["C"], value="ANY")
         ]
     )
@@ -81,21 +81,21 @@ def test_stress_domino_effect(db_session, setup_stress_scenario):
     field_b = next(f for f in resp.fields if f.field_id == ids["B"])
     field_c = next(f for f in resp.fields if f.field_id == ids["C"])
 
-    # 1. B deve essere nascosto (causa A)
+    # 1. B must be hidden (due to A)
     assert field_b.is_hidden is True
-    # 2. B deve essere None (perché nascosto)
+    # 2. B must be None (because hidden)
     assert field_b.current_value is None
 
-    # 3. C deve essere nascosto?
-    # Se il motore ha aggiornato il contesto dopo aver nascosto B, allora la regola su C
-    # leggerà B=None. Siccome None != 'SHOW', C deve essere nascosto.
-    assert field_c.is_hidden is True, "Il Domino Effect ha fallito: C dovrebbe reagire al fatto che B è stato nascosto."
+    # 3. C must be hidden?
+    # If the engine updated the context after hiding B, then the rule on C
+    # will read B=None. Since None != 'SHOW', C must be hidden.
+    assert field_c.is_hidden is True, "Domino Effect failed: C should react to the fact that B was hidden."
 
 def test_stress_future_dependency(db_session, setup_stress_scenario):
     """
-    Testa cosa succede se una regola dipende da un campo che viene dopo nella sequenza.
-    X (seq 10) dipende da Y (seq 20).
-    Regola: Se Y='SECRET', nascondi X.
+    Test what happens if a rule depends on a field that comes later in the sequence.
+    X (seq 10) depends on Y (seq 20).
+    Rule: If Y='SECRET', hide X.
     """
     ids = setup_stress_scenario
     service = RuleEngineService()
@@ -107,9 +107,9 @@ def test_stress_future_dependency(db_session, setup_stress_scenario):
     db_session.add(rule)
     db_session.commit()
 
-    # Il motore processa X. Y non è ancora stato elaborato (è dopo).
-    # Tuttavia, il valore di Y è presente nell'INPUT iniziale.
-    # Il motore dovrebbe usare il valore di input.
+    # The engine processes X. Y has not been processed yet (it comes after).
+    # However, Y's value is present in the initial INPUT.
+    # The engine should use the input value.
     payload = CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[
@@ -121,26 +121,26 @@ def test_stress_future_dependency(db_session, setup_stress_scenario):
     resp = service.calculate_state(db_session, payload)
     field_x = next(f for f in resp.fields if f.field_id == ids["X"])
 
-    # X dovrebbe essere nascosto perché legge l'input grezzo di Y
+    # X should be hidden because it reads the raw input of Y
     assert field_x.is_hidden is True
 
 def test_stress_multiple_validations(db_session, setup_stress_scenario):
     """
-    Testa se il motore gestisce errori multipli o sovrascrive.
-    Attualmente il modello FieldOutputState ha un solo campo 'error_message'.
-    Ci aspettiamo che prenda l'ultimo o il primo errore (comportamento Last-Win o First-Win).
+    Test if the engine handles multiple errors or overwrites.
+    Currently the FieldOutputState model has only one 'error_message' field.
+    We expect it to take the last or first error (Last-Win or First-Win behavior).
     """
     ids = setup_stress_scenario
     service = RuleEngineService()
 
-    # Regola 1: Errore se A contiene "ERR1"
+    # Rule 1: Error if A contains "ERR1"
     r1 = Rule(
         entity_version_id=ids["v_id"], target_field_id=ids["A"], rule_type=RuleType.VALIDATION.value,
         error_message="Errore Uno",
         conditions={"criteria": [{"field_id": ids["A"], "operator": "EQUALS", "value": "ERR1"}]}
     )
-    # Regola 2: Errore se B contiene "ERR1" (Nota: uso B per triggerare errore su A)
-    # Questo simula due regole diverse che rompono A.
+    # Rule 2: Error if B contains "ERR1" (Note: using B to trigger error on A)
+    # This simulates two different rules that break A.
     r2 = Rule(
         entity_version_id=ids["v_id"], target_field_id=ids["A"], rule_type=RuleType.VALIDATION.value,
         error_message="Errore Due",
@@ -160,6 +160,6 @@ def test_stress_multiple_validations(db_session, setup_stress_scenario):
     resp = service.calculate_state(db_session, payload)
     field_a = next(f for f in resp.fields if f.field_id == ids["A"])
 
-    # Verifichiamo semplicemente che ci sia UN errore.
-    # Se volessimo supportare errori multipli, dovremmo cambiare FieldOutputState.error_message in List[str]
+    # Simply verify that there is ONE error.
+    # If we wanted to support multiple errors, we should change FieldOutputState.error_message to List[str]
     assert field_a.error_message in ["Errore Uno", "Errore Due"]

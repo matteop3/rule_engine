@@ -26,20 +26,17 @@ class RuleEngineService:
         Finds the target Version (PUBLISHED or explicit) and executes waterfall logic.
         """
         logger.info(
-            "Starting state calculation for entity_id=%s, version_id=%s",
-            request.entity_id,
-            request.entity_version_id
+            f"Starting state calculation for entity_id={request.entity_id}, version_id={request.entity_version_id}"
         )
 
         # Resolve target version
         target_version = self._resolve_target_version(db, request)
-        logger.debug("Resolved target version: %s", target_version.id)
+        logger.debug(f"Resolved target version: {target_version.id}")
         
         # Load all data for the version (with optimized queries)
         fields_db, all_values, all_rules = self._load_version_data(db, target_version.id)
         logger.debug(
-            "Loaded version data: %d fields, %d values, %d rules",
-            len(fields_db), len(all_values), len(all_rules)
+            f"Loaded version data: {len(fields_db)} fields, {len(all_values)} values, {len(all_rules)} rules"
         )
 
         # Build indexing structures
@@ -70,8 +67,7 @@ class RuleEngineService:
         is_complete = self._check_completeness(output_fields)
 
         logger.info(
-            "State calculation completed for entity_id=%s: %d fields processed, is_complete=%s",
-            request.entity_id, len(output_fields), is_complete
+            f"State calculation completed for entity_id={request.entity_id}: {len(output_fields)} fields processed, is_complete={is_complete}"
         )
 
         return CalculationResponse(
@@ -100,27 +96,25 @@ class RuleEngineService:
             # Check entity existence
             entity = db.query(Entity).filter(Entity.id == request.entity_id).first()
             if not entity:
-                logger.warning("Entity %s not found", request.entity_id)
+                logger.warning(f"Entity {request.entity_id} not found")
                 raise ValueError(f"Entity {request.entity_id} not found.")
 
             # Preview mode
             if request.entity_version_id is not None:
                 logger.debug(
-                    "Preview mode: resolving explicit version %s",
-                    request.entity_version_id
+                    f"Preview mode: resolving explicit version {request.entity_version_id}"
                 )
                 target_version = db.query(EntityVersion).filter(
                     EntityVersion.id == request.entity_version_id
                 ).first()
 
                 if not target_version:
-                    logger.warning("Version %s not found", request.entity_version_id)
+                    logger.warning(f"Version {request.entity_version_id} not found")
                     raise ValueError(f"Version {request.entity_version_id} not found.")
 
                 if target_version.entity_id != request.entity_id:
                     logger.warning(
-                        "Version %s does not belong to entity %s",
-                        request.entity_version_id, request.entity_id
+                        f"Version {request.entity_version_id} does not belong to entity {request.entity_id}"
                     )
                     raise ValueError(
                         f"Version {request.entity_version_id} does not belong to "

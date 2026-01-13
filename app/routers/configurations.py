@@ -92,7 +92,7 @@ def check_user_can_access_configuration(config: Configuration, user: User) -> No
     """
     if config.user_id != user.id and user.role != UserRole.ADMIN:
         logger.warning(
-            f"Access denied: User {user.id} ({user.role.value}) attempted to access "
+            f"Access denied: User {user.id} ({user.role_display}) attempted to access "
             f"configuration {config.id} owned by {config.user_id}"
         )
         raise HTTPException(

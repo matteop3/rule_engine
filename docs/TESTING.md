@@ -1,0 +1,244 @@
+# Test Suite Documentation
+
+This document describes the structure and organization of the project's test suite.
+
+## Directory Structure
+
+```
+tests/
+├── conftest.py                  # Core fixtures: db_session, client
+├── __init__.py
+│
+├── fixtures/                    # Centralized test fixtures
+│   ├── __init__.py
+│   ├── auth.py                  # User and authentication fixtures
+│   ├── entities.py              # Entity, Version, Field, Value, Rule fixtures
+│   └── engine.py                # Complex scenario fixtures (insurance, dropdown, operator, stress)
+│
+├── api/                                    # API endpoint tests (FastAPI routes)
+│   ├── __init__.py
+│   ├── test_auth.py                        # Authentication endpoints (login, token)
+│   ├── test_auth_refresh.py               # Token refresh and rate limiting
+│   ├── test_configurations_calculate.py   # Configuration calculate/engine integration
+│   ├── test_configurations_crud.py        # Configuration CRUD operations
+│   ├── test_configurations_rbac.py        # Configuration role-based access control
+│   ├── test_configurations_validation.py  # Configuration input validation
+│   ├── test_entities.py                    # Entity CRUD operations
+│   ├── test_fields.py                      # Field CRUD operations
+│   ├── test_rules_crud.py                  # Rule CRUD operations
+│   ├── test_rules_edge_cases.py            # Rule edge cases and special scenarios
+│   ├── test_rules_types.py                 # Rule type-specific tests
+│   ├── test_users.py                       # User CRUD operations
+│   ├── test_values.py                      # Value CRUD operations
+│   └── test_versions.py                    # Version lifecycle (publish, archive, clone)
+│
+├── engine/                      # Rule engine business logic tests
+│   ├── __init__.py
+│   ├── test_api.py              # Engine calculation endpoint
+│   ├── test_dropdowns.py        # Cascading dropdown logic
+│   ├── test_logic.py            # Core engine logic (validation, mandatory, visibility, availability)
+│   ├── test_operators.py        # Operator tests (EQUALS, GREATER_THAN, IN_LIST, etc.)
+│   └── test_stress.py           # Engine stress tests (domino effects, dependencies)
+│
+├── integration/                                     # End-to-end integration tests
+│   ├── __init__.py
+│   ├── test_data_integrity_clone_remapping.py   # Clone ID remapping logic
+│   ├── test_data_integrity_consistency.py       # General data consistency checks
+│   ├── test_data_integrity_field_dependencies.py # Field-rule dependency validation
+│   ├── test_data_integrity_orphan_prevention.py # Orphan record prevention
+│   ├── test_data_integrity_unique_constraints.py # Unique constraint enforcement
+│   ├── test_data_integrity_value_dependencies.py # Value-rule dependency validation
+│   ├── test_integration_cascade.py              # Cascade delete/update operations
+│   ├── test_integration_complex_rules.py        # Complex rule interaction scenarios
+│   ├── test_integration_cross_router.py         # Cross-router data consistency
+│   ├── test_integration_entity_lifecycle.py     # Complete entity lifecycle workflows
+│   └── test_integration_rbac.py                 # End-to-end RBAC scenarios
+│
+├── performance/                 # Performance and benchmark tests
+│   ├── __init__.py
+│   └── test_performance.py      # Pytest-benchmark performance tests
+│
+└── stress/                      # Concurrency and stress tests
+    ├── __init__.py
+    ├── test_concurrency.py      # Concurrent operations and race conditions
+    └── test_versioning_stress.py # Version cloning and complex scenarios
+
+```
+
+## Naming Conventions
+
+### Files
+- All test files start with `test_` prefix (pytest requirement)
+- Avoid redundant prefixes/suffixes (e.g., `api/test_auth.py` not `api/test_auth_api.py`)
+- Use descriptive names that clearly indicate what is being tested
+
+### Test Functions and Classes
+- API tests use classes to group related operations:
+  ```python
+  class TestCreateEntity:
+      def test_success(...)
+      def test_validation_error(...)
+      def test_authorization(...)
+  ```
+- Engine tests use descriptive function names:
+  ```python
+  def test_operator_equals_string(...)
+  def test_dropdown_cascade_logic(...)
+  ```
+
+## Fixture Organization
+
+### Core Fixtures (conftest.py)
+- `db_session`: Clean in-memory database for each test
+- `client`: FastAPI TestClient with database override
+
+### Auth Fixtures (fixtures/auth.py)
+- `admin_user`, `admin_headers`: Admin role user and auth headers
+- `author_user`, `author_headers`: Author role user and auth headers
+- `regular_user`, `user_headers`: Regular user and auth headers
+- `inactive_user`: Inactive user for access denial tests
+
+### Entity Fixtures (fixtures/entities.py)
+- **Entities:** `test_entity`, `second_entity`
+- **Versions:** `draft_version`, `published_version`, `archived_version`, `version_with_data`
+- **Fields:** `draft_field`, `free_field`, `field_with_values`, `field_as_rule_target`, `published_field`
+- **Values:** `draft_value`, `value_in_rule_target`, `value_in_rule_condition`
+- **Rules:** `draft_rule`, `published_rule`, `rule_with_value_target`
+
+### Engine Fixtures (fixtures/engine.py)
+- `setup_insurance_scenario`: Complex auto insurance scenario with all rule types
+- `setup_dropdown_scenario`: Cascading dropdown (Region → City)
+- `setup_operator_scenario`: Generic scenario for operator testing
+- `setup_stress_scenario`: Complex interdependent fields for stress testing
+
+## Running Tests
+
+### Run all tests
+```bash
+pytest tests/
+```
+
+### Run specific categories
+```bash
+pytest tests/api/              # API tests only
+pytest tests/engine/           # Engine tests only
+pytest tests/integration/      # Integration tests only
+pytest tests/performance/      # Performance benchmarks
+pytest tests/stress/           # Stress and concurrency tests
+```
+
+### Run specific test file
+```bash
+pytest tests/api/test_auth.py -v
+```
+
+### Run specific test
+```bash
+pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
+```
+
+## Test Statistics
+
+| Category      | Files | Approx. Tests | Purpose                          |
+|---------------|-------|---------------|----------------------------------|
+| API           | 15    | ~90           | Endpoint CRUD operations         |
+| Engine        | 5     | ~30           | Business logic and rules         |
+| Integration   | 11    | ~15           | End-to-end workflows             |
+| Performance   | 1     | ~15           | Benchmarks and throughput        |
+| Stress        | 2     | ~15           | Concurrency and edge cases       |
+| **Total**     | **34**| **~165**      |                                  |
+
+## Test Coverage
+
+The test suite provides comprehensive coverage across all application layers:
+
+### API Endpoints (~90 tests)
+- **Authentication**: Login, token refresh, rate limiting, session management
+- **Configurations**: Full CRUD, rule engine integration, validation, RBAC
+- **Entities & Versions**: Lifecycle management, publishing, archiving, cloning
+- **Fields & Values**: CRUD operations, data type validation, constraints
+- **Rules**: CRUD, type-specific logic, edge cases, complex scenarios
+- **Users**: User management, role assignment, access control
+
+### Rule Engine (~30 tests)
+- **Core Logic**: Field validation, mandatory checks, visibility rules, availability logic
+- **Operators**: All comparison operators (EQUALS, GREATER_THAN, IN_LIST, CONTAINS, etc.)
+- **Dropdown Logic**: Cascading dropdowns, dynamic value filtering
+- **Stress Tests**: Domino effects, complex dependencies, performance under load
+
+### Integration & E2E (~15 tests)
+- **Data Integrity**: Referential integrity, orphan prevention, unique constraints
+- **Cross-Module Workflows**: Entity lifecycle, cross-router consistency
+- **Cascade Operations**: Delete/update propagation
+- **RBAC End-to-End**: Complete authorization flows across modules
+- **Complex Rule Interactions**: Multi-rule scenarios, interdependencies
+
+### Performance & Stress (~30 tests)
+- **Benchmarks**: Throughput measurements, response time analysis
+- **Concurrency**: Race condition detection, parallel operation handling
+- **Version Cloning**: Large-scale cloning stress tests
+
+### Coverage Metrics
+To generate a coverage report:
+```bash
+pytest --cov=app --cov-report=html --cov-report=term tests/
+```
+
+Coverage targets:
+- **Overall**: >85% line coverage
+- **Critical paths** (auth, engine, data integrity): >95% coverage
+- **API endpoints**: 100% route coverage
+
+## Test Organization Principles
+
+The test suite follows these key principles:
+
+- **Hierarchical structure by test category**: Tests are organized by type (API, engine, integration, performance, stress)
+- **Centralized fixtures**: Shared fixtures in dedicated modules to avoid duplication
+- **Consistent naming conventions**: All test files use `test_` prefix with descriptive names
+- **Focused, single-responsibility files**: Each file tests one specific aspect (200-500 lines optimal)
+- **Clear separation of concerns**: CRUD vs validation vs RBAC tests are in separate files
+
+## Guidelines for New Tests
+
+1. **Choose the right directory:**
+   - Testing an API endpoint? → `api/`
+   - Testing rule engine logic? → `engine/`
+   - Testing cross-module workflows? → `integration/`
+   - Testing performance? → `performance/`
+   - Testing concurrency/edge cases? → `stress/`
+
+2. **Use existing fixtures:**
+   - Check `fixtures/` modules before creating new fixtures
+   - Prefer composition of existing fixtures over creating new ones
+
+3. **Follow naming conventions:**
+   - File: `test_<feature>.py`
+   - Class: `Test<Operation><Resource>`
+   - Function: `test_<specific_case>`
+
+4. **Write clear docstrings:**
+   ```python
+   def test_dropdown_cascade_logic(...):
+       """
+       GIVEN: Region=NORD with cascading city dropdown
+       WHEN: User selects NORD region
+       THEN: Only northern cities (Milano, Torino) are available
+       """
+   ```
+
+5. **Keep tests atomic and independent:**
+   - Each test should run in isolation
+   - Use fixtures for setup, not test dependencies
+   - Clean up is handled automatically by fixtures
+
+## Maintenance
+
+- Keep this documentation updated when adding new test categories
+- Periodically review test coverage: `pytest --cov=app tests/`
+- **File size guideline:** Aim for 200-500 lines per test file for optimal maintainability
+- **When to split:** If a test file exceeds ~500 lines, consider splitting by:
+  - Functionality (CRUD vs validation vs RBAC)
+  - Test classes (one class per file for integration tests)
+  - Scenarios (different end-to-end workflows)
+- Remove obsolete tests when features are deprecated
