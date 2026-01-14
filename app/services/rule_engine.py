@@ -48,7 +48,8 @@ class RuleEngineService:
         # Execute waterfall
         running_context: Dict[int, Any] = {}
         output_fields: List[FieldOutputState] = []
-        
+        field_states: Dict[int, FieldOutputState] = {}
+
         for field in fields_db:
             field_state = self._process_field(
                 field=field,
@@ -59,21 +60,33 @@ class RuleEngineService:
                 running_context=running_context,
                 type_map=type_map
             )
-            
+
             output_fields.append(field_state)
+            field_states[field.id] = field_state
             running_context[field.id] = field_state.current_value
-        
+
         # Check global completeness
         is_complete = self._check_completeness(output_fields)
 
+        # Generate SKU
+        generated_sku = self._generate_sku(
+            version=target_version,
+            fields=fields_db,
+            field_states=field_states,
+            values_by_field=values_by_field
+        )
+
         logger.info(
-            f"State calculation completed for entity_id={request.entity_id}: {len(output_fields)} fields processed, is_complete={is_complete}"
+            f"State calculation completed for entity_id={request.entity_id}: "
+            f"{len(output_fields)} fields processed, is_complete={is_complete}, "
+            f"generated_sku={generated_sku}"
         )
 
         return CalculationResponse(
             entity_id=request.entity_id,
             fields=output_fields,
-            is_complete=is_complete
+            is_complete=is_complete,
+            generated_sku=generated_sku
         )
     
 
@@ -125,8 +138,7 @@ class RuleEngineService:
 
             # Production mode
             logger.debug(
-                "Production mode: resolving PUBLISHED version for entity %s",
-                request.entity_id
+                f"Production mode: resolving PUBLISHED version for entity {request.entity_id}"
             )
             target_version = db.query(EntityVersion).filter(
                 EntityVersion.entity_id == request.entity_id,
@@ -135,7 +147,7 @@ class RuleEngineService:
 
             if not target_version:
                 logger.warning(
-                    "Entity %s has no PUBLISHED version", request.entity_id
+                    f"Entity {request.entity_id} has no PUBLISHED version"
                 )
                 raise ValueError(
                     f"Entity {request.entity_id} has no PUBLISHED version ready for calculation."
@@ -145,8 +157,7 @@ class RuleEngineService:
 
         except SQLAlchemyError as e:
             logger.error(
-                "Database error while resolving version for entity %s: %s",
-                request.entity_id, str(e)
+                f"Database error while resolving version for entity {request.entity_id}: {str(e)}"
             )
             raise
     
@@ -183,8 +194,7 @@ class RuleEngineService:
 
         except SQLAlchemyError as e:
             logger.error(
-                "Database error while loading version data for version %s: %s",
-                version_id, str(e)
+                f"Database error while loading version data for version {version_id}: {str(e)}"
             )
             raise
     
@@ -270,13 +280,13 @@ class RuleEngineService:
         4. Availability
         5. Validation
         """
-        logger.debug("Processing field %s (id=%s)", field.name, field.id)
+        logger.debug(f"Processing field {field.name} (id={field.id})")
 
         # Layer 1: Visibility
         is_visible = self._evaluate_visibility(field, all_rules, running_context, type_map)
 
         if not is_visible:
-            logger.debug("Field %s is hidden", field.name)
+            logger.debug(f"Field {field.name} is hidden")
             return FieldOutputState(
                 field_id=field.id,
                 field_name=field.name,
@@ -321,12 +331,11 @@ class RuleEngineService:
 
         if validation_error:
             logger.debug(
-                "Field %s has validation error: %s", field.name, validation_error
+                f"Field {field.name} has validation error: {validation_error}"
             )
 
         logger.debug(
-            "Field %s processed: value=%s, required=%s, readonly=%s",
-            field.name, final_value, is_required, is_readonly
+            f"Field {field.name} processed: value={final_value}, required={is_required}, readonly={is_readonly}"
         )
 
         return FieldOutputState(
@@ -704,8 +713,7 @@ class RuleEngineService:
 
         except (ValueError, TypeError) as e:
             logger.debug(
-                "Type conversion error for field %s, falling back to string comparison: %s",
-                target_field_id, str(e)
+                f"Type conversion error for field {target_field_id}, falling back to string comparison: {str(e)}"
             )
             return self._compare_strings(actual_val, operator, expected_val)
     
@@ -811,9 +819,86 @@ class RuleEngineService:
     
 
     # ============================================================
+    # SKU GENERATION
+    # ============================================================
+
+    # Maximum length for generated SKU (common ERP/E-commerce limit)
+    _MAX_SKU_LENGTH = 100
+
+    def _generate_sku(
+        self,
+        version: EntityVersion,
+        fields: List[Field],
+        field_states: Dict[int, FieldOutputState],
+        values_by_field: Dict[int, List[Value]]
+    ) -> Optional[str]:
+        """
+        Generates a Smart SKU by concatenating base + modifiers from selected values.
+
+        Algorithm:
+        1. Check if sku_base exists (otherwise return None)
+        2. Initialize: sku_parts = [sku_base]
+        3. Iterate fields (ordered by step, sequence):
+           - If hidden -> skip
+           - If no value selected -> skip
+           - If free-value field -> skip (no modifier possible)
+           - Lookup Value object, if has sku_modifier -> append
+        4. Join with delimiter and enforce max length
+
+        Args:
+            version: The EntityVersion with sku_base and sku_delimiter
+            fields: Ordered list of Fields
+            field_states: Map of field_id -> FieldOutputState
+            values_by_field: Map of field_id -> list of Values
+
+        Returns:
+            Generated SKU string or None if sku_base is not set
+        """
+        if not version.sku_base:
+            return None
+
+        sku_parts = [version.sku_base]
+        delimiter = version.sku_delimiter or "-"
+
+        for field in fields:
+            state = field_states.get(field.id)
+            if not state:
+                continue
+
+            # Skip hidden fields
+            if state.is_hidden:
+                continue
+
+            # Skip fields without a value
+            if state.current_value is None:
+                continue
+
+            # Skip free-value fields (no modifier association possible)
+            if field.is_free_value:
+                continue
+
+            # Find the Value object for the selected value
+            field_values = values_by_field.get(field.id, [])
+            for value in field_values:
+                if value.value == state.current_value and value.sku_modifier:
+                    sku_parts.append(value.sku_modifier)
+                    break
+
+        generated_sku = delimiter.join(sku_parts)
+
+        # Enforce max length
+        if len(generated_sku) > self._MAX_SKU_LENGTH:
+            logger.warning(
+                f"Generated SKU exceeds max length ({len(generated_sku)} > {self._MAX_SKU_LENGTH}), truncating"
+            )
+            generated_sku = generated_sku[:self._MAX_SKU_LENGTH]
+
+        return generated_sku
+
+    # ============================================================
     # UTILITY
     # ============================================================
-    
+
     def _check_completeness(self, output_fields: List[FieldOutputState]) -> bool:
         """Checks if all required visible fields have values and validation errors."""
         for field in output_fields:

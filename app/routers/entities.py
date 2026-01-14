@@ -69,7 +69,7 @@ def create_entity(
     with db_transaction(db, f"create_entity '{entity.name}'"):
         db_entity = Entity(**entity.model_dump())
         db_entity.created_by_id = current_user.id
-        db_entity.updated_by_id = current_user.id
+        # updated_by_id intentionally NULL: record not yet modified
 
         db.add(db_entity)
         db.flush()
@@ -138,7 +138,7 @@ def read_entity(
     return entity
 
 
-@router.put("/{entity_id}", response_model=EntityRead)
+@router.patch("/{entity_id}", response_model=EntityRead)
 def update_entity(
     entity_update: EntityUpdate,
     entity: Entity = Depends(get_entity_or_404),

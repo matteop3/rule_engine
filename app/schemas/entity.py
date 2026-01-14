@@ -20,6 +20,6 @@ class EntityRead(EntityBase, AuditSchemaMixin):
 
 
 class EntityUpdate(BaseSchema):
-    """Schema for updating an Entity (PUT with partial update behavior). All fields optional."""
+    """Schema for partially updating an Entity (PATCH). All fields optional."""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = None

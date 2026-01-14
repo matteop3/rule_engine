@@ -1748,7 +1748,7 @@ class TestEdgeCasesVersioning:
             f"Adding field to published version should fail, got {add_resp.status_code}"
 
         # Try to modify existing field - should fail
-        modify_resp = client.put(
+        modify_resp = client.patch(
             f"/fields/{field_id}",
             json={"label": "Modified Label"},
             headers=admin_headers
@@ -1962,3 +1962,82 @@ class TestEdgeCasesVersioning:
             "First criterion should reference V2 field_a"
         assert criterion_b["field_id"] == v2_field_b["id"], \
             "Second criterion should reference V2 field_b"
+
+    def test_clone_preserves_sku_attributes_through_generations(
+        self, client: TestClient, admin_headers
+    ):
+        """
+        Stress: SKU attributes (sku_base, sku_delimiter) are preserved
+        through 5 clone generations (clone->publish->clone chain).
+        """
+        # Create entity
+        entity_resp = client.post(
+            "/entities/",
+            json={"name": "SKU Clone Chain Entity", "description": "SKU preservation test"},
+            headers=admin_headers
+        )
+        entity_id = entity_resp.json()["id"]
+
+        # Create V1 with SKU attributes
+        v1_resp = client.post(
+            "/versions/",
+            json={
+                "entity_id": entity_id,
+                "changelog": "V1 - Initial with SKU",
+                "sku_base": "PROD-2024",
+                "sku_delimiter": "-"
+            },
+            headers=admin_headers
+        )
+        assert v1_resp.status_code == 201
+        v1_id = v1_resp.json()["id"]
+
+        # Verify V1 has SKU attributes
+        v1_data = client.get(f"/versions/{v1_id}", headers=admin_headers).json()
+        assert v1_data["sku_base"] == "PROD-2024"
+        assert v1_data["sku_delimiter"] == "-"
+
+        # Publish V1
+        client.post(f"/versions/{v1_id}/publish", headers=admin_headers)
+
+        # Clone through 5 generations: V2, V3, V4, V5, V6
+        current_id = v1_id
+        for gen in range(2, 7):  # generations 2 through 6
+            clone_resp = client.post(
+                f"/versions/{current_id}/clone",
+                json={"changelog": f"V{gen} - Clone generation {gen - 1}"},
+                headers=admin_headers
+            )
+            assert clone_resp.status_code == 201, f"Clone to V{gen} failed"
+            current_id = clone_resp.json()["id"]
+
+            # Verify SKU attributes preserved in each clone
+            clone_data = client.get(f"/versions/{current_id}", headers=admin_headers).json()
+            assert clone_data["sku_base"] == "PROD-2024", \
+                f"V{gen}: sku_base should be 'PROD-2024', got '{clone_data.get('sku_base')}'"
+            assert clone_data["sku_delimiter"] == "-", \
+                f"V{gen}: sku_delimiter should be '-', got '{clone_data.get('sku_delimiter')}'"
+
+            # Publish to enable next clone
+            pub_resp = client.post(f"/versions/{current_id}/publish", headers=admin_headers)
+            assert pub_resp.status_code == 200
+
+        # Final verification: V6 (5th clone) still has original SKU attributes
+        final_data = client.get(f"/versions/{current_id}", headers=admin_headers).json()
+        assert final_data["version_number"] == 6
+        assert final_data["sku_base"] == "PROD-2024"
+        assert final_data["sku_delimiter"] == "-"
+        assert final_data["status"] == "PUBLISHED"
+
+        # Verify all versions in chain have same SKU attributes
+        all_versions = client.get(
+            f"/versions/?entity_id={entity_id}",
+            headers=admin_headers
+        ).json()
+
+        assert len(all_versions) == 6
+        for v in all_versions:
+            assert v["sku_base"] == "PROD-2024", \
+                f"Version {v['version_number']}: sku_base mismatch"
+            assert v["sku_delimiter"] == "-", \
+                f"Version {v['version_number']}: sku_delimiter mismatch"

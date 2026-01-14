@@ -1,4 +1,5 @@
 import logging
+import uuid
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,8 +12,14 @@ from app.dependencies import (
     get_rule_engine_service,
     db_transaction
 )
-from app.models.domain import Configuration, Field, User, UserRole, EntityVersion, VersionStatus
-from app.schemas.configuration import ConfigurationCreate, ConfigurationRead, ConfigurationUpdate
+from app.models.domain import Configuration, Field, User, UserRole, EntityVersion, VersionStatus, ConfigurationStatus
+from app.schemas.configuration import (
+    ConfigurationCreate,
+    ConfigurationRead,
+    ConfigurationUpdate,
+    ConfigurationCloneResponse,
+    ConfigurationStatusEnum
+)
 from app.schemas.engine import CalculationRequest, CalculationResponse, FieldInputState
 from app.services.rule_engine import RuleEngineService
 
@@ -240,6 +247,88 @@ def calculate_configuration_state(
 
 
 # ============================================================
+# STATUS GUARDS
+# ============================================================
+
+def require_draft_status(config: Configuration, operation: str) -> None:
+    """
+    Guard clause that ensures configuration is in DRAFT status.
+
+    Raises:
+        HTTPException(409): If configuration is FINALIZED
+    """
+    if config.status == ConfigurationStatus.FINALIZED or config.status == ConfigurationStatus.FINALIZED.value:
+        logger.warning(
+            f"Operation '{operation}' blocked: configuration {config.id} is FINALIZED"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot {operation} a FINALIZED configuration. "
+                "Use POST /configurations/{id}/clone to create a modifiable copy."
+            )
+        )
+
+
+def check_soft_delete_permission(config: Configuration, user: User) -> None:
+    """
+    Validates that user can soft-delete a configuration.
+
+    - DRAFT configurations: Owner or ADMIN can delete
+    - FINALIZED configurations: Only ADMIN can soft-delete
+
+    Raises:
+        HTTPException(403): If user lacks permission for the operation
+    """
+    is_finalized = (
+        config.status == ConfigurationStatus.FINALIZED or
+        config.status == ConfigurationStatus.FINALIZED.value
+    )
+
+    if is_finalized and user.role != UserRole.ADMIN:
+        logger.warning(
+            f"Soft delete denied: user {user.id} ({user.role_display}) "
+            f"attempted to delete FINALIZED configuration {config.id}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Only administrators can delete FINALIZED configurations. "
+                "Use POST /configurations/{id}/clone to create a modifiable copy."
+            )
+        )
+
+
+def get_latest_published_version(db: Session, entity_id: int) -> EntityVersion:
+    """
+    Retrieves the latest PUBLISHED version for an entity.
+
+    Args:
+        db: Database session
+        entity_id: The entity to find the version for
+
+    Returns:
+        EntityVersion: The PUBLISHED version
+
+    Raises:
+        HTTPException(404): If no PUBLISHED version exists
+    """
+    version = db.query(EntityVersion).filter(
+        EntityVersion.entity_id == entity_id,
+        EntityVersion.status == VersionStatus.PUBLISHED.value
+    ).first()
+
+    if not version:
+        logger.warning(f"No PUBLISHED version found for entity {entity_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No PUBLISHED version available for this entity."
+        )
+
+    return version
+
+
+# ============================================================
 # CRUD ENDPOINTS
 # ============================================================
 
@@ -293,8 +382,8 @@ def create_configuration(
             name=config_in.name,
             is_complete=calc_result.is_complete,
             data=data_list,
-            created_by_id=current_user.id,
-            updated_by_id=current_user.id
+            created_by_id=current_user.id
+            # updated_by_id intentionally NULL: record not yet modified
         )
 
         db.add(new_config)
@@ -313,6 +402,8 @@ def create_configuration(
 def list_configurations(
     entity_version_id: Optional[int] = None,
     user_id: Optional[str] = None,
+    config_status: Optional[str] = None,
+    include_deleted: bool = False,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
@@ -327,6 +418,8 @@ def list_configurations(
     Query Parameters:
         entity_version_id: Filter by specific version
         user_id: Filter by user (ADMIN only)
+        config_status: Filter by status (DRAFT or FINALIZED)
+        include_deleted: Include soft-deleted records (ADMIN only, default False)
         skip: Pagination offset
         limit: Maximum results (max 100)
 
@@ -335,10 +428,20 @@ def list_configurations(
     """
     logger.info(
         f"Listing configurations: user={current_user.id}, role={current_user.role_display}, "
-        f"version_id={entity_version_id}, filter_user_id={user_id}"
+        f"version_id={entity_version_id}, filter_user_id={user_id}, status={config_status}"
     )
 
     query = db.query(Configuration)
+
+    # Soft delete filter (ADMIN can override)
+    if include_deleted and current_user.role != UserRole.ADMIN:
+        logger.warning(
+            f"Non-admin user {current_user.id} attempted to include deleted configurations"
+        )
+        include_deleted = False
+
+    if not include_deleted:
+        query = query.filter(Configuration.is_deleted == False)
 
     # Apply role-based filtering
     if current_user.role == UserRole.ADMIN:
@@ -362,6 +465,17 @@ def list_configurations(
     if entity_version_id:
         query = query.filter(Configuration.entity_version_id == entity_version_id)
         logger.debug(f"Filtering by version_id: {entity_version_id}")
+
+    # Optional status filter
+    if config_status:
+        if config_status.upper() in [s.value for s in ConfigurationStatus]:
+            query = query.filter(Configuration.status == config_status.upper())
+            logger.debug(f"Filtering by status: {config_status.upper()}")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status. Must be one of: {[s.value for s in ConfigurationStatus]}"
+            )
 
     # Execute with pagination
     original_limit = limit
@@ -414,6 +528,10 @@ def update_configuration(
 
     Access Control:
         - Only owner or ADMIN can update
+        - Only DRAFT configurations can be updated
+
+    Status Constraint:
+        - Returns HTTP 409 Conflict if configuration is FINALIZED
 
     Returns:
         ConfigurationRead: The updated configuration
@@ -422,7 +540,9 @@ def update_configuration(
 
     config = get_configuration_or_404(db, config_id, current_user)
 
-    
+    # Guard clause: block updates on FINALIZED configurations
+    require_draft_status(config, "update")
+
     # Extract only provided fields
     update_data: Dict[str, Any] = config_update.model_dump(exclude_unset=True)
 
@@ -473,8 +593,13 @@ def delete_configuration(
     """
     Deletes a saved configuration.
 
+    Deletion Strategy by Status:
+        - DRAFT: Hard delete (physical removal from database)
+        - FINALIZED: Soft delete (is_deleted=True) to preserve audit trail
+
     Access Control:
-        - Only owner or ADMIN can delete
+        - DRAFT: Owner or ADMIN can delete
+        - FINALIZED: Only ADMIN can soft-delete
 
     Returns:
         204 No Content on success
@@ -483,9 +608,26 @@ def delete_configuration(
 
     config = get_configuration_or_404(db, config_id, current_user)
 
-    with db_transaction(db, f"delete_configuration {config_id}"):
-        db.delete(config)
-        logger.info(f"Configuration {config_id} deleted successfully")
+    is_finalized = (
+        config.status == ConfigurationStatus.FINALIZED or
+        config.status == ConfigurationStatus.FINALIZED.value
+    )
+
+    if is_finalized:
+        # FINALIZED: Soft delete only, ADMIN only
+        check_soft_delete_permission(config, current_user)
+
+        with db_transaction(db, f"soft_delete_configuration {config_id}"):
+            config.is_deleted = True
+            config.updated_by_id = current_user.id
+            logger.info(
+                f"Configuration {config_id} soft-deleted by ADMIN {current_user.id}"
+            )
+    else:
+        # DRAFT: Hard delete allowed for owner or ADMIN
+        with db_transaction(db, f"delete_configuration {config_id}"):
+            db.delete(config)
+            logger.info(f"Configuration {config_id} hard-deleted successfully")
 
     return None
 
@@ -560,3 +702,231 @@ def load_and_calculate_configuration(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred during calculation: {str(e)}"
         )
+
+
+# ============================================================
+# LIFECYCLE MANAGEMENT ENDPOINTS
+# ============================================================
+
+@router.post("/{config_id}/clone", response_model=ConfigurationCloneResponse, status_code=status.HTTP_201_CREATED)
+def clone_configuration(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Creates an exact copy of an existing configuration.
+
+    Non-Destructive Operation:
+        - The source configuration remains unchanged
+        - A new configuration is created with a fresh UUID
+        - The clone always starts in DRAFT status (regardless of source status)
+
+    Cloned Data:
+        - input data (payload JSON)
+        - entity_version_id reference
+        - name (with " (Copy)" suffix)
+
+    Use Cases:
+        - Reopen work on a FINALIZED configuration without altering the original
+        - Create variations of an existing configuration
+        - Duplicate a configuration for another purpose
+
+    Access Control:
+        - Only owner or ADMIN can clone
+
+    Returns:
+        ConfigurationCloneResponse: The newly created configuration with source_id
+    """
+    logger.info(f"Cloning configuration {config_id} by user {current_user.id}")
+
+    source = get_configuration_or_404(db, config_id, current_user)
+
+    # Prepare cloned data
+    new_name = f"{source.name} (Copy)" if source.name else None
+
+    with db_transaction(db, f"clone_configuration {config_id}"):
+        cloned_config = Configuration(
+            id=str(uuid.uuid4()),
+            entity_version_id=source.entity_version_id,
+            user_id=current_user.id,
+            name=new_name,
+            status=ConfigurationStatus.DRAFT,  # Always DRAFT
+            is_complete=source.is_complete,
+            is_deleted=False,
+            data=source.data.copy() if source.data else [],
+            created_by_id=current_user.id
+            # updated_by_id intentionally NULL: record not yet modified
+        )
+
+        db.add(cloned_config)
+        db.flush()
+
+        logger.info(
+            f"Configuration {config_id} cloned to {cloned_config.id} "
+            f"(source status: {source.status}, clone status: DRAFT)"
+        )
+
+    db.refresh(cloned_config)
+
+    # Build response with source_id
+    response = ConfigurationCloneResponse(
+        id=cloned_config.id,
+        entity_version_id=cloned_config.entity_version_id,
+        name=cloned_config.name,
+        status=ConfigurationStatusEnum(cloned_config.status),
+        is_complete=cloned_config.is_complete,
+        is_deleted=cloned_config.is_deleted,
+        data=convert_to_field_input_states(cloned_config.data),
+        created_at=cloned_config.created_at,
+        updated_at=cloned_config.updated_at,
+        created_by_id=cloned_config.created_by_id,
+        updated_by_id=cloned_config.updated_by_id,
+        source_id=config_id
+    )
+
+    return response
+
+
+@router.post("/{config_id}/upgrade", response_model=ConfigurationRead)
+def upgrade_configuration(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    engine_service: RuleEngineService = Depends(get_rule_engine_service)
+):
+    """
+    Upgrades a configuration to the latest PUBLISHED version.
+
+    Destructive In-Place Operation:
+        - Updates entity_version_id to the latest PUBLISHED version
+        - Preserves the existing input data (user selections)
+        - Recalculates is_complete with the new version's rules
+
+    Status Constraint:
+        - Only DRAFT configurations can be upgraded
+        - Returns HTTP 409 Conflict if configuration is FINALIZED
+
+    Use Cases:
+        - Update a saved draft to use newer product rules
+        - Migrate configurations when new versions are published
+
+    Access Control:
+        - Only owner or ADMIN can upgrade
+
+    Returns:
+        ConfigurationRead: The updated configuration
+
+    Raises:
+        404: If no PUBLISHED version exists for the entity
+        409: If configuration is FINALIZED
+    """
+    logger.info(f"Upgrading configuration {config_id} by user {current_user.id}")
+
+    config = get_configuration_or_404(db, config_id, current_user)
+
+    # Guard clause: only DRAFT can be upgraded
+    require_draft_status(config, "upgrade")
+
+    # Get current version to find entity_id
+    current_version = validate_version_not_orphaned(
+        config.entity_version,
+        config.entity_version_id
+    )
+
+    # Find latest PUBLISHED version
+    latest_version = get_latest_published_version(db, current_version.entity_id)
+
+    if latest_version.id == config.entity_version_id:
+        logger.info(
+            f"Configuration {config_id} already on latest version {latest_version.id}"
+        )
+        return config
+
+    # Recalculate state with new version
+    logger.debug(
+        f"Upgrading configuration {config_id} from version "
+        f"{config.entity_version_id} to {latest_version.id}"
+    )
+
+    calc_result = calculate_configuration_state(
+        db=db,
+        engine_service=engine_service,
+        version=latest_version,
+        data=config.data
+    )
+
+    with db_transaction(db, f"upgrade_configuration {config_id}"):
+        config.entity_version_id = latest_version.id
+        config.is_complete = calc_result.is_complete
+        config.updated_by_id = current_user.id
+
+        logger.info(
+            f"Configuration {config_id} upgraded to version {latest_version.id}, "
+            f"is_complete={calc_result.is_complete}"
+        )
+
+    db.refresh(config)
+    return config
+
+
+@router.post("/{config_id}/finalize", response_model=ConfigurationRead)
+def finalize_configuration(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Finalizes a configuration, making it immutable.
+
+    Unidirectional State Transition:
+        - Transitions status from DRAFT to FINALIZED
+        - Once finalized, the configuration becomes read-only
+        - Cannot be undone (use clone to create a new editable copy)
+
+    Immutability Guarantees:
+        - Input data cannot be modified
+        - Version reference cannot be changed
+        - Record cannot be hard-deleted (only soft-deleted by ADMIN)
+
+    Use Cases:
+        - Lock a quote before sending to customer
+        - Freeze an order configuration before submission
+        - Create an audit-compliant snapshot
+
+    Access Control:
+        - Only owner or ADMIN can finalize
+
+    Returns:
+        ConfigurationRead: The finalized configuration
+
+    Raises:
+        409: If configuration is already FINALIZED
+    """
+    logger.info(f"Finalizing configuration {config_id} by user {current_user.id}")
+
+    config = get_configuration_or_404(db, config_id, current_user)
+
+    # Check if already finalized
+    is_finalized = (
+        config.status == ConfigurationStatus.FINALIZED or
+        config.status == ConfigurationStatus.FINALIZED.value
+    )
+
+    if is_finalized:
+        logger.warning(f"Configuration {config_id} is already FINALIZED")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Configuration is already FINALIZED."
+        )
+
+    with db_transaction(db, f"finalize_configuration {config_id}"):
+        config.status = ConfigurationStatus.FINALIZED
+        config.updated_by_id = current_user.id
+
+        logger.info(
+            f"Configuration {config_id} finalized by user {current_user.id}"
+        )
+
+    db.refresh(config)
+    return config

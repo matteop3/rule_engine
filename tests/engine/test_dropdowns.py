@@ -6,13 +6,13 @@ from app.schemas.engine import CalculationRequest, FieldInputState
 @pytest.fixture(scope="function")
 def setup_dropdown_scenario(db_session):
     """
-    Scenario: Regione -> Città.
-    Regione: [Nord, Sud]
-    Città: [Milano, Torino, Napoli, Palermo]
-    
-    Regole:
-    - Se Regione != Nord -> Rimuovi Milano, Torino
-    - Se Regione != Sud -> Rimuovi Napoli, Palermo
+    Scenario: Region -> City.
+    Region: [North, South]
+    City: [Milano, Torino, Napoli, Palermo]
+
+    Rules:
+    - If Region != North -> Remove Milano, Torino
+    - If Region != South -> Remove Napoli, Palermo
     """
     entity = Entity(name="Dropdown Test", description="Cascading menus")
     db_session.add(entity)
@@ -22,18 +22,18 @@ def setup_dropdown_scenario(db_session):
     db_session.add(version)
     db_session.commit()
 
-    # 1. Campo Regione (Dropdown)
-    f_region = Field(entity_version_id=version.id, name="region", label="Regione", data_type="string", sequence=1, is_free_value=False)
+    # 1. Region Field (Dropdown)
+    f_region = Field(entity_version_id=version.id, name="region", label="Region", data_type="string", sequence=1, is_free_value=False)
     db_session.add(f_region)
     db_session.commit() # Commit to get the ID
 
     # Region values
-    v_north = Value(field_id=f_region.id, value="NORD", label="Nord Italia")
-    v_south = Value(field_id=f_region.id, value="SUD", label="Sud Italia")
+    v_north = Value(field_id=f_region.id, value="NORD", label="North Italy")
+    v_south = Value(field_id=f_region.id, value="SUD", label="South Italy")
     db_session.add_all([v_north, v_south])
     
-    # 2. Campo Città (Dropdown)
-    f_city = Field(entity_version_id=version.id, name="city", label="Città", data_type="string", sequence=2, is_free_value=False)
+    # 2. City Field (Dropdown)
+    f_city = Field(entity_version_id=version.id, name="city", label="City", data_type="string", sequence=2, is_free_value=False)
     db_session.add(f_city)
     db_session.commit()
 
@@ -106,10 +106,10 @@ def test_dropdown_cascade_logic(db_session, setup_dropdown_scenario):
     assert "MILANO" not in options_codes
 
 def test_dropdown_illegal_value_injection(db_session, setup_dropdown_scenario):
-    """ 
+    """
     SECURITY TEST:
-    Seleziono NORD, ma forzo il valore NAPOLI (che esiste nel DB ma non è disponibile).
-    Il motore dovrebbe dare errore o resettare il valore.
+    Select NORD, but force value NAPOLI (which exists in DB but is not available).
+    The engine should give error or reset the value.
     """
     ids = setup_dropdown_scenario
     service = RuleEngineService()
@@ -118,7 +118,7 @@ def test_dropdown_illegal_value_injection(db_session, setup_dropdown_scenario):
         entity_id=ids["e_id"],
         current_state=[
             FieldInputState(field_id=ids["f_region"], value="NORD"),
-            FieldInputState(field_id=ids["f_city"], value="NAPOLI") # ILLEGALE per il Nord
+            FieldInputState(field_id=ids["f_city"], value="NAPOLI") # ILLEGAL for the North
         ]
     )
     

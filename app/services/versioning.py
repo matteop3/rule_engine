@@ -28,7 +28,9 @@ class VersioningService:
             db: Session,
             entity_id: int,
             user_id: str,
-            changelog: Optional[str] = None
+            changelog: Optional[str] = None,
+            sku_base: Optional[str] = None,
+            sku_delimiter: Optional[str] = None
     ) -> EntityVersion:
         """
         Creates a new DRAFT version.
@@ -46,7 +48,9 @@ class VersioningService:
         self._check_draft_constraint(db, entity_id)
 
         next_num = self._calculate_next_version_number(db, entity_id)
-        new_version = self._create_version_entity(entity_id, next_num, user_id, changelog)
+        new_version = self._create_version_entity(
+            entity_id, next_num, user_id, changelog, sku_base, sku_delimiter
+        )
 
         db.add(new_version)
         db.flush()
@@ -134,7 +138,9 @@ class VersioningService:
         changelog = new_changelog or f"Cloned from v{source_version.version_number}."
 
         new_version = self._create_version_entity(
-            source_version.entity_id, next_num, user_id, changelog
+            source_version.entity_id, next_num, user_id, changelog,
+            sku_base=source_version.sku_base,
+            sku_delimiter=source_version.sku_delimiter
         )
         db.add(new_version)
         db.flush()
@@ -230,7 +236,9 @@ class VersioningService:
         entity_id: int,
         version_number: int,
         user_id: str,
-        changelog: Optional[str] = None
+        changelog: Optional[str] = None,
+        sku_base: Optional[str] = None,
+        sku_delimiter: Optional[str] = None
     ) -> EntityVersion:
         """Creates a new EntityVersion object in DRAFT status."""
         return EntityVersion(
@@ -238,6 +246,8 @@ class VersioningService:
             version_number=version_number,
             status=VersionStatus.DRAFT,
             changelog=changelog,
+            sku_base=sku_base,
+            sku_delimiter=sku_delimiter,
             created_by_id=user_id,
             updated_by_id=user_id
         )

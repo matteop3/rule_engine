@@ -136,14 +136,14 @@ def test_stress_multiple_validations(db_session, setup_stress_scenario):
     # Rule 1: Error if A contains "ERR1"
     r1 = Rule(
         entity_version_id=ids["v_id"], target_field_id=ids["A"], rule_type=RuleType.VALIDATION.value,
-        error_message="Errore Uno",
+        error_message="Error One",
         conditions={"criteria": [{"field_id": ids["A"], "operator": "EQUALS", "value": "ERR1"}]}
     )
     # Rule 2: Error if B contains "ERR1" (Note: using B to trigger error on A)
     # This simulates two different rules that break A.
     r2 = Rule(
         entity_version_id=ids["v_id"], target_field_id=ids["A"], rule_type=RuleType.VALIDATION.value,
-        error_message="Errore Due",
+        error_message="Error Two",
         conditions={"criteria": [{"field_id": ids["B"], "operator": "EQUALS", "value": "ERR1"}]}
     )
     db_session.add_all([r1, r2])
@@ -162,4 +162,4 @@ def test_stress_multiple_validations(db_session, setup_stress_scenario):
 
     # Simply verify that there is ONE error.
     # If we wanted to support multiple errors, we should change FieldOutputState.error_message to List[str]
-    assert field_a.error_message in ["Errore Uno", "Errore Due"]
+    assert field_a.error_message in ["Error One", "Error Two"]

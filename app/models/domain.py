@@ -61,6 +61,26 @@ class UserRole(str, enum.Enum):
     USER = "user"
 
 
+class ConfigurationStatus(str, enum.Enum):
+    """
+    Lifecycle status for Configuration records.
+
+    This enum manages the technical mutability state of configurations,
+    focusing on data integrity rather than business workflow states.
+
+    - DRAFT: Work in progress (Sandbox). The configuration is mutable:
+             user can modify inputs, upgrade version, or delete the record.
+             Conceptually represents an open cart or a quote draft.
+
+    - FINALIZED: Consolidated snapshot (Read-Only). The configuration is
+                 immutable for legal and technical reproducibility.
+                 No modifications to inputs or version are allowed.
+                 Conceptually represents an issued quote or submitted order.
+    """
+    DRAFT = "DRAFT"
+    FINALIZED = "FINALIZED"
+
+
 class FieldType(str, enum.Enum):
     """
     Data types for Field values.
@@ -189,6 +209,19 @@ class EntityVersion(Base, AuditMixin):
     changelog: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # SKU generation fields
+    sku_base: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Base SKU code for this product version (e.g., 'LPT-PRO')"
+    )
+    sku_delimiter: Mapped[str] = mapped_column(
+        String(5),
+        default="-",
+        nullable=False,
+        comment="Delimiter for SKU segments (default: '-')"
+    )
+
     # Relationships
     entity: Mapped["Entity"] = relationship(back_populates="versions")
     fields: Mapped[List["Field"]] = relationship(
@@ -283,6 +316,13 @@ class Value(Base):
     value: Mapped[str] = mapped_column(String(255), comment="Internal value")
     label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Display label for UI")
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # SKU generation
+    sku_modifier: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="SKU segment for this value (e.g., '16G' for 16GB RAM)"
+    )
 
     # Relationships
     field: Mapped["Field"] = relationship(back_populates="values")
@@ -388,6 +428,14 @@ class Configuration(Base, AuditMixin):
 
     Data format: [{"field_id": 1, "value": "Red"}, {"field_id": 2, "value": "Large"}, ...]
 
+    Status Lifecycle:
+        - DRAFT: Mutable sandbox state. User can modify inputs, upgrade version, or delete.
+        - FINALIZED: Immutable snapshot. Read-only for legal/technical reproducibility.
+
+    Soft Delete:
+        - is_deleted flag allows logical deletion without losing audit trail
+        - FINALIZED configurations can only be soft-deleted by ADMIN
+
     Relationships:
         - entity_version: Many-to-one with EntityVersion
         - owner: Many-to-one with User
@@ -396,6 +444,8 @@ class Configuration(Base, AuditMixin):
     __table_args__ = (
         Index('ix_user_version', 'user_id', 'entity_version_id'),
         Index('ix_complete', 'is_complete'),
+        Index('ix_config_status', 'status'),
+        Index('ix_config_deleted', 'is_deleted'),
     )
 
     # UUID primary key for secure external access
@@ -404,11 +454,28 @@ class Configuration(Base, AuditMixin):
     entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="User-defined name")
+
+    # Lifecycle status
+    status: Mapped[ConfigurationStatus] = mapped_column(
+        String(20),
+        default=ConfigurationStatus.DRAFT,
+        nullable=False,
+        comment="Lifecycle status: DRAFT (mutable) or FINALIZED (immutable)"
+    )
+
     is_complete: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         index=True,
         comment="True if all required fields are filled and validation passes"
+    )
+
+    # Soft delete flag
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Soft delete flag for preserving audit trail of FINALIZED records"
     )
 
     # Payload: list of field inputs
@@ -424,7 +491,8 @@ class Configuration(Base, AuditMixin):
     def __repr__(self) -> str:
         return (
             f"<Configuration id={self.id} user_id={self.user_id} "
-            f"version_id={self.entity_version_id} is_complete={self.is_complete}>"
+            f"version_id={self.entity_version_id} status={self.status} "
+            f"is_complete={self.is_complete} is_deleted={self.is_deleted}>"
         )
 
     def __str__(self) -> str:

@@ -658,3 +658,248 @@ class TestValueEdgeCases:
         resp2 = client.post("/values/", json=payload2, headers=admin_headers)
         # Document current behavior - may succeed or fail
         assert resp2.status_code in [201, 400]
+
+
+# ============================================================
+# SKU MODIFIER CRUD TESTS
+# ============================================================
+
+class TestValueSKUModifier:
+    """Tests for Value sku_modifier attribute CRUD operations."""
+
+    def test_create_value_with_sku_modifier(self, client: TestClient, admin_headers, draft_field):
+        """Test that value can be created with sku_modifier."""
+        payload = {
+            "field_id": draft_field.id,
+            "value": "INTEL_I7",
+            "label": "Intel Core i7",
+            "sku_modifier": "I7"
+        }
+
+        response = client.post("/values/", json=payload, headers=admin_headers)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["value"] == "INTEL_I7"
+        assert data["sku_modifier"] == "I7"
+
+    def test_create_value_without_sku_modifier(self, client: TestClient, admin_headers, draft_field):
+        """Test that sku_modifier is optional on value creation."""
+        payload = {
+            "field_id": draft_field.id,
+            "value": "NO_SKU",
+            "label": "No SKU Modifier"
+        }
+
+        response = client.post("/values/", json=payload, headers=admin_headers)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["value"] == "NO_SKU"
+        assert data["sku_modifier"] is None
+
+    def test_update_value_sku_modifier(self, client: TestClient, admin_headers, draft_value):
+        """Test that sku_modifier can be updated on a value in DRAFT version."""
+        payload = {"sku_modifier": "NEW_MOD"}
+
+        response = client.patch(
+            f"/values/{draft_value.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["sku_modifier"] == "NEW_MOD"
+
+    def test_update_value_with_other_fields_and_sku_modifier(
+        self, client: TestClient, admin_headers, draft_value
+    ):
+        """Test that sku_modifier can be updated together with other fields."""
+        payload = {
+            "label": "Updated Label",
+            "sku_modifier": "UPD"
+        }
+
+        response = client.patch(
+            f"/values/{draft_value.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["label"] == "Updated Label"
+        assert data["sku_modifier"] == "UPD"
+
+    def test_clear_sku_modifier(self, client: TestClient, admin_headers, db_session, draft_field):
+        """Test that sku_modifier can be cleared (set to null)."""
+        # Create value with sku_modifier
+        value = Value(
+            field_id=draft_field.id,
+            value="WITH_MOD",
+            label="With Modifier",
+            sku_modifier="MOD"
+        )
+        db_session.add(value)
+        db_session.commit()
+
+        # Clear sku_modifier
+        payload = {"sku_modifier": None}
+        response = client.patch(
+            f"/values/{value.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["sku_modifier"] is None
+
+    def test_cannot_update_sku_modifier_on_published_value(
+        self, client: TestClient, admin_headers, db_session, published_field
+    ):
+        """
+        Test DRAFT-only policy: sku_modifier cannot be updated on PUBLISHED version.
+        This is a CRITICAL business rule.
+        """
+        # Create value in published version
+        value = Value(
+            field_id=published_field.id,
+            value="PUB_VALUE",
+            label="Published Value",
+            sku_modifier="PUB"
+        )
+        db_session.add(value)
+        db_session.commit()
+
+        payload = {"sku_modifier": "SHOULD_FAIL"}
+
+        response = client.patch(
+            f"/values/{value.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
+    def test_read_value_includes_sku_modifier(self, client: TestClient, admin_headers, db_session, draft_field):
+        """Test that reading a value includes sku_modifier in response."""
+        value = Value(
+            field_id=draft_field.id,
+            value="READ_TEST",
+            label="Read Test",
+            sku_modifier="RT"
+        )
+        db_session.add(value)
+        db_session.commit()
+
+        response = client.get(f"/values/{value.id}", headers=admin_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["value"] == "READ_TEST"
+        assert data["sku_modifier"] == "RT"
+
+    def test_list_values_includes_sku_modifier(
+        self, client: TestClient, admin_headers, db_session, draft_field
+    ):
+        """Test that listing values includes sku_modifier for each value."""
+        # Create values with different sku_modifiers
+        v1 = Value(field_id=draft_field.id, value="V1", label="Value 1", sku_modifier="M1")
+        v2 = Value(field_id=draft_field.id, value="V2", label="Value 2", sku_modifier="M2")
+        v3 = Value(field_id=draft_field.id, value="V3", label="Value 3", sku_modifier=None)
+        db_session.add_all([v1, v2, v3])
+        db_session.commit()
+
+        response = client.get(
+            f"/values/?field_id={draft_field.id}",
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 3
+
+        # Verify each has correct sku_modifier
+        values_by_value = {v["value"]: v for v in data}
+        assert values_by_value["V1"]["sku_modifier"] == "M1"
+        assert values_by_value["V2"]["sku_modifier"] == "M2"
+        assert values_by_value["V3"]["sku_modifier"] is None
+
+    def test_move_value_with_sku_modifier_within_version(
+        self, client: TestClient, admin_headers, db_session, draft_version
+    ):
+        """Test that moving value between fields in same version preserves sku_modifier."""
+        # Create two fields in same version
+        field1 = Field(
+            entity_version_id=draft_version.id,
+            name="field1",
+            label="Field 1",
+            data_type=FieldType.STRING.value,
+            is_free_value=False
+        )
+        field2 = Field(
+            entity_version_id=draft_version.id,
+            name="field2",
+            label="Field 2",
+            data_type=FieldType.STRING.value,
+            is_free_value=False
+        )
+        db_session.add_all([field1, field2])
+        db_session.commit()
+
+        # Create value with sku_modifier in field1
+        value = Value(
+            field_id=field1.id,
+            value="MOVE_ME",
+            label="Move Me",
+            sku_modifier="MV"
+        )
+        db_session.add(value)
+        db_session.commit()
+
+        # Move to field2
+        payload = {"field_id": field2.id}
+        response = client.patch(
+            f"/values/{value.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["field_id"] == field2.id
+        assert data["sku_modifier"] == "MV"  # Preserved
+
+    def test_sku_modifier_with_special_characters(
+        self, client: TestClient, admin_headers, draft_field
+    ):
+        """Test that sku_modifier can contain special characters."""
+        payload = {
+            "field_id": draft_field.id,
+            "value": "SPECIAL",
+            "label": "Special Chars",
+            "sku_modifier": "X-L_32"
+        }
+
+        response = client.post("/values/", json=payload, headers=admin_headers)
+
+        assert response.status_code == 201
+        assert response.json()["sku_modifier"] == "X-L_32"
+
+    def test_sku_modifier_max_length(self, client: TestClient, admin_headers, draft_field):
+        """Test sku_modifier with long string (boundary test)."""
+        long_modifier = "A" * 50  # Test with 50 characters
+        payload = {
+            "field_id": draft_field.id,
+            "value": "LONG_MOD",
+            "label": "Long Modifier",
+            "sku_modifier": long_modifier
+        }
+
+        response = client.post("/values/", json=payload, headers=admin_headers)
+
+        # Should either succeed or return validation error
+        assert response.status_code in [201, 422]
+        if response.status_code == 201:
+            assert response.json()["sku_modifier"] == long_modifier

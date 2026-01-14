@@ -186,7 +186,9 @@ def create_version_draft(
                 db=db,
                 entity_id=version_in.entity_id,
                 user_id=current_user.id,
-                changelog=version_in.changelog
+                changelog=version_in.changelog,
+                sku_base=version_in.sku_base,
+                sku_delimiter=version_in.sku_delimiter
             )
 
             db.flush()
@@ -335,19 +337,24 @@ def update_version_metadata(
     # Enforce DRAFT-only modification policy
     validate_version_is_draft(version)
 
+    # Get only the fields that were explicitly set in the request
+    update_data = version_update.model_dump(exclude_unset=True)
+
     # Check if there are actual changes
-    if version_update.changelog is None:
+    if not update_data:
         logger.warning(f"Empty update request for version {version_id}")
         return version
 
     try:
         with db_transaction(db, f"update_version_metadata {version_id}"):
-            version.changelog = version_update.changelog
+            # Update only the fields that were provided
+            for field, value in update_data.items():
+                setattr(version, field, value)
             version.updated_by_id = current_user.id
 
             logger.info(
                 f"Version {version_id} metadata updated successfully: "
-                f"changelog length={len(version_update.changelog) if version_update.changelog else 0}"
+                f"updated fields={list(update_data.keys())}"
             )
 
         db.refresh(version)

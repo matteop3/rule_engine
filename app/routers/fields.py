@@ -157,7 +157,7 @@ def create_field(
     return new_field
 
 
-@router.put("/{field_id}", response_model=FieldRead)
+@router.patch("/{field_id}", response_model=FieldRead)
 def update_field(
     field_update: FieldUpdate,
     field: Field = Depends(get_editable_field),

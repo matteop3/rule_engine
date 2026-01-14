@@ -903,3 +903,211 @@ class TestVersionLifecycle:
             headers=admin_headers
         )
         assert create_resp.status_code == 201
+
+
+# ============================================================
+# SKU ATTRIBUTES CRUD TESTS
+# ============================================================
+
+class TestVersionSKUAttributes:
+    """Tests for SKU attributes (sku_base, sku_delimiter) CRUD operations."""
+
+    def test_create_version_with_sku_attributes(self, client: TestClient, admin_headers, test_entity):
+        """Test that version can be created with sku_base and sku_delimiter."""
+        payload = {
+            "entity_id": test_entity.id,
+            "changelog": "Version with SKU",
+            "sku_base": "LPT-PRO",
+            "sku_delimiter": "-"
+        }
+
+        response = client.post("/versions/", json=payload, headers=admin_headers)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["sku_base"] == "LPT-PRO"
+        assert data["sku_delimiter"] == "-"
+
+    def test_create_version_with_custom_delimiter(self, client: TestClient, admin_headers, test_entity):
+        """Test that version can be created with custom delimiter."""
+        payload = {
+            "entity_id": test_entity.id,
+            "changelog": "Custom delimiter",
+            "sku_base": "PROD",
+            "sku_delimiter": "/"
+        }
+
+        response = client.post("/versions/", json=payload, headers=admin_headers)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["sku_base"] == "PROD"
+        assert data["sku_delimiter"] == "/"
+
+    def test_create_version_without_sku_attributes(self, client: TestClient, admin_headers, test_entity):
+        """Test that sku_base and sku_delimiter are optional on creation."""
+        payload = {
+            "entity_id": test_entity.id,
+            "changelog": "No SKU attributes"
+        }
+
+        response = client.post("/versions/", json=payload, headers=admin_headers)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["sku_base"] is None
+        assert data["sku_delimiter"] == "-"  # Default value from schema
+
+    def test_update_draft_sku_attributes(self, client: TestClient, admin_headers, draft_version):
+        """Test that sku_base and sku_delimiter can be updated on DRAFT version."""
+        payload = {
+            "sku_base": "NEW-BASE",
+            "sku_delimiter": "/"
+        }
+
+        response = client.patch(
+            f"/versions/{draft_version.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["sku_base"] == "NEW-BASE"
+        assert data["sku_delimiter"] == "/"
+
+    def test_update_only_sku_base(self, client: TestClient, admin_headers, draft_version):
+        """Test that only sku_base can be updated independently."""
+        payload = {"sku_base": "ONLY-BASE"}
+
+        response = client.patch(
+            f"/versions/{draft_version.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["sku_base"] == "ONLY-BASE"
+
+    def test_update_only_sku_delimiter(self, client: TestClient, admin_headers, draft_version):
+        """Test that only sku_delimiter can be updated independently."""
+        payload = {"sku_delimiter": "_"}
+
+        response = client.patch(
+            f"/versions/{draft_version.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["sku_delimiter"] == "_"
+
+    def test_cannot_update_sku_on_published_version(
+        self, client: TestClient, admin_headers, published_version
+    ):
+        """
+        Test DRAFT-only policy: SKU attributes cannot be updated on PUBLISHED version.
+        This is a CRITICAL business rule.
+        """
+        payload = {"sku_base": "SHOULD-FAIL"}
+
+        response = client.patch(
+            f"/versions/{published_version.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
+    def test_clone_copies_sku_attributes(
+        self, client: TestClient, admin_headers, db_session, test_entity, admin_user
+    ):
+        """
+        Test that cloning a version copies sku_base and sku_delimiter.
+        This is a CRITICAL feature for SKU continuity.
+        """
+        # Create published version with SKU attributes
+        from app.models.domain import EntityVersion, VersionStatus
+
+        source_version = EntityVersion(
+            entity_id=test_entity.id,
+            version_number=1,
+            status=VersionStatus.PUBLISHED,
+            changelog="Source with SKU",
+            sku_base="CLONE-BASE",
+            sku_delimiter="/",
+            created_by_id=admin_user.id,
+            updated_by_id=admin_user.id
+        )
+        db_session.add(source_version)
+        db_session.commit()
+
+        # Clone the version
+        payload = {"changelog": "Cloned version"}
+        response = client.post(
+            f"/versions/{source_version.id}/clone",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["sku_base"] == "CLONE-BASE"
+        assert data["sku_delimiter"] == "/"
+        assert data["status"] == "DRAFT"
+
+    def test_clear_sku_base_on_draft(self, client: TestClient, admin_headers, db_session, test_entity, admin_user):
+        """Test that sku_base can be cleared (set to null) on DRAFT version."""
+        from app.models.domain import EntityVersion, VersionStatus
+
+        # Create draft with SKU attributes
+        draft = EntityVersion(
+            entity_id=test_entity.id,
+            version_number=1,
+            status=VersionStatus.DRAFT,
+            changelog="Draft with SKU",
+            sku_base="TO-BE-CLEARED",
+            sku_delimiter="-",
+            created_by_id=admin_user.id,
+            updated_by_id=admin_user.id
+        )
+        db_session.add(draft)
+        db_session.commit()
+
+        # Clear sku_base
+        payload = {"sku_base": None}
+        response = client.patch(
+            f"/versions/{draft.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["sku_base"] is None
+
+    def test_read_version_includes_sku_attributes(
+        self, client: TestClient, admin_headers, db_session, test_entity, admin_user
+    ):
+        """Test that reading a version includes SKU attributes in response."""
+        from app.models.domain import EntityVersion, VersionStatus
+
+        version = EntityVersion(
+            entity_id=test_entity.id,
+            version_number=1,
+            status=VersionStatus.DRAFT,
+            changelog="Read test",
+            sku_base="READ-TEST",
+            sku_delimiter=":",
+            created_by_id=admin_user.id,
+            updated_by_id=admin_user.id
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        response = client.get(f"/versions/{version.id}", headers=admin_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["sku_base"] == "READ-TEST"
+        assert data["sku_delimiter"] == ":"

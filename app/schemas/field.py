@@ -25,7 +25,7 @@ class FieldCreate(FieldBase):
 
 class FieldUpdate(BaseSchema):
     """
-    Schema for updating a Field (PUT with partial update behavior).
+    Schema for partially updating a Field (PATCH).
 
     Note: entity_version_id is included for consistency, but moving fields
     between versions is rare and should be done with caution.

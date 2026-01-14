@@ -366,7 +366,7 @@ class TestUpdateField:
             "is_required": True
         }
 
-        response = client.put(
+        response = client.patch(
             f"/fields/{draft_field.id}",
             json=payload,
             headers=admin_headers
@@ -386,7 +386,7 @@ class TestUpdateField:
             "is_free_value": False
         }
 
-        response = client.put(
+        response = client.patch(
             f"/fields/{draft_field.id}",
             json=payload,
             headers=author_headers
@@ -404,7 +404,7 @@ class TestUpdateField:
             "is_free_value": False
         }
 
-        response = client.put(
+        response = client.patch(
             f"/fields/{draft_field.id}",
             json=payload,
             headers=user_headers
@@ -426,7 +426,7 @@ class TestUpdateField:
             "is_free_value": False
         }
 
-        response = client.put(
+        response = client.patch(
             f"/fields/{published_field.id}",
             json=payload,
             headers=admin_headers
@@ -450,7 +450,7 @@ class TestUpdateField:
             "is_free_value": True  # Try to change from False to True
         }
 
-        response = client.put(
+        response = client.patch(
             f"/fields/{field.id}",
             json=payload,
             headers=admin_headers
@@ -470,7 +470,7 @@ class TestUpdateField:
             "is_free_value": False  # Change from True to False
         }
 
-        response = client.put(
+        response = client.patch(
             f"/fields/{free_field.id}",
             json=payload,
             headers=admin_headers
@@ -493,7 +493,7 @@ class TestUpdateField:
             "default_value": "not_allowed"  # Should fail
         }
 
-        response = client.put(
+        response = client.patch(
             f"/fields/{free_field.id}",
             json=payload,
             headers=admin_headers
@@ -510,7 +510,7 @@ class TestUpdateField:
             "is_free_value": True
         }
 
-        response = client.put("/fields/99999", json=payload, headers=admin_headers)
+        response = client.patch("/fields/99999", json=payload, headers=admin_headers)
 
         assert response.status_code == 404
 
@@ -625,7 +625,7 @@ class TestFieldStateTransitions:
             "is_free_value": True
         }
 
-        response = client.put(
+        response = client.patch(
             f"/fields/{draft_field.id}",
             json=payload,
             headers=admin_headers
@@ -646,7 +646,7 @@ class TestFieldStateTransitions:
             "default_value": "new_default"
         }
 
-        response = client.put(
+        response = client.patch(
             f"/fields/{free_field.id}",
             json=payload,
             headers=admin_headers

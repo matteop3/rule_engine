@@ -8,6 +8,9 @@ class VersionBase(BaseSchema):
     """Base properties shared by create and read operations."""
     changelog: Optional[str] = None
     status: VersionStatus = VersionStatus.DRAFT
+    # SKU generation fields
+    sku_base: Optional[str] = None
+    sku_delimiter: str = "-"
 
 
 class VersionCreate(VersionBase):
@@ -29,8 +32,10 @@ class VersionRead(VersionBase, AuditSchemaMixin):
 
 
 class VersionUpdate(BaseSchema):
-    """Schema for updating version metadata (PATCH). Only changelog is editable."""
+    """Schema for updating version metadata (PATCH)."""
     changelog: Optional[str] = None
+    sku_base: Optional[str] = None
+    sku_delimiter: Optional[str] = None
 
 
 class VersionClone(BaseSchema):

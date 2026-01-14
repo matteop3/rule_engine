@@ -6,6 +6,7 @@ class ValueBase(BaseSchema):
     value: str = Field(..., max_length=255)
     label: Optional[str] = Field(None, max_length=255)
     is_default: bool = False
+    sku_modifier: Optional[str] = Field(None, max_length=50)
 
 class ValueCreate(ValueBase):
     """ Schema to create a Value (POST). """
@@ -30,6 +31,7 @@ class ValueUpdate(BaseSchema):
     label: Optional[str] = Field(None, max_length=255)
     is_default: Optional[bool] = None
     field_id: Optional[int] = None
+    sku_modifier: Optional[str] = Field(None, max_length=50)
 
     @field_validator('value')
     @classmethod

@@ -41,3 +41,4 @@ class CalculationResponse(BaseModel):
     entity_id: int
     fields: List[FieldOutputState]
     is_complete: bool = True
+    generated_sku: Optional[str] = None

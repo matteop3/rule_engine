@@ -18,7 +18,8 @@ from app.core.rate_limit import limiter
 pytest_plugins = [
     "tests.fixtures.auth",
     "tests.fixtures.entities",
-    "tests.fixtures.engine"
+    "tests.fixtures.engine",
+    "tests.fixtures.configurations_lifecycle"
 ]
 
 # ============================================================

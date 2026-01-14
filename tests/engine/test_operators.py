@@ -21,11 +21,11 @@ def setup_operator_scenario(db_session):
 
     # 2. Generic Fields
     # Field A: Number
-    f_num = Field(entity_version_id=version.id, name="field_num", label="Numero", data_type=FieldType.NUMBER.value, step=1, sequence=1, is_free_value=True)
+    f_num = Field(entity_version_id=version.id, name="field_num", label="Number", data_type=FieldType.NUMBER.value, step=1, sequence=1, is_free_value=True)
     # Field B: String
-    f_str = Field(entity_version_id=version.id, name="field_str", label="Stringa", data_type=FieldType.STRING.value, step=1, sequence=2, is_free_value=True)
+    f_str = Field(entity_version_id=version.id, name="field_str", label="String", data_type=FieldType.STRING.value, step=1, sequence=2, is_free_value=True)
     # Field C: Date
-    f_date = Field(entity_version_id=version.id, name="field_date", label="Data", data_type=FieldType.DATE.value, step=1, sequence=3, is_free_value=True)
+    f_date = Field(entity_version_id=version.id, name="field_date", label="Date", data_type=FieldType.DATE.value, step=1, sequence=3, is_free_value=True)
     # Target Field (to be validated)
     f_target = Field(entity_version_id=version.id, name="field_target", label="Target", data_type=FieldType.STRING.value, step=1, sequence=4, is_free_value=True)
 
@@ -84,7 +84,7 @@ def test_operator_not_equals_string(db_session, setup_operator_scenario):
         entity_version_id=ids["v_id"],
         target_field_id=ids["f_target"],
         rule_type=RuleType.VALIDATION.value,
-        error_message="Devi scrivere PIPPO",
+        error_message="You must write PIPPO",
         conditions={"criteria": [{"field_id": ids["f_str"], "operator": "NOT_EQUALS", "value": "PIPPO"}]}
     )
     db_session.add(rule)
@@ -96,18 +96,18 @@ def test_operator_not_equals_string(db_session, setup_operator_scenario):
         entity_id=ids["e_id"],
         current_state=[
             FieldInputState(field_id=ids["f_str"], value="PLUTO"),
-            FieldInputState(field_id=ids["f_target"], value="Sto scrivendo qualcosa") 
+            FieldInputState(field_id=ids["f_target"], value="I am writing something") 
         ]
     ))
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
-    assert f_out.error_message == "Devi scrivere PIPPO"
+    assert f_out.error_message == "You must write PIPPO"
 
     # PASSED VALIDATION case (Write "PIPPO" -> not different -> OK)
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[
             FieldInputState(field_id=ids["f_str"], value="PIPPO"),
-            FieldInputState(field_id=ids["f_target"], value="Sto scrivendo qualcosa")
+            FieldInputState(field_id=ids["f_target"], value="I am writing something")
         ]
     ))
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
@@ -274,7 +274,7 @@ def test_operator_greater_than_number(db_session, setup_operator_scenario):
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: 51 > 50 -> Visibile
+    # POSITIVE case: 51 > 50 -> Visible
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=51)]
@@ -282,7 +282,7 @@ def test_operator_greater_than_number(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # NEGATIVE case: 50 non è > 50 -> Nascosto
+    # NEGATIVE case: 50 is not > 50 -> Hidden
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=50)]
@@ -290,7 +290,7 @@ def test_operator_greater_than_number(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is True
 
-    # NEGATIVE case: 49 < 50 -> Nascosto
+    # NEGATIVE case: 49 < 50 -> Hidden
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=49)]
@@ -314,7 +314,7 @@ def test_operator_less_than_number(db_session, setup_operator_scenario):
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: 5 < 10 -> Obbligatorio
+    # POSITIVE case: 5 < 10 -> Required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=5)]
@@ -322,7 +322,7 @@ def test_operator_less_than_number(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # NEGATIVE case: 10 non è < 10 -> Non obbligatorio
+    # NEGATIVE case: 10 is not < 10 -> Not required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=10)]
@@ -330,7 +330,7 @@ def test_operator_less_than_number(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is False
 
-    # NEGATIVE case: 15 > 10 -> Non obbligatorio
+    # NEGATIVE case: 15 > 10 -> Not required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=15)]
@@ -354,7 +354,7 @@ def test_operator_in_list_strings(db_session, setup_operator_scenario):
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: "B" è nella lista
+    # POSITIVE case: "B" is in the list
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="B")]
@@ -362,7 +362,7 @@ def test_operator_in_list_strings(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # NEGATIVE case: "X" non è nella lista
+    # NEGATIVE case: "X" is not in the list
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="X")]
@@ -388,7 +388,7 @@ def test_operator_equals_date(db_session, setup_operator_scenario):
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: Stessa data -> Obbligatorio
+    # POSITIVE case: Same date -> Required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2024-06-15")]
@@ -396,7 +396,7 @@ def test_operator_equals_date(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # NEGATIVE case: Data diversa -> Non obbligatorio
+    # NEGATIVE case: Different date -> Not required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2024-06-16")]
@@ -422,7 +422,7 @@ def test_operator_greater_than_date(db_session, setup_operator_scenario):
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: Data successiva -> Visibile
+    # POSITIVE case: Later date -> Visible
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2024-06-01")]
@@ -430,7 +430,7 @@ def test_operator_greater_than_date(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # NEGATIVE case: Stessa data -> Nascosto
+    # NEGATIVE case: Same date -> Hidden
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2024-01-01")]
@@ -438,7 +438,7 @@ def test_operator_greater_than_date(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is True
 
-    # NEGATIVE case: Data precedente -> Nascosto
+    # NEGATIVE case: Earlier date -> Hidden
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2023-12-31")]
@@ -466,7 +466,7 @@ def test_operator_greater_than_or_equal_number(db_session, setup_operator_scenar
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: 51 >= 50 -> Visibile
+    # POSITIVE case: 51 >= 50 -> Visible
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=51)]
@@ -474,7 +474,7 @@ def test_operator_greater_than_or_equal_number(db_session, setup_operator_scenar
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # POSITIVE case: 50 >= 50 -> Visibile (edge case)
+    # POSITIVE case: 50 >= 50 -> Visible (edge case)
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=50)]
@@ -482,7 +482,7 @@ def test_operator_greater_than_or_equal_number(db_session, setup_operator_scenar
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # NEGATIVE case: 49 < 50 -> Nascosto
+    # NEGATIVE case: 49 < 50 -> Hidden
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=49)]
@@ -506,7 +506,7 @@ def test_operator_less_than_or_equal_number(db_session, setup_operator_scenario)
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: 5 <= 10 -> Obbligatorio
+    # POSITIVE case: 5 <= 10 -> Required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=5)]
@@ -514,7 +514,7 @@ def test_operator_less_than_or_equal_number(db_session, setup_operator_scenario)
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # POSITIVE case: 10 <= 10 -> Obbligatorio (edge case)
+    # POSITIVE case: 10 <= 10 -> Required (edge case)
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=10)]
@@ -522,7 +522,7 @@ def test_operator_less_than_or_equal_number(db_session, setup_operator_scenario)
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # NEGATIVE case: 11 > 10 -> Non obbligatorio
+    # NEGATIVE case: 11 > 10 -> Not required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_num"], value=11)]
@@ -548,7 +548,7 @@ def test_operator_greater_than_or_equal_date(db_session, setup_operator_scenario
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: Data successiva -> Visibile
+    # POSITIVE case: Later date -> Visible
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2024-06-01")]
@@ -556,7 +556,7 @@ def test_operator_greater_than_or_equal_date(db_session, setup_operator_scenario
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # POSITIVE case: Stessa data -> Visibile (edge case)
+    # POSITIVE case: Same date -> Visible (edge case)
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2024-01-01")]
@@ -564,7 +564,7 @@ def test_operator_greater_than_or_equal_date(db_session, setup_operator_scenario
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # NEGATIVE case: Data precedente -> Nascosto
+    # NEGATIVE case: Earlier date -> Hidden
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2023-12-31")]
@@ -590,7 +590,7 @@ def test_operator_less_than_or_equal_date(db_session, setup_operator_scenario):
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: Data precedente -> Obbligatorio
+    # POSITIVE case: Earlier date -> Required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2023-06-01")]
@@ -598,7 +598,7 @@ def test_operator_less_than_or_equal_date(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # POSITIVE case: Stessa data -> Obbligatorio (edge case)
+    # POSITIVE case: Same date -> Required (edge case)
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2024-01-01")]
@@ -606,7 +606,7 @@ def test_operator_less_than_or_equal_date(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # NEGATIVE case: Data successiva -> Non obbligatorio
+    # NEGATIVE case: Later date -> Not required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_date"], value="2024-01-02")]
@@ -621,8 +621,8 @@ def test_operator_less_than_or_equal_date(db_session, setup_operator_scenario):
 
 def test_operator_greater_than_string(db_session, setup_operator_scenario):
     """
-    Verifica operatore GREATER_THAN con stringhe (confronto lessicografico).
-    Le stringhe sono confrontate carattere per carattere secondo i codici Unicode.
+    Verify GREATER_THAN operator with strings (lexicographic comparison).
+    Strings are compared character by character according to Unicode codes.
     """
     ids = setup_operator_scenario
     service = RuleEngineService()
@@ -637,7 +637,7 @@ def test_operator_greater_than_string(db_session, setup_operator_scenario):
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: "Z" > "M" -> Visibile
+    # POSITIVE case: "Z" > "M" -> Visible
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="Z")]
@@ -645,7 +645,7 @@ def test_operator_greater_than_string(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # POSITIVE case: "N" > "M" -> Visibile
+    # POSITIVE case: "N" > "M" -> Visible
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="N")]
@@ -653,7 +653,7 @@ def test_operator_greater_than_string(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # NEGATIVE case: "M" non è > "M" -> Nascosto
+    # NEGATIVE case: "M" is not > "M" -> Hidden
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="M")]
@@ -661,7 +661,7 @@ def test_operator_greater_than_string(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is True
 
-    # NEGATIVE case: "A" < "M" -> Nascosto
+    # NEGATIVE case: "A" < "M" -> Hidden
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="A")]
@@ -672,7 +672,7 @@ def test_operator_greater_than_string(db_session, setup_operator_scenario):
 
 def test_operator_less_than_string(db_session, setup_operator_scenario):
     """
-    Verifica operatore LESS_THAN con stringhe (confronto lessicografico).
+    Verify LESS_THAN operator with strings (lexicographic comparison).
     """
     ids = setup_operator_scenario
     service = RuleEngineService()
@@ -687,7 +687,7 @@ def test_operator_less_than_string(db_session, setup_operator_scenario):
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: "A" < "M" -> Obbligatorio
+    # POSITIVE case: "A" < "M" -> Required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="A")]
@@ -695,7 +695,7 @@ def test_operator_less_than_string(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # POSITIVE case: "L" < "M" -> Obbligatorio
+    # POSITIVE case: "L" < "M" -> Required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="L")]
@@ -703,7 +703,7 @@ def test_operator_less_than_string(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # NEGATIVE case: "M" non è < "M" -> Non obbligatorio
+    # NEGATIVE case: "M" is not < "M" -> Not required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="M")]
@@ -711,7 +711,7 @@ def test_operator_less_than_string(db_session, setup_operator_scenario):
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is False
 
-    # NEGATIVE case: "Z" > "M" -> Non obbligatorio
+    # NEGATIVE case: "Z" > "M" -> Not required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="Z")]
@@ -722,7 +722,7 @@ def test_operator_less_than_string(db_session, setup_operator_scenario):
 
 def test_operator_greater_than_or_equal_string(db_session, setup_operator_scenario):
     """
-    Verifica operatore GREATER_THAN_OR_EQUAL con stringhe (confronto lessicografico).
+    Verify GREATER_THAN_OR_EQUAL operator with strings (lexicographic comparison).
     """
     ids = setup_operator_scenario
     service = RuleEngineService()
@@ -737,7 +737,7 @@ def test_operator_greater_than_or_equal_string(db_session, setup_operator_scenar
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: "Z" >= "M" -> Visibile
+    # POSITIVE case: "Z" >= "M" -> Visible
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="Z")]
@@ -745,7 +745,7 @@ def test_operator_greater_than_or_equal_string(db_session, setup_operator_scenar
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # POSITIVE case: "M" >= "M" -> Visibile (edge case)
+    # POSITIVE case: "M" >= "M" -> Visible (edge case)
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="M")]
@@ -753,7 +753,7 @@ def test_operator_greater_than_or_equal_string(db_session, setup_operator_scenar
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # NEGATIVE case: "L" < "M" -> Nascosto
+    # NEGATIVE case: "L" < "M" -> Hidden
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="L")]
@@ -764,7 +764,7 @@ def test_operator_greater_than_or_equal_string(db_session, setup_operator_scenar
 
 def test_operator_less_than_or_equal_string(db_session, setup_operator_scenario):
     """
-    Verifica operatore LESS_THAN_OR_EQUAL con stringhe (confronto lessicografico).
+    Verify LESS_THAN_OR_EQUAL operator with strings (lexicographic comparison).
     """
     ids = setup_operator_scenario
     service = RuleEngineService()
@@ -779,7 +779,7 @@ def test_operator_less_than_or_equal_string(db_session, setup_operator_scenario)
     db_session.add(rule)
     db_session.commit()
 
-    # POSITIVE case: "A" <= "M" -> Obbligatorio
+    # POSITIVE case: "A" <= "M" -> Required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="A")]
@@ -787,7 +787,7 @@ def test_operator_less_than_or_equal_string(db_session, setup_operator_scenario)
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # POSITIVE case: "M" <= "M" -> Obbligatorio (edge case)
+    # POSITIVE case: "M" <= "M" -> Required (edge case)
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="M")]
@@ -795,7 +795,7 @@ def test_operator_less_than_or_equal_string(db_session, setup_operator_scenario)
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_required is True
 
-    # NEGATIVE case: "N" > "M" -> Non obbligatorio
+    # NEGATIVE case: "N" > "M" -> Not required
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="N")]
@@ -806,8 +806,8 @@ def test_operator_less_than_or_equal_string(db_session, setup_operator_scenario)
 
 def test_lexicographic_comparison_multichar_strings(db_session, setup_operator_scenario):
     """
-    Verifica confronto lessicografico con stringhe multi-carattere.
-    Dimostra che il confronto avviene carattere per carattere.
+    Verify lexicographic comparison with multi-character strings.
+    Demonstrates that the comparison happens character by character.
     """
     ids = setup_operator_scenario
     service = RuleEngineService()
@@ -838,7 +838,7 @@ def test_lexicographic_comparison_multichar_strings(db_session, setup_operator_s
     f_out = next(f for f in resp.fields if f.field_id == ids["f_target"])
     assert f_out.is_hidden is False
 
-    # "car" >= "cat" -> False (car < cat perché 'r' < 't')
+    # "car" >= "cat" -> False (car < cat because 'r' < 't')
     resp = service.calculate_state(db_session, CalculationRequest(
         entity_id=ids["e_id"],
         current_state=[FieldInputState(field_id=ids["f_str"], value="car")]

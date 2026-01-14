@@ -258,7 +258,7 @@ class TestUpdateEntity:
             "description": "Updated description"
         }
 
-        response = client.put(
+        response = client.patch(
             f"/entities/{test_entity.id}",
             json=payload,
             headers=admin_headers
@@ -276,7 +276,7 @@ class TestUpdateEntity:
             "description": "By author"
         }
 
-        response = client.put(
+        response = client.patch(
             f"/entities/{test_entity.id}",
             json=payload,
             headers=author_headers
@@ -292,7 +292,7 @@ class TestUpdateEntity:
             "description": "Should fail"
         }
 
-        response = client.put(
+        response = client.patch(
             f"/entities/{test_entity.id}",
             json=payload,
             headers=user_headers
@@ -306,7 +306,7 @@ class TestUpdateEntity:
             "name": "Anonymous Updated"
         }
 
-        response = client.put(f"/entities/{test_entity.id}", json=payload)
+        response = client.patch(f"/entities/{test_entity.id}", json=payload)
 
         assert response.status_code == 401
 
@@ -319,7 +319,7 @@ class TestUpdateEntity:
             "description": "Trying to duplicate"
         }
 
-        response = client.put(
+        response = client.patch(
             f"/entities/{test_entity.id}",
             json=payload,
             headers=admin_headers
@@ -335,7 +335,7 @@ class TestUpdateEntity:
             "description": "New description only"
         }
 
-        response = client.put(
+        response = client.patch(
             f"/entities/{test_entity.id}",
             json=payload,
             headers=admin_headers
@@ -350,7 +350,7 @@ class TestUpdateEntity:
             "name": "Ghost Entity"
         }
 
-        response = client.put("/entities/99999", json=payload, headers=admin_headers)
+        response = client.patch("/entities/99999", json=payload, headers=admin_headers)
 
         assert response.status_code == 404
 
@@ -361,7 +361,7 @@ class TestUpdateEntity:
             "description": "Track updater"
         }
 
-        response = client.put(
+        response = client.patch(
             f"/entities/{test_entity.id}",
             json=payload,
             headers=author_headers
