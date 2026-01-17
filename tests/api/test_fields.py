@@ -266,7 +266,10 @@ class TestCreateField:
     def test_cannot_create_field_in_archived_version(
         self, client: TestClient, admin_headers, archived_version
     ):
-        """Test DRAFT-only policy: cannot create field in ARCHIVED version."""
+        """
+        Test DRAFT-only policy: cannot create field in ARCHIVED version.
+        This is a CRITICAL business rule.
+        """
         payload = {
             "entity_version_id": archived_version.id,
             "name": "should_fail",
@@ -278,6 +281,7 @@ class TestCreateField:
         response = client.post("/fields/", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
 
     def test_cannot_set_default_value_on_non_free_field(
         self, client: TestClient, admin_headers, draft_version
@@ -435,6 +439,29 @@ class TestUpdateField:
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
+    def test_cannot_update_field_in_archived_version(
+        self, client: TestClient, admin_headers, archived_field
+    ):
+        """
+        Test DRAFT-only policy: cannot update field in ARCHIVED version.
+        This is a CRITICAL business rule.
+        """
+        payload = {
+            "name": "should_fail",
+            "label": "Should Fail",
+            "data_type": "string",
+            "is_free_value": False
+        }
+
+        response = client.patch(
+            f"/fields/{archived_field.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
     def test_cannot_change_non_free_to_free_with_values(
         self, client: TestClient, admin_headers, field_with_values
     ):
@@ -548,6 +575,18 @@ class TestDeleteField:
         This is a CRITICAL business rule.
         """
         response = client.delete(f"/fields/{published_field.id}", headers=admin_headers)
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
+    def test_cannot_delete_field_in_archived_version(
+        self, client: TestClient, admin_headers, archived_field
+    ):
+        """
+        Test DRAFT-only policy: cannot delete field in ARCHIVED version.
+        This is a CRITICAL business rule.
+        """
+        response = client.delete(f"/fields/{archived_field.id}", headers=admin_headers)
 
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()

@@ -295,7 +295,7 @@ class TestCloneEdgeCases:
         # Clone timestamps should be different (newer)
         assert data["created_at"] is not None
         # Clone hasn't been updated yet
-        assert data["updated_at"] is not None
+        assert data["updated_at"] is None
 
     def test_clone_nonexistent_config(
         self, client, lifecycle_user_headers

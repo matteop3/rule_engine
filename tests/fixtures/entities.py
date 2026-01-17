@@ -331,6 +331,25 @@ def published_field(db_session, published_version):
     return field
 
 
+@pytest.fixture(scope="function")
+def archived_field(db_session, archived_version):
+    """Creates a field in an ARCHIVED version (immutable)."""
+    field = Field(
+        entity_version_id=archived_version.id,
+        name="archived_field",
+        label="Archived Field",
+        data_type=FieldType.STRING.value,
+        is_free_value=False,
+        is_required=True,
+        step=1,
+        sequence=1
+    )
+    db_session.add(field)
+    db_session.commit()
+    db_session.refresh(field)
+    return field
+
+
 # ============================================================
 # VALUE FIXTURES
 # ============================================================
@@ -602,3 +621,43 @@ def rule_with_value_target(db_session, draft_version):
         "value2": value2,
         "rule": rule
     }
+
+
+@pytest.fixture(scope="function")
+def archived_rule(db_session, archived_version):
+    """Creates a rule in an ARCHIVED version (immutable)."""
+    target_field = Field(
+        entity_version_id=archived_version.id,
+        name="arch_rule_target",
+        label="Archived Rule Target",
+        data_type=FieldType.BOOLEAN.value,
+        is_free_value=True,
+        is_required=False,
+        step=1,
+        sequence=1
+    )
+    source_field = Field(
+        entity_version_id=archived_version.id,
+        name="arch_rule_source",
+        label="Archived Rule Source",
+        data_type=FieldType.NUMBER.value,
+        is_free_value=True,
+        is_required=True,
+        step=1,
+        sequence=2
+    )
+    db_session.add_all([target_field, source_field])
+    db_session.flush()
+
+    rule = Rule(
+        entity_version_id=archived_version.id,
+        target_field_id=target_field.id,
+        rule_type=RuleType.VISIBILITY.value,
+        description="Archived rule",
+        conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]}
+    )
+    db_session.add(rule)
+    db_session.commit()
+    db_session.refresh(rule)
+
+    return {"rule": rule, "target_field": target_field, "source_field": source_field}

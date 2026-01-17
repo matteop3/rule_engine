@@ -316,6 +316,29 @@ class TestCreateRule:
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
+    def test_cannot_create_rule_in_archived_version(
+        self, client: TestClient, admin_headers, archived_rule
+    ):
+        """
+        Test DRAFT-only policy: cannot create rule in ARCHIVED version.
+        This is a CRITICAL business rule.
+        """
+        rule = archived_rule["rule"]
+        target_field = archived_rule["target_field"]
+        source_field = archived_rule["source_field"]
+
+        payload = {
+            "entity_version_id": rule.entity_version_id,
+            "target_field_id": target_field.id,
+            "rule_type": "mandatory",
+            "conditions": {"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]}
+        }
+
+        response = client.post("/rules/", json=payload, headers=admin_headers)
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
     def test_target_field_must_belong_to_version(
         self, client: TestClient, admin_headers, db_session, draft_version, second_entity, admin_user
     ):
@@ -678,6 +701,25 @@ class TestUpdateRule:
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
+    def test_cannot_update_rule_in_archived_version(
+        self, client: TestClient, admin_headers, archived_rule
+    ):
+        """
+        Test DRAFT-only policy: cannot update rule in ARCHIVED version.
+        This is a CRITICAL business rule.
+        """
+        rule = archived_rule["rule"]
+        payload = {"description": "Should fail"}
+
+        response = client.patch(
+            f"/rules/{rule.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
     def test_can_update_target_field(
         self, client: TestClient, admin_headers, db_session, draft_rule
     ):
@@ -812,3 +854,98 @@ class TestUpdateRule:
 # DELETE RULE TESTS (DELETE /rules/{rule_id})
 # ============================================================
 
+class TestDeleteRule:
+    """Tests for DELETE /rules/{rule_id} endpoint."""
+
+    def test_admin_can_delete_rule(self, client: TestClient, admin_headers, draft_rule):
+        """Test that admin can delete a rule in DRAFT version."""
+        rule = draft_rule["rule"]
+
+        response = client.delete(f"/rules/{rule.id}", headers=admin_headers)
+
+        assert response.status_code == 204
+
+    def test_author_can_delete_rule(
+        self, client: TestClient, author_headers, db_session, draft_version
+    ):
+        """Test that author can delete a rule."""
+        target_field = Field(
+            entity_version_id=draft_version.id,
+            name="delete_target",
+            label="Delete Target",
+            data_type=FieldType.BOOLEAN.value,
+            is_free_value=True
+        )
+        source_field = Field(
+            entity_version_id=draft_version.id,
+            name="delete_source",
+            label="Delete Source",
+            data_type=FieldType.NUMBER.value,
+            is_free_value=True
+        )
+        db_session.add_all([target_field, source_field])
+        db_session.flush()
+
+        rule = Rule(
+            entity_version_id=draft_version.id,
+            target_field_id=target_field.id,
+            rule_type=RuleType.VISIBILITY.value,
+            description="To delete",
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]}
+        )
+        db_session.add(rule)
+        db_session.commit()
+
+        response = client.delete(f"/rules/{rule.id}", headers=author_headers)
+
+        assert response.status_code == 204
+
+    def test_regular_user_cannot_delete_rule(self, client: TestClient, user_headers, draft_rule):
+        """Test that regular user cannot delete rules (403)."""
+        rule = draft_rule["rule"]
+
+        response = client.delete(f"/rules/{rule.id}", headers=user_headers)
+
+        assert response.status_code == 403
+
+    def test_unauthenticated_cannot_delete_rule(self, client: TestClient, draft_rule):
+        """Test that unauthenticated request returns 401."""
+        rule = draft_rule["rule"]
+
+        response = client.delete(f"/rules/{rule.id}")
+
+        assert response.status_code == 401
+
+    def test_cannot_delete_rule_in_published_version(
+        self, client: TestClient, admin_headers, published_rule
+    ):
+        """
+        Test DRAFT-only policy: cannot delete rule in PUBLISHED version.
+        This is a CRITICAL business rule.
+        """
+        rule = published_rule["rule"]
+
+        response = client.delete(f"/rules/{rule.id}", headers=admin_headers)
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
+    def test_cannot_delete_rule_in_archived_version(
+        self, client: TestClient, admin_headers, archived_rule
+    ):
+        """
+        Test DRAFT-only policy: cannot delete rule in ARCHIVED version.
+        This is a CRITICAL business rule.
+        """
+        rule = archived_rule["rule"]
+
+        response = client.delete(f"/rules/{rule.id}", headers=admin_headers)
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
+    def test_delete_nonexistent_rule_returns_404(self, client: TestClient, admin_headers):
+        """Test that deleting non-existent rule returns 404."""
+        response = client.delete("/rules/99999", headers=admin_headers)
+
+        assert response.status_code == 404

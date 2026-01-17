@@ -12,6 +12,7 @@ tests/
 ├── fixtures/                    # Centralized test fixtures
 │   ├── __init__.py
 │   ├── auth.py                  # User and authentication fixtures
+│   ├── configurations_lifecycle.py  # Configuration lifecycle fixtures (DRAFT/FINALIZED, clone, upgrade)
 │   ├── entities.py              # Entity, Version, Field, Value, Rule fixtures
 │   └── engine.py                # Complex scenario fixtures (insurance, dropdown, operator, stress)
 │
@@ -20,8 +21,14 @@ tests/
 │   ├── test_auth.py                        # Authentication endpoints (login, token)
 │   ├── test_auth_refresh.py               # Token refresh and rate limiting
 │   ├── test_configurations_calculate.py   # Configuration calculate/engine integration
+│   ├── test_configurations_clone.py       # Configuration clone operation tests
 │   ├── test_configurations_crud.py        # Configuration CRUD operations
+│   ├── test_configurations_finalize.py    # Configuration finalize operation tests
+│   ├── test_configurations_lifecycle_rbac.py  # RBAC for lifecycle operations (USER/AUTHOR/ADMIN)
 │   ├── test_configurations_rbac.py        # Configuration role-based access control
+│   ├── test_configurations_state_transitions.py  # State transition matrix tests (DRAFT/FINALIZED)
+│   ├── test_configurations_status.py      # Core status behavior tests (DRAFT/FINALIZED)
+│   ├── test_configurations_upgrade.py     # Configuration upgrade operation tests
 │   ├── test_configurations_validation.py  # Configuration input validation
 │   ├── test_entities.py                    # Entity CRUD operations
 │   ├── test_fields.py                      # Field CRUD operations
@@ -101,15 +108,28 @@ tests/
 ### Entity Fixtures (fixtures/entities.py)
 - **Entities:** `test_entity`, `second_entity`
 - **Versions:** `draft_version`, `published_version`, `archived_version`, `version_with_data`
-- **Fields:** `draft_field`, `free_field`, `field_with_values`, `field_as_rule_target`, `published_field`
+- **Fields:** `draft_field`, `free_field`, `field_with_values`, `field_as_rule_target`, `published_field`, `archived_field`
 - **Values:** `draft_value`, `value_in_rule_target`, `value_in_rule_condition`
-- **Rules:** `draft_rule`, `published_rule`, `rule_with_value_target`
+- **Rules:** `draft_rule`, `published_rule`, `archived_rule`, `rule_with_value_target`
 
 ### Engine Fixtures (fixtures/engine.py)
 - `setup_insurance_scenario`: Complex auto insurance scenario with all rule types
 - `setup_dropdown_scenario`: Cascading dropdown (Region → City)
 - `setup_operator_scenario`: Generic scenario for operator testing
 - `setup_stress_scenario`: Complex interdependent fields for stress testing
+
+### Configuration Lifecycle Fixtures (fixtures/configurations_lifecycle.py)
+- **Users:** `lifecycle_admin`, `lifecycle_author`, `lifecycle_user`, `second_lifecycle_user` with corresponding headers
+- **Entity & Versions:** `lifecycle_entity`, `multi_version_entity` (ARCHIVED/PUBLISHED/DRAFT versions), `published_version_for_lifecycle`
+- **Configurations by Status:**
+  - `draft_configuration`, `finalized_configuration`: Basic status-specific configs
+  - `soft_deleted_configuration`: FINALIZED with is_deleted=True
+  - `configuration_with_empty_data`, `configuration_null_name`: Edge case configs
+- **Configurations by Owner:**
+  - `admin_owned_draft_configuration`, `admin_owned_finalized_configuration`
+  - `author_owned_draft_configuration`
+  - `second_user_draft_configuration`, `second_user_finalized_configuration`
+- **Upgrade Testing:** `configuration_on_archived_version`, `configuration_on_published_multi_version`
 
 ## Running Tests
 
@@ -132,6 +152,16 @@ pytest tests/stress/           # Stress and concurrency tests
 pytest tests/api/test_auth.py -v
 ```
 
+### Run configuration lifecycle tests
+```bash
+pytest tests/api/test_configurations_status.py -v          # Status behavior
+pytest tests/api/test_configurations_clone.py -v           # Clone operation
+pytest tests/api/test_configurations_upgrade.py -v         # Upgrade operation
+pytest tests/api/test_configurations_finalize.py -v        # Finalize operation
+pytest tests/api/test_configurations_lifecycle_rbac.py -v  # RBAC for lifecycle
+pytest tests/api/test_configurations_state_transitions.py -v  # State matrix
+```
+
 ### Run specific test
 ```bash
 pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
@@ -141,24 +171,86 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
-| API           | 15    | ~90           | Endpoint CRUD operations         |
+| API           | 21    | ~260          | Endpoint CRUD and lifecycle ops  |
 | Engine        | 5     | ~30           | Business logic and rules         |
 | Integration   | 11    | ~15           | End-to-end workflows             |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
 | Stress        | 2     | ~15           | Concurrency and edge cases       |
-| **Total**     | **34**| **~165**      |                                  |
+| **Total**     | **40**| **~335**      |                                  |
 
 ## Test Coverage
 
 The test suite provides comprehensive coverage across all application layers:
 
-### API Endpoints (~90 tests)
+### API Endpoints (~260 tests)
 - **Authentication**: Login, token refresh, rate limiting, session management
 - **Configurations**: Full CRUD, rule engine integration, validation, RBAC
+- **Configuration Lifecycle** (~155 tests): Status management, clone, upgrade, finalize operations
 - **Entities & Versions**: Lifecycle management, publishing, archiving, cloning
 - **Fields & Values**: CRUD operations, data type validation, constraints
 - **Rules**: CRUD, type-specific logic, edge cases, complex scenarios
 - **Users**: User management, role assignment, access control
+
+#### DRAFT-only Policy Coverage
+The test suite comprehensively validates that Fields, Values, and Rules can only be modified in DRAFT versions:
+
+| Operation | DRAFT | PUBLISHED | ARCHIVED |
+|-----------|-------|-----------|----------|
+| Field CREATE | ✅ | ✅ 409 | ✅ 409 |
+| Field UPDATE | ✅ | ✅ 409 | ✅ 409 |
+| Field DELETE | ✅ | ✅ 409 | ✅ 409 |
+| Rule CREATE | ✅ | ✅ 409 | ✅ 409 |
+| Rule UPDATE | ✅ | ✅ 409 | ✅ 409 |
+| Rule DELETE | ✅ | ✅ 409 | ✅ 409 |
+| Value CREATE | ✅ | ✅ 409 | ✅ 409 |
+| Value UPDATE | ✅ | ✅ 409 | ✅ 409 |
+| Value DELETE | ✅ | ✅ 409 | ✅ 409 |
+
+All tests validate both the HTTP status code (409 Conflict) and the error message containing "draft".
+
+### Configuration Lifecycle Tests (~155 tests)
+
+The configuration lifecycle management feature is thoroughly tested across multiple dimensions:
+
+#### Status Management (`test_configurations_status.py`)
+- **Create**: Default DRAFT status, is_deleted=False, cannot override status on create
+- **List**: Exclude deleted by default, include_deleted for ADMIN, status filters (DRAFT/FINALIZED)
+- **Read**: Status and is_deleted fields in response, visibility rules for deleted configs
+- **Update**: DRAFT allowed, FINALIZED blocked (HTTP 409), guard clauses
+- **Delete**: Hard delete for DRAFT, soft delete for FINALIZED (ADMIN only), forbidden for USER on FINALIZED
+
+#### Clone Operation (`test_configurations_clone.py`)
+- **Basic Functionality**: Creates new UUID, always results in DRAFT status, copies data and version reference
+- **Data Preservation**: Input data, entity_version_id, is_complete flag, name with "(Copy)" suffix
+- **Access Control**: Owner and ADMIN can clone, USER/AUTHOR cannot clone others' configs
+- **Edge Cases**: Empty data, null name, deleted configs, multiple clones uniqueness
+
+#### Upgrade Operation (`test_configurations_upgrade.py`)
+- **Basic Functionality**: Updates entity_version_id to latest PUBLISHED, preserves input data
+- **Status Constraints**: DRAFT allowed, FINALIZED blocked (HTTP 409 with clone suggestion)
+- **Version Resolution**: Finds PUBLISHED, ignores DRAFT/ARCHIVED, handles missing PUBLISHED (404)
+- **Access Control**: Owner and ADMIN can upgrade, USER cannot upgrade others' configs
+- **Edge Cases**: Incompatible fields between versions, audit field updates, idempotency
+
+#### Finalize Operation (`test_configurations_finalize.py`)
+- **Basic Functionality**: Changes status to FINALIZED, preserves all data, version, and is_complete
+- **Idempotency/Constraints**: Cannot finalize twice (HTTP 409), audit field updates
+- **Access Control**: Owner and ADMIN can finalize, USER/AUTHOR cannot finalize others' configs
+- **Post-Finalize Behavior**: Update blocked, upgrade blocked, clone allowed, delete blocked for USER
+
+#### Lifecycle RBAC (`test_configurations_lifecycle_rbac.py`)
+- **USER Role**: Full access to own DRAFT, read-only on own FINALIZED, can clone FINALIZED, cannot delete FINALIZED
+- **AUTHOR Role**: Same restrictions as USER for configurations (elevated privileges are for rules)
+- **ADMIN Role**: Access all configs, soft-delete FINALIZED, cannot modify FINALIZED data, can clone any
+- **Cross-Role Interactions**: Multi-user workflows, ownership isolation, visibility after soft-delete
+
+#### State Transition Matrix (`test_configurations_state_transitions.py`)
+- **DRAFT → DRAFT**: UPDATE allowed, UPGRADE allowed
+- **DRAFT → FINALIZED**: FINALIZE operation
+- **DRAFT → Deleted**: Hard delete (record removed)
+- **FINALIZED → FINALIZED**: UPDATE/UPGRADE/FINALIZE all blocked (HTTP 409)
+- **FINALIZED → Soft Deleted**: ADMIN only, USER denied (HTTP 403)
+- **Any → DRAFT**: CLONE always creates new DRAFT
 
 ### Rule Engine (~30 tests)
 - **Core Logic**: Field validation, mandatory checks, visibility rules, availability logic
@@ -172,6 +264,7 @@ The test suite provides comprehensive coverage across all application layers:
 - **Cascade Operations**: Delete/update propagation
 - **RBAC End-to-End**: Complete authorization flows across modules
 - **Complex Rule Interactions**: Multi-rule scenarios, interdependencies
+- **Configuration Lifecycle Flows**: Complete workflows (create → update → finalize → clone → modify)
 
 ### Performance & Stress (~30 tests)
 - **Benchmarks**: Throughput measurements, response time analysis
@@ -188,6 +281,7 @@ Coverage targets:
 - **Overall**: >85% line coverage
 - **Critical paths** (auth, engine, data integrity): >95% coverage
 - **API endpoints**: 100% route coverage
+- **Configuration lifecycle** (status guards, clone, upgrade, finalize): 100% coverage
 
 ## Test Organization Principles
 
@@ -207,6 +301,7 @@ The test suite follows these key principles:
    - Testing cross-module workflows? → `integration/`
    - Testing performance? → `performance/`
    - Testing concurrency/edge cases? → `stress/`
+   - Testing configuration lifecycle (status, clone, upgrade, finalize)? → `api/test_configurations_*.py`
 
 2. **Use existing fixtures:**
    - Check `fixtures/` modules before creating new fixtures
@@ -225,6 +320,13 @@ The test suite follows these key principles:
        WHEN: User selects NORD region
        THEN: Only northern cities (Milano, Torino) are available
        """
+
+   # For lifecycle tests, use descriptive single-line docstrings:
+   def test_finalize_changes_status(...):
+       """Finalize should change status to FINALIZED."""
+
+   def test_clone_finalized_creates_draft(...):
+       """Cloning FINALIZED config should create a new DRAFT configuration."""
    ```
 
 5. **Keep tests atomic and independent:**

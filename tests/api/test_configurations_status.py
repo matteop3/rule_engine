@@ -173,7 +173,7 @@ class TestListConfigurationsStatus:
     ):
         """Filter by status=DRAFT should return only DRAFT configs."""
         response = client.get(
-            "/configurations/?config_status=DRAFT",
+            "/configurations/?status=DRAFT",
             headers=lifecycle_user_headers
         )
 
@@ -188,7 +188,7 @@ class TestListConfigurationsStatus:
     ):
         """Filter by status=FINALIZED should return only FINALIZED configs."""
         response = client.get(
-            "/configurations/?config_status=FINALIZED",
+            "/configurations/?status=FINALIZED",
             headers=lifecycle_user_headers
         )
 
@@ -203,7 +203,7 @@ class TestListConfigurationsStatus:
     ):
         """Invalid status value should return HTTP 400."""
         response = client.get(
-            "/configurations/?config_status=INVALID",
+            "/configurations/?status=INVALID",
             headers=lifecycle_user_headers
         )
 
@@ -217,7 +217,7 @@ class TestListConfigurationsStatus:
         """Multiple filters should work together correctly."""
         # Get FINALIZED configs including deleted
         response = client.get(
-            "/configurations/?config_status=FINALIZED&include_deleted=true",
+            "/configurations/?status=FINALIZED&include_deleted=true",
             headers=lifecycle_admin_headers
         )
 
@@ -636,7 +636,7 @@ class TestConfigurationStatusEdgeCases:
         """Status filter should be case insensitive."""
         # Lowercase
         response = client.get(
-            "/configurations/?config_status=draft",
+            "/configurations/?status=draft",
             headers=lifecycle_user_headers
         )
         assert response.status_code == 200

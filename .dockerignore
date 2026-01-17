@@ -1,0 +1,67 @@
+# ==============================================================================
+# Rule Engine - Docker Ignore
+# ==============================================================================
+
+# Git
+.git
+.gitignore
+
+# Python virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Python packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.benchmarks/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files (secrets should not be baked into images)
+.env
+.env.*
+!.env.example
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker files
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+*.md
+LICENSE
+docs/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

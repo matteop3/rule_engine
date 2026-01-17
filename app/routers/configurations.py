@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -402,7 +402,8 @@ def create_configuration(
 def list_configurations(
     entity_version_id: Optional[int] = None,
     user_id: Optional[str] = None,
-    config_status: Optional[str] = None,
+    # Aliased to "status" in the API; named config_status internally to avoid conflict with fastapi.status
+    config_status: Optional[str] = Query(None, alias="status"),
     include_deleted: bool = False,
     skip: int = 0,
     limit: int = 100,
@@ -418,7 +419,7 @@ def list_configurations(
     Query Parameters:
         entity_version_id: Filter by specific version
         user_id: Filter by user (ADMIN only)
-        config_status: Filter by status (DRAFT or FINALIZED)
+        status: Filter by status (DRAFT or FINALIZED)
         include_deleted: Include soft-deleted records (ADMIN only, default False)
         skip: Pagination offset
         limit: Maximum results (max 100)

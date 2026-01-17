@@ -234,6 +234,24 @@ class TestCreateValue:
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
+    def test_cannot_create_value_in_archived_version(
+        self, client: TestClient, admin_headers, archived_field
+    ):
+        """
+        Test DRAFT-only policy: cannot create value for field in ARCHIVED version.
+        This is a CRITICAL business rule.
+        """
+        payload = {
+            "field_id": archived_field.id,
+            "value": "SHOULD_FAIL",
+            "label": "Should Fail"
+        }
+
+        response = client.post("/values/", json=payload, headers=admin_headers)
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
     def test_cannot_create_value_for_nonexistent_field(self, client: TestClient, admin_headers):
         """Test that creating value for non-existent field fails."""
         payload = {
@@ -323,6 +341,33 @@ class TestUpdateValue:
             field_id=published_field.id,
             value="PUB_VALUE",
             label="Published Value"
+        )
+        db_session.add(value)
+        db_session.commit()
+
+        payload = {"label": "Should Fail"}
+
+        response = client.patch(
+            f"/values/{value.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
+    def test_cannot_update_value_in_archived_version(
+        self, client: TestClient, admin_headers, db_session, archived_field
+    ):
+        """
+        Test DRAFT-only policy: cannot update value in ARCHIVED version.
+        This is a CRITICAL business rule.
+        """
+        # Create a value for the archived field
+        value = Value(
+            field_id=archived_field.id,
+            value="ARCH_VALUE",
+            label="Archived Value"
         )
         db_session.add(value)
         db_session.commit()
@@ -499,6 +544,26 @@ class TestDeleteValue:
             field_id=published_field.id,
             value="PUB_VALUE",
             label="Published Value"
+        )
+        db_session.add(value)
+        db_session.commit()
+
+        response = client.delete(f"/values/{value.id}", headers=admin_headers)
+
+        assert response.status_code == 409
+        assert "draft" in response.json()["detail"].lower()
+
+    def test_cannot_delete_value_in_archived_version(
+        self, client: TestClient, admin_headers, db_session, archived_field
+    ):
+        """
+        Test DRAFT-only policy: cannot delete value in ARCHIVED version.
+        This is a CRITICAL business rule.
+        """
+        value = Value(
+            field_id=archived_field.id,
+            value="ARCH_VALUE",
+            label="Archived Value"
         )
         db_session.add(value)
         db_session.commit()
