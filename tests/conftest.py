@@ -2,12 +2,24 @@
 Main conftest.py for pytest configuration.
 Provides core fixtures: db_session, client.
 Imports all fixtures from fixtures/ subdirectory.
+
+Uses testcontainers to spin up a real PostgreSQL database for tests.
+This ensures tests run against the same database type as production.
 """
+import os
+
+# === CRITICAL: Set TESTING flag BEFORE importing app ===
+# This must happen before any app imports because:
+# 1. app.main imports app.database which creates the production engine
+# 2. The lifespan in app.main checks this flag to skip create_all
+# 3. If import app first, it's too late; the engine already exists
+os.environ["TESTING"] = "true"
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
+from testcontainers.postgres import PostgresContainer
 
 from app.database import Base, get_db
 from app.main import app
@@ -22,55 +34,105 @@ pytest_plugins = [
     "tests.fixtures.configurations_lifecycle"
 ]
 
-# ============================================================
-# DATABASE SETUP (In-Memory SQLite)
-# ============================================================
-
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,  # Required for in-memory SQLite
-)
-
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 # ============================================================
-# CORE FIXTURES
+# DATABASE SETUP (PostgreSQL via testcontainers)
 # ============================================================
+
+@pytest.fixture(scope="session")
+def postgres_container():
+    """
+    Starts a PostgreSQL container that lives for the entire test session.
+
+    Why session-scoped?
+    - Starting a container takes ~2-3 seconds
+    - We don't want to pay this cost for every single test
+    - The container is shared, but each test gets clean tables (see db_session)
+
+    The 'with' statement ensures the container is properly stopped
+    when all tests are done, even if tests fail.
+    """
+    with PostgresContainer("postgres:16") as postgres:
+        yield postgres
+
+
+@pytest.fixture(scope="session")
+def test_engine(postgres_container):
+    """
+    Creates a SQLAlchemy engine connected to the test container.
+
+    Session-scoped because:
+    - Creating engines is relatively expensive
+    - The engine is just a connection pool, not actual data
+    - Safe to reuse across tests
+    """
+    engine = create_engine(postgres_container.get_connection_url())
+    yield engine
+    engine.dispose()  # Clean up connection pool when done
+
 
 @pytest.fixture(scope="function")
-def db_session():
+def db_session(test_engine):
     """
-    Creates a new clean database for each individual test.
-    Ensures total isolation between tests.
+    Creates a fresh database state for each individual test.
+
+    Why function-scoped?
+    - Each test needs isolation (test A shouldn't affect test B)
+    - Create all tables before the test
+    - Drop all tables after the test
+    - This guarantees a clean slate for every test
+
+    Flow:
+    1. Create all tables (empty database)
+    2. Create a session
+    3. yield session to the test
+    4. Test runs and does whatever it wants
+    5. Close session
+    6. Drop all tables (clean up)
     """
-    Base.metadata.create_all(bind=engine)
+    # Create tables before the test
+    Base.metadata.create_all(bind=test_engine)
+
+    # Create a session for this test
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
     session = TestingSessionLocal()
+
     try:
         yield session
     finally:
         session.close()
-        Base.metadata.drop_all(bind=engine)
+        # Drop all tables after the test - ensures complete isolation
+        Base.metadata.drop_all(bind=test_engine)
 
 
 @pytest.fixture(scope="function")
-def client(db_session):
+def client(db_session, test_engine):
     """
-    HTTP test client that overrides get_db dependency to use test database.
-    Resets rate limiter before each test to avoid 429 errors.
+    HTTP test client that uses the test database.
+
+    How it works:
+    1. We override FastAPI's get_db dependency
+    2. Instead of connecting to the real database, it uses our test session
+    3. All HTTP requests through this client use the test database
+
+    This is dependency injection in action!
     """
-    # Reset rate limiter storage before each test
+    # Reset rate limiter before each test to avoid 429 errors
     limiter.reset()
 
     def override_get_db():
+        """
+        This function replaces the real get_db.
+        Instead of creating a new session, it returns our test session.
+        """
         yield db_session
 
+    # Tell FastAPI: "when someone asks for get_db, use override_get_db instead"
     app.dependency_overrides[get_db] = override_get_db
+
     with TestClient(app) as c:
         yield c
+
     # Cleanup: remove the override to avoid side effects between tests
     app.dependency_overrides.clear()
 

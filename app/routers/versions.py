@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -87,8 +87,8 @@ def handle_service_error(e: ValueError, context: str = "") -> HTTPException:
 @router.get("/", response_model=List[VersionRead])
 def read_versions(
     entity_id: int,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0, description="Number of records to skip"),
+    limit: int = Query(default=100, ge=0, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author)
 ):

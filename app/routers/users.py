@@ -1,6 +1,6 @@
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -70,8 +70,8 @@ def create_user(
 
 @router.get("/", response_model=List[UserRead])
 def list_users(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0, description="Number of records to skip"),
+    limit: int = Query(default=100, ge=0, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)  # Auth required
 ):

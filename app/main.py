@@ -1,3 +1,6 @@
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
 
@@ -6,13 +9,36 @@ from app.database import engine, Base
 from app.routers import entities, fields, values, rules, engine as engine_router, versions, configurations, auth, users
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 
-# DB tables creation
-Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan context manager for FastAPI application.
+
+    This replaces the old @app.on_event("startup") and @app.on_event("shutdown").
+    Code before 'yield' runs at startup, code after 'yield' runs at shutdown.
+
+    Why here and not at module level?
+    - Lazy initialization: database is created only when app actually starts
+    - Testability: tests can override the database BEFORE this runs
+    """
+    # === STARTUP ===
+    # Skip create_all during tests - tests manage their own database setup
+    # via conftest.py fixtures (using testcontainers)
+    if os.environ.get("TESTING") != "true":
+        Base.metadata.create_all(bind=engine)
+
+    yield  # App is running here
+
+    # === SHUTDOWN ===
+    # (nothing to clean up for now, but you could close connections here)
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.PROJECT_DESCRIPTION,
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan  # Register lifespan handler
 )
 
 # Add rate limiting

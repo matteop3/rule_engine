@@ -405,8 +405,8 @@ def list_configurations(
     # Aliased to "status" in the API; named config_status internally to avoid conflict with fastapi.status
     config_status: Optional[str] = Query(None, alias="status"),
     include_deleted: bool = False,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0, description="Number of records to skip"),
+    limit: int = Query(default=100, ge=0, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -743,8 +743,13 @@ def clone_configuration(
 
     source = get_configuration_or_404(db, config_id, current_user)
 
-    # Prepare cloned data
-    new_name = f"{source.name} (Copy)" if source.name else None
+    # Prepare cloned data with name truncation to respect 100 char limit
+    new_name = None
+    if source.name:
+        suffix = " (Copy)"
+        max_base_length = 100 - len(suffix)  # 93 characters for base name
+        base_name = source.name[:max_base_length] if len(source.name) > max_base_length else source.name
+        new_name = f"{base_name}{suffix}"
 
     with db_transaction(db, f"clone_configuration {config_id}"):
         cloned_config = Configuration(
