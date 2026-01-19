@@ -1,0 +1,106 @@
+"""
+Alembic Environment Configuration.
+
+This file configures Alembic to:
+1. Read DATABASE_URL from environment variable (Docker-friendly)
+2. Import all models for autogenerate support
+"""
+import os
+from logging.config import fileConfig
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
+
+# =============================================================================
+# Alembic Config
+# =============================================================================
+config = context.config
+
+# Setup logging from alembic.ini
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+# =============================================================================
+# DATABASE URL - Read from environment variable
+# =============================================================================
+# This allows the same alembic config to work locally and in Docker
+# Priority: DATABASE_URL env var > alembic.ini sqlalchemy.url
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
+
+# =============================================================================
+# MODELS METADATA - Required for autogenerate
+# =============================================================================
+# Import Base and all models so Alembic can detect schema
+from app.database import Base
+
+# Import all models to ensure they are registered with Base.metadata
+# This is CRITICAL: models must be imported before autogenerate runs
+from app.models.domain import (
+    Entity,
+    EntityVersion,
+    Field,
+    Value,
+    Rule,
+    User,
+    Configuration,
+    RefreshToken,
+)
+
+target_metadata = Base.metadata
+
+# =============================================================================
+# Migration Functions
+# =============================================================================
+
+def run_migrations_offline() -> None:
+    """
+    Run migrations in 'offline' mode.
+
+    Generates SQL script without connecting to database.
+    Useful for: generating SQL to review before applying.
+    """
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online() -> None:
+    """
+    Run migrations in 'online' mode.
+
+    Connects to database and applies migrations directly.
+    This is the normal mode for development and deployment.
+    """
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+
+# =============================================================================
+# Entry Point
+# =============================================================================
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()

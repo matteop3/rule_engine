@@ -366,6 +366,205 @@ class TestSKUGeneration:
         # Notes is a free-value field, so it should be ignored in SKU generation
         assert response.generated_sku == "LPT-PRO-I7"
 
+    def test_free_value_field_with_modifier_when_filled(self, db_session):
+        """
+        GIVEN: EntityVersion with sku_base="PRD"
+               Free-value field "Engraving" with sku_modifier_when_filled="CUSTOM"
+        WHEN: calculate_state with Engraving="My text"
+        THEN: generated_sku includes "CUSTOM" segment
+        """
+        entity = Entity(name="Free Value SKU Test", description="Test")
+        db_session.add(entity)
+        db_session.commit()
+
+        version = EntityVersion(
+            entity_id=entity.id,
+            version_number=1,
+            status=VersionStatus.PUBLISHED,
+            sku_base="PRD",
+            sku_delimiter="-"
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        # Free-value field with sku_modifier_when_filled
+        f_engraving = Field(
+            entity_version_id=version.id,
+            name="engraving",
+            label="Custom Engraving",
+            data_type=FieldType.STRING.value,
+            is_free_value=True,
+            sku_modifier_when_filled="CUSTOM",
+            step=1,
+            sequence=0
+        )
+        db_session.add(f_engraving)
+        db_session.commit()
+
+        service = RuleEngineService()
+        payload = CalculationRequest(
+            entity_id=entity.id,
+            current_state=[FieldInputState(field_id=f_engraving.id, value="Happy Birthday!")]
+        )
+
+        response = service.calculate_state(db_session, payload)
+
+        assert response.generated_sku == "PRD-CUSTOM"
+
+    def test_free_value_field_with_modifier_when_empty(self, db_session):
+        """
+        GIVEN: EntityVersion with sku_base="PRD"
+               Free-value field "Engraving" with sku_modifier_when_filled="CUSTOM"
+        WHEN: calculate_state with Engraving=None (empty)
+        THEN: generated_sku does NOT include "CUSTOM" segment
+        """
+        entity = Entity(name="Free Value SKU Empty Test", description="Test")
+        db_session.add(entity)
+        db_session.commit()
+
+        version = EntityVersion(
+            entity_id=entity.id,
+            version_number=1,
+            status=VersionStatus.PUBLISHED,
+            sku_base="PRD",
+            sku_delimiter="-"
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        f_engraving = Field(
+            entity_version_id=version.id,
+            name="engraving",
+            label="Custom Engraving",
+            data_type=FieldType.STRING.value,
+            is_free_value=True,
+            sku_modifier_when_filled="CUSTOM",
+            step=1,
+            sequence=0
+        )
+        db_session.add(f_engraving)
+        db_session.commit()
+
+        service = RuleEngineService()
+        payload = CalculationRequest(
+            entity_id=entity.id,
+            current_state=[]  # No value provided
+        )
+
+        response = service.calculate_state(db_session, payload)
+
+        # No value = no CUSTOM modifier
+        assert response.generated_sku == "PRD"
+
+    def test_free_value_field_modifier_combined_with_regular_values(self, db_session):
+        """
+        GIVEN: EntityVersion with sku_base="GIFT"
+               Field Size with values: Small (SM), Large (LG)
+               Free-value field "Message" with sku_modifier_when_filled="MSG"
+        WHEN: calculate_state with Size="Large", Message="Congrats!"
+        THEN: generated_sku == "GIFT-LG-MSG" (respects field order)
+        """
+        entity = Entity(name="Combined SKU Test", description="Test")
+        db_session.add(entity)
+        db_session.commit()
+
+        version = EntityVersion(
+            entity_id=entity.id,
+            version_number=1,
+            status=VersionStatus.PUBLISHED,
+            sku_base="GIFT",
+            sku_delimiter="-"
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        # Regular field with values
+        f_size = Field(
+            entity_version_id=version.id,
+            name="size",
+            label="Size",
+            data_type=FieldType.STRING.value,
+            is_free_value=False,
+            step=1,
+            sequence=0
+        )
+        # Free-value field with modifier
+        f_message = Field(
+            entity_version_id=version.id,
+            name="message",
+            label="Gift Message",
+            data_type=FieldType.STRING.value,
+            is_free_value=True,
+            sku_modifier_when_filled="MSG",
+            step=2,
+            sequence=0
+        )
+        db_session.add_all([f_size, f_message])
+        db_session.commit()
+
+        v_small = Value(field_id=f_size.id, value="Small", label="Small", sku_modifier="SM")
+        v_large = Value(field_id=f_size.id, value="Large", label="Large", sku_modifier="LG")
+        db_session.add_all([v_small, v_large])
+        db_session.commit()
+
+        service = RuleEngineService()
+        payload = CalculationRequest(
+            entity_id=entity.id,
+            current_state=[
+                FieldInputState(field_id=f_size.id, value="Large"),
+                FieldInputState(field_id=f_message.id, value="Congratulations!")
+            ]
+        )
+
+        response = service.calculate_state(db_session, payload)
+
+        assert response.generated_sku == "GIFT-LG-MSG"
+
+    def test_free_value_field_without_modifier_config_still_ignored(self, db_session):
+        """
+        GIVEN: Free-value field without sku_modifier_when_filled (None)
+        WHEN: calculate_state with value provided
+        THEN: Field is still ignored in SKU generation (backward compatibility)
+        """
+        entity = Entity(name="No Modifier Config Test", description="Test")
+        db_session.add(entity)
+        db_session.commit()
+
+        version = EntityVersion(
+            entity_id=entity.id,
+            version_number=1,
+            status=VersionStatus.PUBLISHED,
+            sku_base="PRD",
+            sku_delimiter="-"
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        # Free-value field WITHOUT sku_modifier_when_filled
+        f_notes = Field(
+            entity_version_id=version.id,
+            name="notes",
+            label="Notes",
+            data_type=FieldType.STRING.value,
+            is_free_value=True,
+            sku_modifier_when_filled=None,  # Explicitly None
+            step=1,
+            sequence=0
+        )
+        db_session.add(f_notes)
+        db_session.commit()
+
+        service = RuleEngineService()
+        payload = CalculationRequest(
+            entity_id=entity.id,
+            current_state=[FieldInputState(field_id=f_notes.id, value="Some notes")]
+        )
+
+        response = service.calculate_state(db_session, payload)
+
+        # No modifier configured = field ignored in SKU
+        assert response.generated_sku == "PRD"
+
     # ----------------------------------------------------------
     # 6. FIELD ORDERING
     # ----------------------------------------------------------

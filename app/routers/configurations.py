@@ -406,7 +406,7 @@ def list_configurations(
     config_status: Optional[str] = Query(None, alias="status"),
     include_deleted: bool = False,
     skip: int = Query(default=0, ge=0, description="Number of records to skip"),
-    limit: int = Query(default=100, ge=0, description="Maximum number of records to return"),
+    limit: int = Query(default=100, ge=0, le=100, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

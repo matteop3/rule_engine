@@ -169,8 +169,13 @@ class RuleEngineService:
         """
         Loads all Fields, Values, and Rules for a given version.
 
-        Note: avoid N+1 by loading Values and Rules separately
-        instead of relying on lazy loading through relationships.
+        Design note: Loads everything in memory per-request. This is intentional -
+        the data volume per version is small (typically <1000 rules) and the
+        simplicity outweighs caching complexity. If this becomes a bottleneck,
+        consider Redis caching with version-based invalidation.
+
+        Implementation: Batch loads with IN queries to avoid N+1 problem,
+        then builds in-memory indexes for O(1) lookups during rule evaluation.
         """
         try:
             # Load fields ordered by execution sequence
@@ -873,8 +878,10 @@ class RuleEngineService:
             if state.current_value is None:
                 continue
 
-            # Skip free-value fields (no modifier association possible)
+            # Handle free-value fields: append modifier only if configured and field has a value
             if field.is_free_value:
+                if field.sku_modifier_when_filled and state.current_value is not None:
+                    sku_parts.append(field.sku_modifier_when_filled)
                 continue
 
             # Find the Value object for the selected value

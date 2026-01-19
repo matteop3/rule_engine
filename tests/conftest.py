@@ -5,16 +5,11 @@ Imports all fixtures from fixtures/ subdirectory.
 
 Uses testcontainers to spin up a real PostgreSQL database for tests.
 This ensures tests run against the same database type as production.
+
+Database schema is managed by:
+- Tests: Base.metadata.create_all() in db_session fixture (ephemeral)
+- Production: Alembic migrations via docker-entrypoint.sh
 """
-import os
-
-# === CRITICAL: Set TESTING flag BEFORE importing app ===
-# This must happen before any app imports because:
-# 1. app.main imports app.database which creates the production engine
-# 2. The lifespan in app.main checks this flag to skip create_all
-# 3. If import app first, it's too late; the engine already exists
-os.environ["TESTING"] = "true"
-
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

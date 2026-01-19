@@ -45,6 +45,7 @@ tests/
 │   ├── test_dropdowns.py        # Cascading dropdown logic
 │   ├── test_logic.py            # Core engine logic (validation, mandatory, visibility, availability)
 │   ├── test_operators.py        # Operator tests (EQUALS, GREATER_THAN, IN_LIST, etc.)
+│   ├── test_sku_generation.py   # Smart SKU generation (modifiers, visibility, free-value fields)
 │   └── test_stress.py           # Engine stress tests (domino effects, dependencies)
 │
 ├── integration/                                     # End-to-end integration tests
@@ -117,6 +118,10 @@ tests/
 - `setup_dropdown_scenario`: Cascading dropdown (Region → City)
 - `setup_operator_scenario`: Generic scenario for operator testing
 - `setup_stress_scenario`: Complex interdependent fields for stress testing
+- `setup_sku_scenario`: SKU generation with multiple fields and `sku_modifier` values
+- `setup_sku_visibility_scenario`: SKU with visibility rules (hidden fields excluded)
+- `setup_sku_hidden_default_scenario`: SKU with `is_hidden=True` fields
+- `setup_sku_availability_scenario`: SKU integrated with availability rules
 
 ### Configuration Lifecycle Fixtures (fixtures/configurations_lifecycle.py)
 - **Users:** `lifecycle_admin`, `lifecycle_author`, `lifecycle_user`, `second_lifecycle_user` with corresponding headers
@@ -171,12 +176,12 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
-| API           | 21    | ~260          | Endpoint CRUD and lifecycle ops  |
-| Engine        | 5     | ~30           | Business logic and rules         |
+| API           | 21    | ~270          | Endpoint CRUD and lifecycle ops  |
+| Engine        | 6     | ~55           | Business logic, rules, SKU gen   |
 | Integration   | 11    | ~15           | End-to-end workflows             |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
 | Stress        | 2     | ~15           | Concurrency and edge cases       |
-| **Total**     | **40**| **~335**      |                                  |
+| **Total**     | **41**| **~370**      |                                  |
 
 ## Test Coverage
 
@@ -187,7 +192,7 @@ The test suite provides comprehensive coverage across all application layers:
 - **Configurations**: Full CRUD, rule engine integration, validation, RBAC
 - **Configuration Lifecycle** (~155 tests): Status management, clone, upgrade, finalize operations
 - **Entities & Versions**: Lifecycle management, publishing, archiving, cloning
-- **Fields & Values**: CRUD operations, data type validation, constraints
+- **Fields & Values**: CRUD operations, data type validation, constraints, `sku_modifier` attribute
 - **Rules**: CRUD, type-specific logic, edge cases, complex scenarios
 - **Users**: User management, role assignment, access control
 
@@ -207,6 +212,13 @@ The test suite comprehensively validates that Fields, Values, and Rules can only
 | Value DELETE | ✅ | ✅ 409 | ✅ 409 |
 
 All tests validate both the HTTP status code (409 Conflict) and the error message containing "draft".
+
+#### Value SKU Modifier Tests (`test_values.py::TestValueSKUModifier`)
+- **Create**: Value with `sku_modifier`, value without `sku_modifier` (optional field)
+- **Update**: Update `sku_modifier`, update with other fields, clear `sku_modifier` (set to null)
+- **Read**: Single value and list include `sku_modifier` in response
+- **DRAFT-only**: Cannot update `sku_modifier` on PUBLISHED version (HTTP 409)
+- **Edge cases**: Special characters, max length, move value preserves modifier
 
 ### Configuration Lifecycle Tests (~155 tests)
 
@@ -256,7 +268,31 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **Core Logic**: Field validation, mandatory checks, visibility rules, availability logic
 - **Operators**: All comparison operators (EQUALS, GREATER_THAN, IN_LIST, CONTAINS, etc.)
 - **Dropdown Logic**: Cascading dropdowns, dynamic value filtering
+- **SKU Generation**: Smart SKU generation with modifiers (see below)
 - **Stress Tests**: Domino effects, complex dependencies, performance under load
+
+#### SKU Generation Tests (`test_sku_generation.py`)
+The SKU generation feature is comprehensively tested across multiple scenarios:
+
+| Category | Tests | Description |
+|----------|-------|-------------|
+| Basic Functionality | 3 | Base SKU generation, custom delimiter, empty delimiter handling |
+| SKU Base Handling | 2 | Null/empty `sku_base` returns `None` |
+| Modifier Handling | 2 | Values without modifiers skipped, only base SKU when no modifiers |
+| Visibility Handling | 2 | Hidden fields (by rule or default) excluded from SKU |
+| **Free-Value Fields** | **5** | `sku_modifier_when_filled` support for free-value fields |
+| Field Ordering | 1 | SKU respects `step`/`sequence` ordering |
+| No Value Selected | 1 | Unselected fields excluded from SKU |
+| Max Length | 1 | SKU truncated at 100 characters |
+| Availability Rules | 2 | Integration with availability rules |
+| Edge Cases | 4 | Special characters, empty config, combined field types |
+
+**Free-Value Fields with SKU Modifiers:**
+- `test_free_value_field_ignored`: Free-value fields without `sku_modifier_when_filled` are ignored
+- `test_free_value_field_with_modifier_when_filled`: When free-value field has a value, `sku_modifier_when_filled` is added to SKU
+- `test_free_value_field_with_modifier_when_empty`: When free-value field is empty, modifier is NOT included
+- `test_free_value_field_modifier_combined_with_regular_values`: Free-value modifiers combine correctly with regular value modifiers
+- `test_free_value_field_without_modifier_config_still_ignored`: Backward compatibility - free-value fields without config are still ignored
 
 ### Integration & E2E (~15 tests)
 - **Data Integrity**: Referential integrity, orphan prevention, unique constraints

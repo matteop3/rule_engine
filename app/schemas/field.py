@@ -14,6 +14,11 @@ class FieldBase(BaseSchema):
     is_hidden: bool = False
     is_free_value: bool = False
     default_value: Optional[str] = None
+    sku_modifier_when_filled: Optional[str] = Field(
+        None,
+        max_length=20,
+        description="SKU segment to append when this free-value field has a non-null value (e.g., 'CUSTOM')"
+    )
     step: int = 0
     sequence: int = 0
 
@@ -38,6 +43,7 @@ class FieldUpdate(BaseSchema):
     is_hidden: Optional[bool] = None
     is_free_value: Optional[bool] = None
     default_value: Optional[str] = None
+    sku_modifier_when_filled: Optional[str] = Field(None, max_length=20)
     step: Optional[int] = None
     sequence: Optional[int] = None
     entity_version_id: Optional[int] = None

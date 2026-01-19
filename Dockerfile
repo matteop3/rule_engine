@@ -5,7 +5,7 @@
 FROM python:3.12-slim
 
 LABEL maintainer="matteop3"
-LABEL description="Rule Engine API - FastAPI application"
+LABEL description="Rule Engine API"
 
 # Python configuration
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -29,7 +29,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application source code
 COPY . .
 
+# Make entrypoint script executable
+RUN chmod +x docker-entrypoint.sh
+
 EXPOSE 8000
+
+# Entrypoint runs migrations before starting the app
+ENTRYPOINT ["./docker-entrypoint.sh"]
 
 # Default command for production
 # Override with docker-compose command for development (adds --reload)

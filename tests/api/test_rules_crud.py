@@ -115,12 +115,11 @@ class TestListRules:
         assert response.status_code == 200
         assert len(response.json()) == 2
 
-    def test_list_rules_limit_capped_at_100(self, client: TestClient, admin_headers, draft_rule):
-        """Test that limit is capped at 100."""
+    def test_list_rules_limit_over_100_rejected(self, client: TestClient, admin_headers, draft_rule):
+        """Test that limit > 100 is rejected with 422."""
         response = client.get("/rules/?limit=200", headers=admin_headers)
 
-        assert response.status_code == 200
-        assert len(response.json()) <= 100
+        assert response.status_code == 422
 
 
 # ============================================================

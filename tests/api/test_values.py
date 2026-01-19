@@ -87,12 +87,11 @@ class TestListValues:
         assert response_skip.status_code == 200
         assert len(response_skip.json()) == len(response_all.json()) - 1
 
-    def test_list_values_limit_capped_at_100(self, client: TestClient, admin_headers, draft_value):
-        """Test that limit is capped at 100."""
+    def test_list_values_limit_over_100_rejected(self, client: TestClient, admin_headers, draft_value):
+        """Test that limit > 100 is rejected with 422."""
         response = client.get("/values/?limit=200", headers=admin_headers)
 
-        assert response.status_code == 200
-        assert len(response.json()) <= 100
+        assert response.status_code == 422
 
 
 # ============================================================

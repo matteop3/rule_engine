@@ -276,6 +276,11 @@ class Field(Base):
         nullable=True,
         comment="Default value for free-value fields only"
     )
+    sku_modifier_when_filled: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="SKU segment to append when this free-value field has a non-null value (e.g., 'CUSTOM' for custom engraving)"
+    )
 
     # UI ordering: step groups fields into sections, sequence orders fields within a step
     step: Mapped[int] = mapped_column(Integer, default=0, comment="Grouping step for UI sections")

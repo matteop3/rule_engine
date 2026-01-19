@@ -324,14 +324,11 @@ class TestListUsers:
         data = response.json()
         assert len(data) == 2
 
-    def test_list_users_limit_capped_at_100(self, client: TestClient, admin_headers, multiple_users):
-        """Test that limit is capped at 100."""
+    def test_list_users_limit_over_100_rejected(self, client: TestClient, admin_headers, multiple_users):
+        """Test that limit > 100 is rejected with 422."""
         response = client.get("/users/?limit=200", headers=admin_headers)
 
-        assert response.status_code == 200
-        # Should succeed but cap at 100
-        data = response.json()
-        assert len(data) <= 100
+        assert response.status_code == 422
 
 
 # ============================================================

@@ -1,11 +1,9 @@
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
-from app.database import engine, Base
 from app.routers import entities, fields, values, rules, engine as engine_router, versions, configurations, auth, users
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 
@@ -18,15 +16,12 @@ async def lifespan(app: FastAPI):
     This replaces the old @app.on_event("startup") and @app.on_event("shutdown").
     Code before 'yield' runs at startup, code after 'yield' runs at shutdown.
 
-    Why here and not at module level?
-    - Lazy initialization: database is created only when app actually starts
-    - Testability: tests can override the database BEFORE this runs
+    Database schema is managed by Alembic migrations (see docker-entrypoint.sh).
+    The entrypoint runs 'alembic upgrade head' before starting the application.
     """
     # === STARTUP ===
-    # Skip create_all during tests - tests manage their own database setup
-    # via conftest.py fixtures (using testcontainers)
-    if os.environ.get("TESTING") != "true":
-        Base.metadata.create_all(bind=engine)
+    # Database migrations are handled by Alembic via docker-entrypoint.sh
+    # No create_all() needed - schema is managed through version-controlled migrations
 
     yield  # App is running here
 

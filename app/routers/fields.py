@@ -42,7 +42,7 @@ router = APIRouter(
 def list_fields(
     entity_version_id: int,
     skip: int = Query(default=0, ge=0, description="Number of records to skip"),
-    limit: int = Query(default=100, ge=0, description="Maximum number of records to return"),
+    limit: int = Query(default=100, ge=0, le=100, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author)
 ):
