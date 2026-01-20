@@ -44,7 +44,7 @@ tests/
 │   ├── test_api.py              # Engine calculation endpoint
 │   ├── test_dropdowns.py        # Cascading dropdown logic
 │   ├── test_logic.py            # Core engine logic (validation, mandatory, visibility, availability)
-│   ├── test_operators.py        # Operator tests (EQUALS, GREATER_THAN, IN_LIST, etc.)
+│   ├── test_operators.py        # Operator tests (EQUALS, GREATER_THAN, IN, etc.)
 │   ├── test_sku_generation.py   # Smart SKU generation (modifiers, visibility, free-value fields)
 │   └── test_stress.py           # Engine stress tests (domino effects, dependencies)
 │
@@ -242,10 +242,11 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **Status Constraints**: DRAFT allowed, FINALIZED blocked (HTTP 409 with clone suggestion)
 - **Version Resolution**: Finds PUBLISHED, ignores DRAFT/ARCHIVED, handles missing PUBLISHED (404)
 - **Access Control**: Owner and ADMIN can upgrade, USER cannot upgrade others' configs
-- **Edge Cases**: Incompatible fields between versions, audit field updates, idempotency
+- **Edge Cases**: Incompatible fields between versions (may set `is_complete=False`), audit field updates, idempotency
 
 #### Finalize Operation (`test_configurations_finalize.py`)
 - **Basic Functionality**: Changes status to FINALIZED, preserves all data, version, and is_complete
+- **Completeness Requirement**: Only configurations with `is_complete=True` can be finalized (HTTP 400 if incomplete)
 - **Idempotency/Constraints**: Cannot finalize twice (HTTP 409), audit field updates
 - **Access Control**: Owner and ADMIN can finalize, USER/AUTHOR cannot finalize others' configs
 - **Post-Finalize Behavior**: Update blocked, upgrade blocked, clone allowed, delete blocked for USER
@@ -258,7 +259,7 @@ The configuration lifecycle management feature is thoroughly tested across multi
 
 #### State Transition Matrix (`test_configurations_state_transitions.py`)
 - **DRAFT → DRAFT**: UPDATE allowed, UPGRADE allowed
-- **DRAFT → FINALIZED**: FINALIZE operation
+- **DRAFT → FINALIZED**: FINALIZE operation (requires `is_complete=True`, HTTP 400 if incomplete)
 - **DRAFT → Deleted**: Hard delete (record removed)
 - **FINALIZED → FINALIZED**: UPDATE/UPGRADE/FINALIZE all blocked (HTTP 409)
 - **FINALIZED → Soft Deleted**: ADMIN only, USER denied (HTTP 403)
@@ -266,7 +267,7 @@ The configuration lifecycle management feature is thoroughly tested across multi
 
 ### Rule Engine (~30 tests)
 - **Core Logic**: Field validation, mandatory checks, visibility rules, availability logic
-- **Operators**: All comparison operators (EQUALS, GREATER_THAN, IN_LIST, CONTAINS, etc.)
+- **Operators**: All comparison operators (EQUALS, NOT_EQUALS, GREATER_THAN, GREATER_THAN_OR_EQUAL, LESS_THAN, LESS_THAN_OR_EQUAL, IN)
 - **Dropdown Logic**: Cascading dropdowns, dynamic value filtering
 - **SKU Generation**: Smart SKU generation with modifiers (see below)
 - **Stress Tests**: Domino effects, complex dependencies, performance under load
@@ -300,7 +301,7 @@ The SKU generation feature is comprehensively tested across multiple scenarios:
 - **Cascade Operations**: Delete/update propagation
 - **RBAC End-to-End**: Complete authorization flows across modules
 - **Complex Rule Interactions**: Multi-rule scenarios, interdependencies
-- **Configuration Lifecycle Flows**: Complete workflows (create → update → finalize → clone → modify)
+- **Configuration Lifecycle Flows**: Complete workflows (create → update → finalize → clone → modify), upgrade-then-finalize blocked when incompatible
 
 ### Performance & Stress (~30 tests)
 - **Benchmarks**: Throughput measurements, response time analysis

@@ -15,10 +15,10 @@ A headless, API-first rule engine for building product configurators (CPQ system
 Product configurators are complex. A laptop configurator needs to:
 - Show/hide fields based on selections (GPU options only for "Pro" models)
 - Filter available values dynamically (16GB RAM unavailable with entry-level CPU)
-- Validate combinations (SSD + HDD cannot exceed chassis capacity)
+- Validate combinations (Pro GPU not allowed with Compact chassis)
 - Generate SKU codes from selections (LPT-PRO-16G-512S)
 - Support version management (draft v2 while v1 is live)
-- Track configuration lifecycle (draft → finalized → archived)
+- Track configuration lifecycle (draft → finalized)
 
 Building this from scratch for every product is wasteful. This engine provides the foundation.
 
@@ -39,7 +39,7 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 ### Core Engine
 - **5 rule types**: Visibility, Availability, Editability, Mandatory, Validation
 - **Waterfall evaluation**: Rules processed in field order with cascading effects
-- **Operator support**: Equals, NotEquals, GreaterThan, LessThan, In, NotIn, Contains, StartsWith, EndsWith, IsNull, IsNotNull
+- **Operator support**: Equals, NotEquals, GreaterThan, GreaterThanOrEqual, LessThan, LessThanOrEqual, In
 - **Cascading dropdowns**: Field B options filter based on Field A selection
 
 ### Version Management
@@ -50,7 +50,7 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 
 ### Configuration Lifecycle
 - **DRAFT configurations**: Mutable, upgradeable to newer entity versions
-- **FINALIZED configurations**: Immutable snapshots for legal/audit purposes
+- **FINALIZED configurations**: Immutable snapshots for legal/audit purposes (requires completeness)
 - **Clone & upgrade**: Fork configurations or migrate to latest schema
 - **Soft delete**: Preserve audit trail for finalized records
 
@@ -65,6 +65,46 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 - **Custom delimiters**: Configure separator per entity version
 - **Visibility-aware**: Hidden fields excluded from SKU
 - **Free-value support**: Append modifier when text field is filled
+
+### Example
+
+```bash
+POST /engine/calculate
+```
+```json
+{
+  "entity_id": 1,
+  "current_state": [
+    {"field_id": 1, "value": "Pro"},
+    {"field_id": 2, "value": "16GB"}
+  ]
+}
+```
+
+```jsonc
+{
+  "entity_id": 1,
+  "is_complete": false,
+  "generated_sku": "LPT-PRO-16G",
+  "fields": [
+    {
+      "field_id": 1,
+      "field_name": "product_type",
+      "field_label": "Product Type",
+      "current_value": "Pro",
+      "available_options": [
+        {"id": 1, "value": "Standard", "label": "Standard", "is_default": true},
+        {"id": 2, "value": "Pro", "label": "Pro", "is_default": false}
+      ],
+      "is_required": true,
+      "is_readonly": false,
+      "is_hidden": false,
+      "error_message": null
+    }
+    // ... ram, gpu, etc.
+  ]
+}
+```
 
 ---
 
@@ -263,7 +303,7 @@ stateDiagram-v2
 
     DRAFT --> DRAFT: Update inputs
     DRAFT --> DRAFT: Upgrade to new version
-    DRAFT --> FINALIZED: Finalize
+    DRAFT --> FINALIZED: Finalize (if complete)
     DRAFT --> [*]: Hard delete
 
     FINALIZED --> FINALIZED: Read only
@@ -306,6 +346,16 @@ flowchart TD
     I --> P
 ```
 
+### Key Architectural Choices
+
+**Re-hydration strategy for configurations**: Configurations store raw inputs as JSON (`data` field) rather than denormalized snapshots. On read, the engine re-evaluates rules against the current EntityVersion schema. This enables version upgrades and ensures consistency.
+
+**DRAFT-only editing**: Fields, Values, and Rules can only be modified on DRAFT versions. This prevents accidental changes to production configurations and ensures published versions are stable.
+
+**Soft delete for FINALIZED**: Finalized configurations cannot be hard-deleted (except by ADMIN). This preserves audit trails for legal/compliance scenarios (e.g., issued quotes, submitted orders).
+
+**UUID for configurations**: Configurations use UUID primary keys for secure external sharing (URLs that can't be guessed).
+
 ---
 
 ## API Overview
@@ -347,7 +397,7 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 | GET | `/configurations/{id}/calculate` | Recalculate with current inputs |
 | POST | `/configurations/{id}/clone` | Clone to new DRAFT |
 | POST | `/configurations/{id}/upgrade` | Upgrade to latest version |
-| POST | `/configurations/{id}/finalize` | Make immutable |
+| POST | `/configurations/{id}/finalize` | Make immutable (requires completeness) |
 
 ### Engine
 | Method | Endpoint | Description |
@@ -358,7 +408,7 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 
 ## Testing
 
-The project includes 370+ tests across multiple categories:
+The project includes 700+ tests across multiple categories:
 
 | Category | Location | Description |
 |----------|----------|-------------|
@@ -392,21 +442,9 @@ This project focuses on core rule engine functionality. The following features a
 | Feature | Status | Rationale |
 |---------|--------|-----------|
 | Redis caching | Not implemented | Premature optimization; PostgreSQL handles expected scale. Easy to add if needed. |
-| Multi-tenancy | Not implemented | Adds significant complexity (tenant isolation, cross-tenant queries) without demonstrating new architectural patterns. |
 | API versioning (v1/v2) | Not implemented | Single version appropriate for greenfield project. Versioning adds overhead best introduced when breaking changes are needed. |
 | Internationalization | Deferred | See [ADR: i18n](docs/ADR_I18N.md). JSONB approach documented for future implementation. |
 | GraphQL | Not implemented | REST is sufficient for this domain. GraphQL adds complexity without clear benefit for CPQ use case. |
-| Event sourcing | Not implemented | Current state storage is simpler and sufficient. Audit trail via `AuditMixin` covers basic needs. |
-
-### Key Architectural Choices
-
-**Re-hydration strategy for configurations**: Configurations store raw inputs as JSON (`data` field) rather than denormalized snapshots. On read, the engine re-evaluates rules against the current EntityVersion schema. This enables version upgrades and ensures consistency.
-
-**DRAFT-only editing**: Fields, Values, and Rules can only be modified on DRAFT versions. This prevents accidental changes to production configurations and ensures published versions are stable.
-
-**Soft delete for FINALIZED**: Finalized configurations cannot be hard-deleted (except by ADMIN). This preserves audit trails for legal/compliance scenarios (e.g., issued quotes, submitted orders).
-
-**UUID for configurations**: Configurations use UUID primary keys for secure external sharing (URLs that can't be guessed).
 
 ---
 
@@ -448,6 +486,7 @@ rule_engine/
 - [Security Features](docs/SECURITY_FEATURES.md) - Authentication and rate limiting
 - [Token Rotation Demo](docs/ROTATION_DEMO.md) - Refresh token rotation examples
 - [ADR: Internationalization](docs/ADR_I18N.md) - i18n architecture decision
+- [ADR: Rule Expressions](docs/ADR_RULE_EXPRESSIONS.md) - Why rules use single-field conditions
 
 ---
 

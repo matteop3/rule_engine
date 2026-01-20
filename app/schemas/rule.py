@@ -3,7 +3,12 @@ from pydantic import BaseModel, model_validator, field_validator
 from .base_schema import BaseSchema
 from app.models.domain import RuleType
 
-CriterionOperator = Literal['EQUALS', 'NOT_EQUALS', 'GREATER_THAN', 'LESS_THAN', 'IN']
+CriterionOperator = Literal[
+    'EQUALS', 'NOT_EQUALS',
+    'GREATER_THAN', 'GREATER_THAN_OR_EQUAL',
+    'LESS_THAN', 'LESS_THAN_OR_EQUAL',
+    'IN'
+]
 
 # Strict validation models
 class RuleCriterion(BaseModel):

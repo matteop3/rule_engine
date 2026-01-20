@@ -270,6 +270,26 @@ def require_draft_status(config: Configuration, operation: str) -> None:
         )
 
 
+def require_complete_status(config: Configuration) -> None:
+    """
+    Guard clause that ensures configuration is complete before finalization.
+
+    Raises:
+        HTTPException(400): If configuration is not complete
+    """
+    if not config.is_complete:
+        logger.warning(
+            f"Finalization blocked: configuration {config.id} is not complete"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Cannot finalize an incomplete configuration. "
+                "Ensure all required fields are filled before finalizing."
+            )
+        )
+
+
 def check_soft_delete_permission(config: Configuration, user: User) -> None:
     """
     Validates that user can soft-delete a configuration.
@@ -890,6 +910,10 @@ def finalize_configuration(
         - Once finalized, the configuration becomes read-only
         - Cannot be undone (use clone to create a new editable copy)
 
+    Completeness Requirement:
+        - Only configurations with is_complete=True can be finalized
+        - Ensures all required fields are filled before locking
+
     Immutability Guarantees:
         - Input data cannot be modified
         - Version reference cannot be changed
@@ -907,6 +931,7 @@ def finalize_configuration(
         ConfigurationRead: The finalized configuration
 
     Raises:
+        400: If configuration is not complete (is_complete=False)
         409: If configuration is already FINALIZED
     """
     logger.info(f"Finalizing configuration {config_id} by user {current_user.id}")
@@ -925,6 +950,9 @@ def finalize_configuration(
             status_code=status.HTTP_409_CONFLICT,
             detail="Configuration is already FINALIZED."
         )
+
+    # Guard clause: only complete configurations can be finalized
+    require_complete_status(config)
 
     with db_transaction(db, f"finalize_configuration {config_id}"):
         config.status = ConfigurationStatus.FINALIZED

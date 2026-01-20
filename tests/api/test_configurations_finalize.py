@@ -238,21 +238,18 @@ class TestFinalizeEdgeCases:
 
         assert response.status_code == 404
 
-    def test_finalize_with_incomplete_config(
+    def test_finalize_with_incomplete_config_rejected(
         self, client, lifecycle_user_headers, configuration_with_empty_data
     ):
-        """Can finalize incomplete configuration (is_complete=False)."""
+        """Cannot finalize incomplete configuration (is_complete=False)."""
         # Empty data likely means is_complete=False
         response = client.post(
             f"/configurations/{configuration_with_empty_data.id}/finalize",
             headers=lifecycle_user_headers
         )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "FINALIZED"
-        # is_complete remains as it was
-        assert data["is_complete"] is False
+        assert response.status_code == 400
+        assert "incomplete configuration" in response.json()["detail"]
 
     def test_finalize_then_update_blocked(
         self, client, lifecycle_user_headers, draft_configuration

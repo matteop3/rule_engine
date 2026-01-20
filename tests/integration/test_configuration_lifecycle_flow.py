@@ -110,11 +110,16 @@ class TestFullLifecycleFlows:
         assert original_response.json()["status"] == "FINALIZED"
         assert original_response.json()["name"] == finalized_configuration.name
 
-    def test_lifecycle_upgrade_then_finalize(
+    def test_lifecycle_upgrade_incompatible_then_finalize_blocked(
         self, client, lifecycle_user_headers,
         configuration_on_archived_version, multi_version_entity
     ):
-        """Workflow: Create on old version -> Upgrade -> Finalize."""
+        """Workflow: Upgrade to incompatible version -> Finalize blocked.
+
+        When upgrading from a version with different fields, the configuration
+        becomes incomplete because the old field data doesn't satisfy the new
+        version's required fields. Finalize should be blocked.
+        """
         config_id = configuration_on_archived_version.id
         archived_version = multi_version_entity["archived_version"]
         published_version = multi_version_entity["published_version"]
@@ -126,8 +131,9 @@ class TestFullLifecycleFlows:
         )
         assert read_response.json()["entity_version_id"] == archived_version.id
         assert read_response.json()["status"] == "DRAFT"
+        assert read_response.json()["is_complete"] is True
 
-        # Step 1: Upgrade to latest PUBLISHED version
+        # Step 1: Upgrade to latest PUBLISHED version (different fields)
         upgrade_response = client.post(
             f"/configurations/{config_id}/upgrade",
             headers=lifecycle_user_headers
@@ -135,15 +141,16 @@ class TestFullLifecycleFlows:
         assert upgrade_response.status_code == 200
         assert upgrade_response.json()["entity_version_id"] == published_version.id
         assert upgrade_response.json()["status"] == "DRAFT"
+        # After upgrade, config is incomplete because fields are incompatible
+        assert upgrade_response.json()["is_complete"] is False
 
-        # Step 2: Finalize
+        # Step 2: Finalize should be blocked (incomplete configuration)
         finalize_response = client.post(
             f"/configurations/{config_id}/finalize",
             headers=lifecycle_user_headers
         )
-        assert finalize_response.status_code == 200
-        assert finalize_response.json()["status"] == "FINALIZED"
-        assert finalize_response.json()["entity_version_id"] == published_version.id
+        assert finalize_response.status_code == 400
+        assert "incomplete configuration" in finalize_response.json()["detail"]
 
     def test_lifecycle_multi_clone_chain(
         self, client, lifecycle_user_headers, draft_configuration
