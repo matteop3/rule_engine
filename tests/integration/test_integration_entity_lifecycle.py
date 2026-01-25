@@ -133,8 +133,7 @@ class TestCompleteEntityLifecycle:
                     "criteria": [
                         {"field_id": field_value_id, "operator": "GREATER_THAN", "value": 30000}
                     ]
-                },
-                "error_message": "GPS tracker is required for vehicles over 30000"
+                }
             },
             headers=admin_headers
         )

@@ -15,7 +15,7 @@ from app.dependencies import (
     get_editable_rule,
     db_transaction
 )
-from app.models.domain import Rule, Field, Value, User
+from app.models.domain import Rule, Field, Value, User, RuleType
 from app.schemas import RuleCreate, RuleRead, RuleUpdate
 
 
@@ -199,6 +199,16 @@ def update_rule(
         if final_target_value_id is not None:
             logger.debug(f"Validating target value {final_target_value_id} belongs to field {final_target_field_id}")
             validate_value_belongs_to_field(db, final_target_value_id, final_target_field_id)
+
+    # Validate error_message consistency
+    # When error_message is provided, the final rule_type must be VALIDATION
+    if rule_update.error_message is not None:
+        final_rule_type = rule_update.rule_type if rule_update.rule_type is not None else rule.rule_type
+        if final_rule_type != RuleType.VALIDATION:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Consistency error: 'error_message' is only allowed for rule_type 'validation'. Got '{final_rule_type}'."
+            )
 
     # Apply updates
     update_data = rule_update.model_dump(exclude_unset=True)

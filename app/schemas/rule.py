@@ -49,6 +49,7 @@ class RuleCreate(RuleBase):
     def check_rule_type_consistency(self):
         r_type = self.rule_type
         t_value = self.target_value_id
+        err_msg = self.error_message
 
         if t_value is not None:
             if r_type != RuleType.AVAILABILITY:
@@ -56,6 +57,10 @@ class RuleCreate(RuleBase):
         else:
             if r_type == RuleType.AVAILABILITY:
                  raise ValueError(f"Consistency error: if 'target_value_id' is None, rule_type cannot be '{RuleType.AVAILABILITY}'.")
+
+        if err_msg is not None and r_type != RuleType.VALIDATION:
+            raise ValueError(f"Consistency error: 'error_message' is only allowed for rule_type '{RuleType.VALIDATION}'. Got '{r_type}'.")
+
         return self
 
 class RuleUpdate(BaseSchema):
@@ -76,16 +81,25 @@ class RuleUpdate(BaseSchema):
     @model_validator(mode='after')
     def check_partial_rule_type_consistency(self):
         """
-        Validates consistency when both rule_type and target_value_id are explicitly provided.
+        Validates consistency when fields are explicitly provided together.
         When only one is provided, full validation happens at the router/service layer.
         """
-        # Only validate if both fields are explicitly set in this update
+        # Validate target_value_id + rule_type consistency
         if self.rule_type is not None and self.target_value_id is not None:
             if self.rule_type != RuleType.AVAILABILITY:
                 raise ValueError(
                     f"Consistency error: if 'target_value_id' is provided, "
                     f"rule_type must be '{RuleType.AVAILABILITY}'. Got '{self.rule_type}'."
                 )
+
+        # Validate error_message + rule_type consistency
+        if self.error_message is not None and self.rule_type is not None:
+            if self.rule_type != RuleType.VALIDATION:
+                raise ValueError(
+                    f"Consistency error: 'error_message' is only allowed for "
+                    f"rule_type '{RuleType.VALIDATION}'. Got '{self.rule_type}'."
+                )
+
         return self
 
 class RuleRead(RuleBase):

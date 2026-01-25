@@ -117,8 +117,7 @@ def engine_scenario(db_session, admin_user):
         target_field_id=field_alarm.id,
         rule_type=RuleType.MANDATORY.value,
         description="Alarm mandatory for high-value vehicles",
-        conditions={"criteria": [{"field_id": field_value.id, "operator": "GREATER_THAN", "value": 50000}]},
-        error_message="Alarm is required for vehicles over 50000"
+        conditions={"criteria": [{"field_id": field_value.id, "operator": "GREATER_THAN", "value": 50000}]}
     )
 
     # VISIBILITY: Hide alarm for motorcycles

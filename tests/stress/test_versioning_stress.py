@@ -374,7 +374,7 @@ class TestLargeVersions:
                     "rule_type": rule_types[i],
                     "description": f"Rule {i}",
                     "conditions": {"criteria": [{"field_id": source_field["id"], "operator": "GREATER_THAN", "value": (i + 1) * 10}]},
-                    "error_message": f"Error {i}" if rule_types[i] in ["mandatory", "validation"] else None
+                    "error_message": f"Error {i}" if rule_types[i] == "validation" else None
                 },
                 headers=admin_headers
             )
@@ -1279,8 +1279,7 @@ class TestDeepCloneIntegrity:
                 "target_field_id": optional["id"],
                 "rule_type": "mandatory",
                 "description": "Insurance mandatory for high amounts",
-                "conditions": {"criteria": [{"field_id": amount["id"], "operator": "GREATER_THAN", "value": 10000}]},
-                "error_message": "Insurance required"
+                "conditions": {"criteria": [{"field_id": amount["id"], "operator": "GREATER_THAN", "value": 10000}]}
             },
             headers=admin_headers
         )
@@ -1923,8 +1922,7 @@ class TestEdgeCasesVersioning:
                         {"field_id": field_a["id"], "operator": "GREATER_THAN", "value": 100},
                         {"field_id": field_b["id"], "operator": "EQUALS", "value": "PREMIUM"}
                     ]
-                },
-                "error_message": "Required for premium > 100"
+                }
             },
             headers=admin_headers
         ).json()

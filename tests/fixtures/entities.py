@@ -163,8 +163,7 @@ def version_with_data(db_session, test_entity, admin_user):
         target_field_id=field_optional.id,
         rule_type=RuleType.MANDATORY.value,
         description="Alarm mandatory if value > 50000",
-        conditions={"criteria": [{"field_id": field_value.id, "operator": "GREATER_THAN", "value": 50000}]},
-        error_message="Alarm is required for high-value vehicles"
+        conditions={"criteria": [{"field_id": field_value.id, "operator": "GREATER_THAN", "value": 50000}]}
     )
     rule_visibility = Rule(
         entity_version_id=version.id,
@@ -299,8 +298,7 @@ def field_as_rule_target(db_session, draft_version):
         target_field_id=target_field.id,
         rule_type=RuleType.MANDATORY.value,
         description="Target field mandatory if condition > 100",
-        conditions={"criteria": [{"field_id": condition_field.id, "operator": "GREATER_THAN", "value": 100}]},
-        error_message="Field is required"
+        conditions={"criteria": [{"field_id": condition_field.id, "operator": "GREATER_THAN", "value": 100}]}
     )
     db_session.add(rule)
     db_session.commit()
@@ -518,8 +516,7 @@ def draft_rule(db_session, draft_version):
         target_field_id=target_field.id,
         rule_type=RuleType.MANDATORY.value,
         description="Basic test rule",
-        conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]},
-        error_message="Must be positive"
+        conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]}
     )
     db_session.add(rule)
     db_session.commit()

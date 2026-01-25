@@ -591,8 +591,7 @@ class TestCreateRule:
                 "criteria": [
                     {"field_id": source_field.id, "operator": "GREATER_THAN", "value": 100}
                 ]
-            },
-            "error_message": "Field required when source > 100"
+            }
         }
 
         response = client.post("/rules/", json=payload, headers=admin_headers)
@@ -639,8 +638,7 @@ class TestUpdateRule:
         """Test that admin can update a rule in DRAFT version."""
         rule = draft_rule["rule"]
         payload = {
-            "description": "Updated description",
-            "error_message": "Updated error message"
+            "description": "Updated description"
         }
 
         response = client.patch(
@@ -652,7 +650,6 @@ class TestUpdateRule:
         assert response.status_code == 200
         data = response.json()
         assert data["description"] == "Updated description"
-        assert data["error_message"] == "Updated error message"
 
     def test_author_can_update_rule(self, client: TestClient, author_headers, draft_rule):
         """Test that author can update a rule."""

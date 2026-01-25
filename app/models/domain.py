@@ -53,7 +53,7 @@ class UserRole(str, enum.Enum):
     Role-based access control levels.
 
     - ADMIN: Full system access (all permissions including user management)
-    - AUTHOR: Product manager (manage entities, versions, rules, configurations)
+    - AUTHOR: Product manager (manage entities, versions, rules)
     - USER: Regular user (use configurator and manage own configurations)
     """
     ADMIN = "admin"
@@ -346,7 +346,7 @@ class Rule(Base):
     Rules define conditional logic to control field visibility, availability,
     editability, mandatory state, or validation based on other field values.
 
-    Condition structure: {"criteria": [{"field_id": 1, "operator": "eq", "value": "Red"}, ...]}
+    Condition structure: {"criteria": [{"field_id": 1, "operator": "EQUALS", "value": "Red"}, ...]}
 
     Relationships:
         - entity_version: Many-to-one with EntityVersion
@@ -359,12 +359,20 @@ class Rule(Base):
     entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"))
 
     target_field_id: Mapped[int] = mapped_column(ForeignKey("fields.id"))
-    target_value_id: Mapped[Optional[int]] = mapped_column(ForeignKey("values.id"), nullable=True)
+    target_value_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("values.id"),
+        nullable=True,
+        comment="Only used for AVAILABILITY rules: specifies which Value this rule controls"
+    )
 
     rule_type: Mapped[RuleType] = mapped_column(String(50), default=RuleType.AVAILABILITY)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     conditions: Mapped[dict] = mapped_column(JSON, comment="JSON condition criteria")
-    error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        comment="Only used for VALIDATION rules: message shown when validation fails"
+    )
 
     # Relationships
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="rules")
