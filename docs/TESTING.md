@@ -177,11 +177,11 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
 | API           | 21    | ~270          | Endpoint CRUD and lifecycle ops  |
-| Engine        | 6     | ~55           | Business logic, rules, SKU gen   |
+| Engine        | 6     | ~58           | Business logic, rules, SKU gen   |
 | Integration   | 11    | ~15           | End-to-end workflows             |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
 | Stress        | 2     | ~15           | Concurrency and edge cases       |
-| **Total**     | **41**| **~370**      |                                  |
+| **Total**     | **41**| **~373**      |                                  |
 
 ## Test Coverage
 
@@ -265,7 +265,7 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **FINALIZED → Soft Deleted**: ADMIN only, USER denied (HTTP 403)
 - **Any → DRAFT**: CLONE always creates new DRAFT
 
-### Rule Engine (~30 tests)
+### Rule Engine (~33 tests)
 - **Core Logic**: Field validation, mandatory checks, visibility rules, availability logic
 - **Operators**: All comparison operators (EQUALS, NOT_EQUALS, GREATER_THAN, GREATER_THAN_OR_EQUAL, LESS_THAN, LESS_THAN_OR_EQUAL, IN)
 - **Dropdown Logic**: Cascading dropdowns, dynamic value filtering

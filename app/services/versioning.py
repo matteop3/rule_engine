@@ -197,6 +197,8 @@ class VersioningService:
             new_target_value_id = None
             if old_rule.target_value_id:
                 new_target_value_id = value_map.get(old_rule.target_value_id)
+                if not new_target_value_id:
+                    raise ValueError(f"Missing target Value for Rule {old_rule.id}.")
 
             # Rewrite JSON conditions
             # Iterate over criteria and update 'field_id'
@@ -278,7 +280,8 @@ class VersioningService:
             old_fid = criterion.get("field_id")
             if old_fid in field_map:
                 criterion["field_id"] = field_map[old_fid]
-            # Fot the future: do something if not in the field_map?
+            else:
+                raise ValueError(f"Missing Field {old_fid} in field_map during conditions rewrite.")
         
         return new_cond    
 

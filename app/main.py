@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -22,6 +23,11 @@ async def lifespan(app: FastAPI):
     # === STARTUP ===
     # Database migrations are handled by Alembic via docker-entrypoint.sh
     # No create_all() needed - schema is managed through version-controlled migrations
+
+    logging.basicConfig(
+        level=settings.LOG_LEVEL,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     yield  # App is running here
 

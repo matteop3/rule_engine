@@ -267,6 +267,183 @@ class TestCloneIdRemapping:
         assert cloned_rule["target_value_id"] is not None
         assert cloned_rule["target_value_id"] != original_target_value_id
 
+    def test_clone_fails_if_target_value_id_not_in_value_map(
+        self, client: TestClient, admin_headers, db_session, test_entity, admin_user
+    ):
+        """
+        Integrity: Clone must fail when a rule's target_value_id points to a Value
+        that is not part of the source version (corrupted data), so it cannot be
+        found in the value_map during remapping.
+        """
+        # Create a PUBLISHED version with a dropdown field and an AVAILABILITY rule
+        version = EntityVersion(
+            entity_id=test_entity.id,
+            version_number=1,
+            status=VersionStatus.PUBLISHED,
+            changelog="Original",
+            created_by_id=admin_user.id,
+            updated_by_id=admin_user.id
+        )
+        db_session.add(version)
+        db_session.flush()
+
+        dropdown_field = Field(
+            entity_version_id=version.id,
+            name="dropdown",
+            label="Dropdown",
+            data_type=FieldType.STRING.value,
+            is_free_value=False,
+            is_required=True,
+            sequence=1
+        )
+        trigger_field = Field(
+            entity_version_id=version.id,
+            name="trigger",
+            label="Trigger",
+            data_type=FieldType.STRING.value,
+            is_free_value=True,
+            is_required=True,
+            sequence=2
+        )
+        db_session.add_all([dropdown_field, trigger_field])
+        db_session.flush()
+
+        target_value = Value(field_id=dropdown_field.id, value="LIMITED", label="Limited", is_default=False)
+        db_session.add(target_value)
+        db_session.flush()
+
+        rule = Rule(
+            entity_version_id=version.id,
+            target_field_id=dropdown_field.id,
+            target_value_id=target_value.id,
+            rule_type=RuleType.AVAILABILITY.value,
+            description="Availability rule with corrupted target_value_id",
+            conditions={"criteria": [{"field_id": trigger_field.id, "operator": "EQUALS", "value": "GO"}]}
+        )
+        db_session.add(rule)
+        db_session.flush()
+
+        # Corrupt the data: move the target Value to a different field outside this version,
+        # so it won't be in the value_map during clone.
+        # We create a separate version with its own field and reassign the value to it.
+        other_version = EntityVersion(
+            entity_id=test_entity.id,
+            version_number=99,
+            status=VersionStatus.ARCHIVED,
+            changelog="Other",
+            created_by_id=admin_user.id,
+            updated_by_id=admin_user.id
+        )
+        db_session.add(other_version)
+        db_session.flush()
+
+        orphan_field = Field(
+            entity_version_id=other_version.id,
+            name="orphan",
+            label="Orphan",
+            data_type=FieldType.STRING.value,
+            is_free_value=False,
+            is_required=False,
+            sequence=1
+        )
+        db_session.add(orphan_field)
+        db_session.flush()
+
+        # Reassign the value to the orphan field (simulates corrupted FK)
+        target_value.field_id = orphan_field.id
+        db_session.commit()
+
+        # Attempt to clone: should fail because target_value_id cannot be remapped
+        clone_resp = client.post(
+            f"/versions/{version.id}/clone",
+            json={"changelog": "Should fail"},
+            headers=admin_headers
+        )
+
+        assert clone_resp.status_code in (400, 500), (
+            f"Expected clone to fail due to unmappable target_value_id, "
+            f"got {clone_resp.status_code}: {clone_resp.json()}"
+        )
+
+    def test_clone_fails_if_condition_field_id_not_in_field_map(
+        self, client: TestClient, admin_headers, db_session, test_entity, admin_user
+    ):
+        """
+        Integrity: Clone must fail when a rule's condition references a field_id
+        that is not part of the source version (corrupted data), so it cannot be
+        found in the field_map during conditions rewrite.
+        """
+        version = EntityVersion(
+            entity_id=test_entity.id,
+            version_number=1,
+            status=VersionStatus.PUBLISHED,
+            changelog="Original",
+            created_by_id=admin_user.id,
+            updated_by_id=admin_user.id
+        )
+        db_session.add(version)
+        db_session.flush()
+
+        target_field = Field(
+            entity_version_id=version.id,
+            name="target",
+            label="Target",
+            data_type=FieldType.BOOLEAN.value,
+            is_free_value=True,
+            is_required=False,
+            sequence=1
+        )
+        condition_field = Field(
+            entity_version_id=version.id,
+            name="condition_source",
+            label="Condition Source",
+            data_type=FieldType.NUMBER.value,
+            is_free_value=True,
+            is_required=True,
+            sequence=2
+        )
+        db_session.add_all([target_field, condition_field])
+        db_session.flush()
+
+        # Rule whose condition references condition_field
+        rule = Rule(
+            entity_version_id=version.id,
+            target_field_id=target_field.id,
+            rule_type=RuleType.VISIBILITY.value,
+            description="Rule with corrupted condition field_id",
+            conditions={"criteria": [{"field_id": condition_field.id, "operator": "GREATER_THAN", "value": 10}]}
+        )
+        db_session.add(rule)
+        db_session.flush()
+
+        # Corrupt the data: move condition_field to a different version,
+        # so it won't be in the field_map during clone.
+        other_version = EntityVersion(
+            entity_id=test_entity.id,
+            version_number=99,
+            status=VersionStatus.ARCHIVED,
+            changelog="Other",
+            created_by_id=admin_user.id,
+            updated_by_id=admin_user.id
+        )
+        db_session.add(other_version)
+        db_session.flush()
+
+        condition_field.entity_version_id = other_version.id
+        db_session.commit()
+
+        # Attempt to clone: should fail because condition field_id cannot be remapped
+        clone_resp = client.post(
+            f"/versions/{version.id}/clone",
+            json={"changelog": "Should fail"},
+            headers=admin_headers
+        )
+
+        assert clone_resp.status_code in (400, 500), (
+            f"Expected clone to fail due to unmappable condition field_id, "
+            f"got {clone_resp.status_code}: {clone_resp.json()}"
+        )
+
 
 # ============================================================
 # ORPHAN PREVENTION TESTS

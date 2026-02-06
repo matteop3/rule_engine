@@ -98,6 +98,45 @@ def test_engine_visibility_logic(db_session, setup_insurance_scenario):
 
     #print("\n✅ Test Visibility passed: Field hidden correctly on MOTO.")
 
+def test_engine_mandatory_rule_overrides_is_required(db_session, setup_insurance_scenario):
+    """
+    Test the new MANDATORY rule behavior: when MANDATORY rules exist for a field,
+    they fully govern the outcome. A field with is_required=True should become
+    NOT required when its MANDATORY rule condition is not met.
+    """
+    data_map = setup_insurance_scenario
+    service = RuleEngineService()
+
+    # Patch satellite tracker to is_required=True
+    from app.models.domain import Field
+    sat_field = db_session.query(Field).filter(Field.id == data_map["fields"]["satellitare"]).one()
+    sat_field.is_required = True
+    db_session.commit()
+
+    # CASE A: Low value (40,000) -> MANDATORY rule condition NOT met
+    # NEW behavior: field becomes NOT required (rules fully govern)
+    payload_low = CalculationRequest(
+        entity_id=data_map["entity_id"],
+        current_state=[
+            FieldInputState(field_id=data_map["fields"]["valore"], value=40000)
+        ]
+    )
+    resp_low = service.calculate_state(db_session, payload_low)
+    sat_low = next(f for f in resp_low.fields if f.field_id == data_map["fields"]["satellitare"])
+    assert sat_low.is_required is False  # Rules override is_required=True
+
+    # CASE B: High value (60,000) -> MANDATORY rule condition met -> required
+    payload_high = CalculationRequest(
+        entity_id=data_map["entity_id"],
+        current_state=[
+            FieldInputState(field_id=data_map["fields"]["valore"], value=60000)
+        ]
+    )
+    resp_high = service.calculate_state(db_session, payload_high)
+    sat_high = next(f for f in resp_high.fields if f.field_id == data_map["fields"]["satellitare"])
+    assert sat_high.is_required is True
+
+
 def test_engine_availability_filter(db_session, setup_insurance_scenario):
     """
     Test the AVAILABILITY rule: If Type = CAMION, the 'MINIMO' option must be removed from Coverage.

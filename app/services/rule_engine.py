@@ -478,15 +478,19 @@ class RuleEngineService:
     ) -> bool:
         """
         Layer 3: Determines if field is required.
-        Logic: Starts from field.is_required, becomes required if a MANDATORY rule passes.
+        Logic: If no MANDATORY rules exist, uses field.is_required as default.
+        If MANDATORY rules exist, they fully govern the outcome:
+        rule passes = required, no rule passes = not required.
         """
-        # Mandatory has special logic: starts from field default, can only become True
-        rules = self._get_rules_by_type(field.id, RuleType.MANDATORY, all_rules)
-
-        if self._any_rule_passes(rules, running_context, type_map):
-            return True
-
-        return field.is_required
+        return self._evaluate_boolean_layer(
+            field=field,
+            all_rules=all_rules,
+            running_context=running_context,
+            type_map=type_map,
+            rule_type=RuleType.MANDATORY,
+            default_when_no_rules=field.is_required,
+            value_when_rule_passes=True
+        )
     
     def _evaluate_availability(
         self,

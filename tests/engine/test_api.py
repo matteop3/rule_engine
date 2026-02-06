@@ -928,6 +928,70 @@ class TestEngineRules:
         # Even with all required fields filled, validation error makes it incomplete
         assert data["is_complete"] is False
 
+    def test_mandatory_rule_overrides_is_required_true(
+        self, client: TestClient, admin_headers, engine_scenario, db_session
+    ):
+        """Test that MANDATORY rules fully govern obligatoriness when present.
+
+        When a field has is_required=True and MANDATORY rules exist but none pass,
+        the field should become NOT required (new behavior, consistent with
+        visibility/editability layers).
+        """
+        # Patch alarm field to is_required=True
+        alarm_field_obj = engine_scenario["fields"]["alarm"]
+        alarm_field_obj.is_required = True
+        db_session.commit()
+
+        # CASE A: value <= 50000 -> MANDATORY rule does NOT pass -> NOT required
+        payload = {
+            "entity_id": engine_scenario["entity"].id,
+            "current_state": [
+                {"field_id": engine_scenario["fields"]["value"].id, "value": 30000}
+            ]
+        }
+
+        response = client.post("/engine/calculate", json=payload, headers=admin_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+
+        alarm_field = next(
+            f for f in data["fields"]
+            if f["field_id"] == alarm_field_obj.id
+        )
+
+        assert alarm_field["is_required"] is False  # Rules override is_required=True
+
+    def test_mandatory_rule_required_when_condition_met_and_default_true(
+        self, client: TestClient, admin_headers, engine_scenario, db_session
+    ):
+        """Test that MANDATORY rule still makes field required when condition is met,
+        regardless of the is_required default."""
+        # Patch alarm field to is_required=True
+        alarm_field_obj = engine_scenario["fields"]["alarm"]
+        alarm_field_obj.is_required = True
+        db_session.commit()
+
+        # CASE B: value > 50000 -> MANDATORY rule passes -> required
+        payload = {
+            "entity_id": engine_scenario["entity"].id,
+            "current_state": [
+                {"field_id": engine_scenario["fields"]["value"].id, "value": 60000}
+            ]
+        }
+
+        response = client.post("/engine/calculate", json=payload, headers=admin_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+
+        alarm_field = next(
+            f for f in data["fields"]
+            if f["field_id"] == alarm_field_obj.id
+        )
+
+        assert alarm_field["is_required"] is True
+
     def test_multiple_rules_on_same_field(
         self, client: TestClient, admin_headers, engine_scenario
     ):
