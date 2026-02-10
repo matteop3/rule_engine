@@ -23,6 +23,7 @@ tests/
 │   ├── test_configurations_calculate.py   # Configuration calculate/engine integration
 │   ├── test_configurations_clone.py       # Configuration clone operation tests
 │   ├── test_configurations_crud.py        # Configuration CRUD operations
+│   ├── test_configurations_generated_sku.py  # SKU caching on configuration records
 │   ├── test_configurations_finalize.py    # Configuration finalize operation tests
 │   ├── test_configurations_lifecycle_rbac.py  # RBAC for lifecycle operations (USER/AUTHOR/ADMIN)
 │   ├── test_configurations_rbac.py        # Configuration role-based access control
@@ -230,6 +231,13 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **Read**: Status and is_deleted fields in response, visibility rules for deleted configs
 - **Update**: DRAFT allowed, FINALIZED blocked (HTTP 409), guard clauses
 - **Delete**: Hard delete for DRAFT, soft delete for FINALIZED (ADMIN only), forbidden for USER on FINALIZED
+
+#### Generated SKU Caching (`test_configurations_generated_sku.py`)
+- **Create**: SKU is calculated and cached from rule engine result, null when no sku_base configured
+- **Update**: SKU is recalculated when data changes
+- **Clone**: SKU is copied from source configuration
+- **Upgrade**: SKU is recalculated against new version's sku_base
+- **List**: SKU appears in list response
 
 #### Clone Operation (`test_configurations_clone.py`)
 - **Basic Functionality**: Creates new UUID, always results in DRAFT status, copies data and version reference

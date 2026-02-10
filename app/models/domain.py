@@ -483,6 +483,13 @@ class Configuration(Base, AuditMixin):
         comment="True if all required fields are filled and validation passes"
     )
 
+    generated_sku: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+        comment="Cached generated SKU from last calculation"
+    )
+
     # Soft delete flag
     is_deleted: Mapped[bool] = mapped_column(
         Boolean,

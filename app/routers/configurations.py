@@ -401,6 +401,7 @@ def create_configuration(
             user_id=current_user.id,
             name=config_in.name,
             is_complete=calc_result.is_complete,
+            generated_sku=calc_result.generated_sku,
             data=data_list,
             created_by_id=current_user.id
             # updated_by_id intentionally NULL: record not yet modified
@@ -590,6 +591,7 @@ def update_configuration(
         )
 
         update_data["is_complete"] = calc_result.is_complete
+        update_data["generated_sku"] = calc_result.generated_sku
         logger.info(f"Recalculated is_complete: {calc_result.is_complete}")
 
     # Transaction phase
@@ -779,6 +781,7 @@ def clone_configuration(
             name=new_name,
             status=ConfigurationStatus.DRAFT,  # Always DRAFT
             is_complete=source.is_complete,
+            generated_sku=source.generated_sku,
             is_deleted=False,
             data=source.data.copy() if source.data else [],
             created_by_id=current_user.id
@@ -802,6 +805,7 @@ def clone_configuration(
         name=cloned_config.name,
         status=ConfigurationStatusEnum(cloned_config.status),
         is_complete=cloned_config.is_complete,
+        generated_sku=cloned_config.generated_sku,
         is_deleted=cloned_config.is_deleted,
         data=convert_to_field_input_states(cloned_config.data),
         created_at=cloned_config.created_at,
@@ -885,6 +889,7 @@ def upgrade_configuration(
     with db_transaction(db, f"upgrade_configuration {config_id}"):
         config.entity_version_id = latest_version.id
         config.is_complete = calc_result.is_complete
+        config.generated_sku = calc_result.generated_sku
         config.updated_by_id = current_user.id
 
         logger.info(

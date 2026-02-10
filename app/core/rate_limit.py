@@ -9,7 +9,7 @@ import logging
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi import Request, Response
+from fastapi import Request, status
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
@@ -79,11 +79,11 @@ def rate_limit_exceeded_handler(request: Request, exc: Exception) -> JSONRespons
     )
 
     return JSONResponse(
-        status_code=429,
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         content={
             "error": "rate_limit_exceeded",
             "detail": "Too many requests. Please try again later.",
-            "retry_after": exc.detail if hasattr(exc, "detail") else None
+            "retry_after": getattr(exc, "detail", None)
         }
     )
 

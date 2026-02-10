@@ -40,6 +40,7 @@ class ConfigurationRead(ConfigurationBase, AuditSchemaMixin):
     entity_version_id: int
     status: ConfigurationStatusEnum
     is_complete: bool
+    generated_sku: Optional[str] = None
     is_deleted: bool = False
 
 

@@ -5,8 +5,8 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union, Any, Dict
 
+import bcrypt as _bcrypt
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
@@ -29,14 +29,6 @@ REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
 
 
 # ============================================================
-# PASSWORD CONTEXT
-# ============================================================
-
-# Password hashing using bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-# ============================================================
 # PASSWORD FUNCTIONS
 # ============================================================
 
@@ -52,7 +44,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         bool: True if passwords match, False otherwise
     """
     try:
-        result = pwd_context.verify(plain_password, hashed_password)
+        result = _bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
         if result:
             logger.debug("Password verification successful")
         else:
@@ -74,7 +69,10 @@ def get_password_hash(password: str) -> str:
         str: The hashed password
     """
     try:
-        hashed = pwd_context.hash(password)
+        hashed = _bcrypt.hashpw(
+            password.encode("utf-8"),
+            _bcrypt.gensalt(),
+        ).decode("utf-8")
         logger.debug("Password hashed successfully")
         return hashed
     except Exception as e:

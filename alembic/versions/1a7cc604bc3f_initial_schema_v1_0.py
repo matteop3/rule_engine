@@ -96,6 +96,7 @@ def upgrade() -> None:
     sa.Column('name', sa.String(length=100), nullable=True, comment='User-defined name'),
     sa.Column('status', sa.String(length=20), nullable=False, comment='Lifecycle status: DRAFT (mutable) or FINALIZED (immutable)'),
     sa.Column('is_complete', sa.Boolean(), nullable=False, comment='True if all required fields are filled and validation passes'),
+    sa.Column('generated_sku', sa.String(length=100), nullable=True, comment='Cached generated SKU from last calculation'),
     sa.Column('is_deleted', sa.Boolean(), nullable=False, comment='Soft delete flag for preserving audit trail of FINALIZED records'),
     sa.Column('data', sa.JSON(), nullable=False, comment='Raw input data for re-hydration'),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Timestamp when record was created'),
@@ -109,6 +110,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_complete', 'configurations', ['is_complete'], unique=False)
+    op.create_index('ix_generated_sku', 'configurations', ['generated_sku'], unique=False)
     op.create_index('ix_config_deleted', 'configurations', ['is_deleted'], unique=False)
     op.create_index('ix_config_status', 'configurations', ['status'], unique=False)
     op.create_index(op.f('ix_configurations_is_complete'), 'configurations', ['is_complete'], unique=False)
@@ -173,6 +175,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_configurations_is_complete'), table_name='configurations')
     op.drop_index('ix_config_status', table_name='configurations')
     op.drop_index('ix_config_deleted', table_name='configurations')
+    op.drop_index('ix_generated_sku', table_name='configurations')
     op.drop_index('ix_complete', table_name='configurations')
     op.drop_table('configurations')
     op.drop_index(op.f('ix_entity_versions_id'), table_name='entity_versions')

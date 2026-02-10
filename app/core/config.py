@@ -3,8 +3,8 @@ import os
 import json
 from typing import List, Union
 from pathlib import Path
-from pydantic_settings import BaseSettings
-from pydantic import validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 
 # Calculate absolute project root.
 # __file__ is this file (config.py).
@@ -54,7 +54,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_REFRESH_WINDOW_MINUTES: int = 5
     RATE_LIMIT_API_PER_MINUTE: int = 60
 
-    @validator("SECRET_KEY")
+    @field_validator("SECRET_KEY")
+    @classmethod
     def validate_secret_key(cls, v: str) -> str:
         """
         Validate SECRET_KEY meets minimum security requirements.
@@ -67,7 +68,8 @@ class Settings(BaseSettings):
             )
         return v
 
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         """
         Parse CORS origins from various formats:
@@ -96,7 +98,8 @@ class Settings(BaseSettings):
 
         return v
 
-    @validator("LOG_LEVEL")
+    @field_validator("LOG_LEVEL")
+    @classmethod
     def validate_log_level(cls, v: str) -> str:
         """Validate log level is a valid Python logging level."""
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -105,7 +108,8 @@ class Settings(BaseSettings):
             raise ValueError(f"LOG_LEVEL must be one of: {', '.join(valid_levels)}")
         return v_upper
 
-    @validator("ENVIRONMENT")
+    @field_validator("ENVIRONMENT")
+    @classmethod
     def validate_environment(cls, v: str) -> str:
         """Validate environment is valid."""
         valid_envs = ["development", "production", "test"]
@@ -114,10 +118,11 @@ class Settings(BaseSettings):
             raise ValueError(f"ENVIRONMENT must be one of: {', '.join(valid_envs)}")
         return v_lower
 
-    class Config:
-        env_file = ENV_PATH
-        env_file_encoding = 'utf-8'
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=ENV_PATH,
+        env_file_encoding='utf-8',
+        case_sensitive=True,
+    )
 
 
 # Singleton

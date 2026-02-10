@@ -117,7 +117,7 @@ POST /engine/calculate
 | ORM | SQLAlchemy 2.0 |
 | Migrations | Alembic |
 | Validation | Pydantic 2.0 |
-| Auth | python-jose (JWT) + passlib (bcrypt) |
+| Auth | python-jose (JWT) + bcrypt |
 | Rate Limiting | slowapi |
 | Testing | pytest + testcontainers |
 | Infrastructure | Docker + Docker Compose |
@@ -255,6 +255,7 @@ erDiagram
         string name
         enum status "DRAFT|FINALIZED"
         bool is_complete
+        string generated_sku "nullable"
         bool is_deleted
         json data
     }
@@ -348,7 +349,7 @@ flowchart TD
 
 ### Key Architectural Choices
 
-**Re-hydration strategy for configurations**: Configurations store raw inputs as JSON (`data` field) rather than denormalized snapshots. On read, the engine re-evaluates rules against the current EntityVersion schema. This enables version upgrades and ensures consistency.
+**Re-hydration strategy for configurations**: Configurations store raw inputs as JSON (`data` field) rather than denormalized snapshots. On read, the engine re-evaluates rules against the current EntityVersion schema. This enables version upgrades and ensures consistency. Key derived values (`is_complete`, `generated_sku`) are cached on the record for queryability. See [ADR: Re-hydration](docs/ADR_REHYDRATION.md).
 
 **DRAFT-only editing**: Fields, Values, and Rules can only be modified on DRAFT versions. This prevents accidental changes to production configurations and ensures published versions are stable.
 
@@ -445,6 +446,8 @@ This project focuses on core rule engine functionality. The following features a
 | API versioning (v1/v2) | Not implemented | Single version appropriate for greenfield project. Versioning adds overhead best introduced when breaking changes are needed. |
 | Internationalization | Deferred | See [ADR: i18n](docs/ADR_I18N.md). JSONB approach documented for future implementation. |
 | GraphQL | Not implemented | REST is sufficient for this domain. GraphQL adds complexity without clear benefit for CPQ use case. |
+| Cross-field expressions | Not implemented | See [ADR: Rule Expressions](docs/ADR_RULE_EXPRESSIONS.md). Single-field conditions keep rules simple and declarative. |
+| Inference tree evaluation | Not implemented | See [ADR: Inference Tree](docs/ADR_INFERENCE_TREE.md). Waterfall model is simpler and sufficient for typical CPQ scenarios. |
 
 ---
 
@@ -487,6 +490,8 @@ rule_engine/
 - [Token Rotation Demo](docs/ROTATION_DEMO.md) - Refresh token rotation examples
 - [ADR: Internationalization](docs/ADR_I18N.md) - i18n architecture decision
 - [ADR: Rule Expressions](docs/ADR_RULE_EXPRESSIONS.md) - Why rules use single-field conditions
+- [ADR: Inference Tree](docs/ADR_INFERENCE_TREE.md) - Why rules use waterfall evaluation instead of a dependency graph
+- [ADR: Re-hydration](docs/ADR_REHYDRATION.md) - Why configurations store raw inputs and recalculate on read
 
 ---
 
