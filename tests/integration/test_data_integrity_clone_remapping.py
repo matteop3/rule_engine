@@ -445,6 +445,102 @@ class TestCloneIdRemapping:
         )
 
 
+    def test_clone_preserves_calculation_rule_set_value(
+        self, client: TestClient, admin_headers, db_session, test_entity, admin_user
+    ):
+        """
+        Integrity: Clone preserves set_value for CALCULATION rules
+        and correctly remaps all IDs.
+        """
+        version = EntityVersion(
+            entity_id=test_entity.id,
+            version_number=1,
+            status=VersionStatus.PUBLISHED,
+            changelog="Original with CALCULATION",
+            created_by_id=admin_user.id,
+            updated_by_id=admin_user.id
+        )
+        db_session.add(version)
+        db_session.flush()
+
+        source_field = Field(
+            entity_version_id=version.id,
+            name="trigger",
+            label="Trigger",
+            data_type=FieldType.STRING.value,
+            is_free_value=True,
+            is_required=True,
+            sequence=1
+        )
+        target_field = Field(
+            entity_version_id=version.id,
+            name="computed",
+            label="Computed",
+            data_type=FieldType.STRING.value,
+            is_free_value=True,
+            is_required=True,
+            sequence=2
+        )
+        db_session.add_all([source_field, target_field])
+        db_session.flush()
+
+        original_source_id = source_field.id
+        original_target_id = target_field.id
+
+        # CALCULATION rule with set_value
+        calc_rule = Rule(
+            entity_version_id=version.id,
+            target_field_id=target_field.id,
+            rule_type=RuleType.CALCULATION.value,
+            description="Force computed value",
+            set_value="FORCED_RESULT",
+            conditions={"criteria": [
+                {"field_id": source_field.id, "operator": "EQUALS", "value": "ACTIVATE"}
+            ]}
+        )
+        db_session.add(calc_rule)
+        db_session.commit()
+
+        # Clone the version
+        clone_resp = client.post(
+            f"/versions/{version.id}/clone",
+            json={"changelog": "Cloned with CALCULATION"},
+            headers=admin_headers
+        )
+        assert clone_resp.status_code == 201
+        new_version_id = clone_resp.json()["id"]
+
+        # Get cloned fields
+        cloned_fields = client.get(
+            f"/fields/?entity_version_id={new_version_id}",
+            headers=admin_headers
+        ).json()
+        source_clone = next(f for f in cloned_fields if f["name"] == "trigger")
+        target_clone = next(f for f in cloned_fields if f["name"] == "computed")
+
+        # Get cloned rules
+        cloned_rules = client.get(
+            f"/rules/?entity_version_id={new_version_id}",
+            headers=admin_headers
+        ).json()
+        assert len(cloned_rules) == 1
+
+        cloned_rule = cloned_rules[0]
+
+        # Verify set_value is preserved
+        assert cloned_rule["set_value"] == "FORCED_RESULT"
+        assert cloned_rule["rule_type"] == "calculation"
+
+        # Verify target_field_id is remapped
+        assert cloned_rule["target_field_id"] == target_clone["id"]
+        assert cloned_rule["target_field_id"] != original_target_id
+
+        # Verify condition field_id is remapped
+        criterion = cloned_rule["conditions"]["criteria"][0]
+        assert criterion["field_id"] == source_clone["id"]
+        assert criterion["field_id"] != original_source_id
+
+
 # ============================================================
 # ORPHAN PREVENTION TESTS
 # ============================================================

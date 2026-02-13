@@ -212,6 +212,7 @@ class VersioningService:
                 description=old_rule.description,
                 conditions=new_conditions,
                 error_message=old_rule.error_message,
+                set_value=old_rule.set_value,
             )
             db.add(new_rule)
 

@@ -15,7 +15,7 @@ from app.dependencies import (
     get_editable_value,
     db_transaction
 )
-from app.models.domain import Value, Field, User
+from app.models.domain import Value, Field, Rule, RuleType, User
 from app.schemas import ValueCreate, ValueRead, ValueUpdate
 
 
@@ -226,6 +226,27 @@ def update_value(
                     "Consistency error: You cannot move a Value to a Field belonging to a different Version. "
                     f"Current Version ID: {parent_field.entity_version_id}, "
                     f"Target Field Version ID: {new_field.entity_version_id}."
+                )
+            )
+
+    # Check CALCULATION rules if value string is being changed
+    if value_update.value is not None and value_update.value != value.value:
+        calc_rules_count = db.query(Rule).filter(
+            Rule.target_field_id == value.field_id,
+            Rule.rule_type == RuleType.CALCULATION,
+            Rule.set_value == value.value
+        ).count()
+        if calc_rules_count > 0:
+            logger.warning(
+                f"Update value {value.id} failed: value string '{value.value}' "
+                f"is referenced by {calc_rules_count} CALCULATION rule(s)"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot change value string '{value.value}' because it is referenced by "
+                    f"{calc_rules_count} CALCULATION rule(s) via 'set_value'. "
+                    f"Update or delete those rules first."
                 )
             )
 

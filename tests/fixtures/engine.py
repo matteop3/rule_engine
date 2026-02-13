@@ -694,3 +694,179 @@ def setup_sku_availability_scenario(db_session):
             "32g": v_32g.id
         }
     }
+
+
+# ============================================================
+# CALCULATION FIXTURES
+# ============================================================
+
+@pytest.fixture(scope="function")
+def setup_calculation_scenario(db_session):
+    """
+    Scenario for CALCULATION rule testing.
+
+    EntityVersion with sku_base="CFG"
+    Fields (ordered by step/sequence):
+    - product_type (step=1): Standard, Pro, Enterprise (dropdown, required)
+    - cooling_system (step=2): Passive (PAS), Active (ACT), Liquid (LIQ) (dropdown, required)
+        CALCULATION: If product_type == "Enterprise", force "Passive"
+    - support_tier (step=3): free-value field
+        CALCULATION: If product_type == "Pro", force "Premium"
+    - notes (step=4): free-value, optional
+        EDITABILITY: readonly if product_type == "Standard"
+    - warranty (step=5): 1 Year (1Y), 3 Years (3Y) (dropdown, required)
+        AVAILABILITY: 3 Years only if product_type != "Standard"
+        CALCULATION: If product_type == "Enterprise", force "3 Years"
+    - status_display (step=6): free-value, required
+        MANDATORY: required if product_type == "Pro"
+        VISIBILITY: hidden if product_type == "Standard"
+    """
+    entity = Entity(name="Calculation Test", description="Testing CALCULATION rules")
+    db_session.add(entity)
+    db_session.commit()
+
+    version = EntityVersion(
+        entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED,
+        sku_base="CFG", sku_delimiter="-"
+    )
+    db_session.add(version)
+    db_session.commit()
+
+    # Field 1: product_type (dropdown)
+    f_product = Field(
+        entity_version_id=version.id, name="product_type", label="Product Type",
+        data_type=FieldType.STRING.value, is_free_value=False, is_required=True,
+        step=1, sequence=0
+    )
+    # Field 2: cooling_system (dropdown, target of CALCULATION)
+    f_cooling = Field(
+        entity_version_id=version.id, name="cooling_system", label="Cooling System",
+        data_type=FieldType.STRING.value, is_free_value=False, is_required=True,
+        step=2, sequence=0
+    )
+    # Field 3: support_tier (free-value, target of CALCULATION)
+    f_support = Field(
+        entity_version_id=version.id, name="support_tier", label="Support Tier",
+        data_type=FieldType.STRING.value, is_free_value=True, is_required=False,
+        step=3, sequence=0
+    )
+    # Field 4: notes (free-value, target of EDITABILITY)
+    f_notes = Field(
+        entity_version_id=version.id, name="notes", label="Notes",
+        data_type=FieldType.STRING.value, is_free_value=True, is_required=False,
+        step=4, sequence=0
+    )
+    # Field 5: warranty (dropdown, target of CALCULATION + AVAILABILITY)
+    f_warranty = Field(
+        entity_version_id=version.id, name="warranty", label="Warranty",
+        data_type=FieldType.STRING.value, is_free_value=False, is_required=True,
+        step=5, sequence=0
+    )
+    # Field 6: status_display (free-value, target of VISIBILITY + MANDATORY)
+    f_status = Field(
+        entity_version_id=version.id, name="status_display", label="Status Display",
+        data_type=FieldType.STRING.value, is_free_value=True, is_required=False,
+        step=6, sequence=0
+    )
+
+    db_session.add_all([f_product, f_cooling, f_support, f_notes, f_warranty, f_status])
+    db_session.commit()
+
+    # Values: product_type
+    v_standard = Value(field_id=f_product.id, value="Standard", label="Standard", sku_modifier="STD")
+    v_pro = Value(field_id=f_product.id, value="Pro", label="Pro", sku_modifier="PRO")
+    v_enterprise = Value(field_id=f_product.id, value="Enterprise", label="Enterprise", sku_modifier="ENT")
+
+    # Values: cooling_system
+    v_passive = Value(field_id=f_cooling.id, value="Passive", label="Passive", sku_modifier="PAS")
+    v_active = Value(field_id=f_cooling.id, value="Active", label="Active", sku_modifier="ACT")
+    v_liquid = Value(field_id=f_cooling.id, value="Liquid", label="Liquid", sku_modifier="LIQ")
+
+    # Values: warranty
+    v_1y = Value(field_id=f_warranty.id, value="1 Year", label="1 Year", sku_modifier="1Y")
+    v_3y = Value(field_id=f_warranty.id, value="3 Years", label="3 Years", sku_modifier="3Y")
+
+    db_session.add_all([v_standard, v_pro, v_enterprise, v_passive, v_active, v_liquid, v_1y, v_3y])
+    db_session.commit()
+
+    # CALCULATION: cooling_system = "Passive" if product_type == "Enterprise"
+    r_calc_cooling = Rule(
+        entity_version_id=version.id, target_field_id=f_cooling.id,
+        rule_type=RuleType.CALCULATION.value,
+        set_value="Passive",
+        conditions={"criteria": [{"field_id": f_product.id, "operator": "EQUALS", "value": "Enterprise"}]}
+    )
+
+    # CALCULATION: support_tier = "Premium" if product_type == "Pro" (free-value field)
+    r_calc_support = Rule(
+        entity_version_id=version.id, target_field_id=f_support.id,
+        rule_type=RuleType.CALCULATION.value,
+        set_value="Premium",
+        conditions={"criteria": [{"field_id": f_product.id, "operator": "EQUALS", "value": "Pro"}]}
+    )
+
+    # EDITABILITY: notes readonly if product_type == "Standard"
+    r_edit_notes = Rule(
+        entity_version_id=version.id, target_field_id=f_notes.id,
+        rule_type=RuleType.EDITABILITY.value,
+        conditions={"criteria": [{"field_id": f_product.id, "operator": "NOT_EQUALS", "value": "Standard"}]}
+    )
+
+    # AVAILABILITY: 3 Years only if product_type != "Standard"
+    r_avail_3y = Rule(
+        entity_version_id=version.id, target_field_id=f_warranty.id,
+        target_value_id=v_3y.id,
+        rule_type=RuleType.AVAILABILITY.value,
+        conditions={"criteria": [{"field_id": f_product.id, "operator": "NOT_EQUALS", "value": "Standard"}]}
+    )
+
+    # CALCULATION: warranty = "3 Years" if product_type == "Enterprise"
+    r_calc_warranty = Rule(
+        entity_version_id=version.id, target_field_id=f_warranty.id,
+        rule_type=RuleType.CALCULATION.value,
+        set_value="3 Years",
+        conditions={"criteria": [{"field_id": f_product.id, "operator": "EQUALS", "value": "Enterprise"}]}
+    )
+
+    # VISIBILITY: status_display hidden if product_type == "Standard"
+    r_vis_status = Rule(
+        entity_version_id=version.id, target_field_id=f_status.id,
+        rule_type=RuleType.VISIBILITY.value,
+        conditions={"criteria": [{"field_id": f_product.id, "operator": "NOT_EQUALS", "value": "Standard"}]}
+    )
+
+    # MANDATORY: status_display required if product_type == "Pro"
+    r_mand_status = Rule(
+        entity_version_id=version.id, target_field_id=f_status.id,
+        rule_type=RuleType.MANDATORY.value,
+        conditions={"criteria": [{"field_id": f_product.id, "operator": "EQUALS", "value": "Pro"}]}
+    )
+
+    db_session.add_all([
+        r_calc_cooling, r_calc_support, r_edit_notes,
+        r_avail_3y, r_calc_warranty, r_vis_status, r_mand_status
+    ])
+    db_session.commit()
+
+    return {
+        "entity_id": entity.id,
+        "version_id": version.id,
+        "fields": {
+            "product_type": f_product.id,
+            "cooling_system": f_cooling.id,
+            "support_tier": f_support.id,
+            "notes": f_notes.id,
+            "warranty": f_warranty.id,
+            "status_display": f_status.id,
+        },
+        "values": {
+            "standard": v_standard.id,
+            "pro": v_pro.id,
+            "enterprise": v_enterprise.id,
+            "passive": v_passive.id,
+            "active": v_active.id,
+            "liquid": v_liquid.id,
+            "1y": v_1y.id,
+            "3y": v_3y.id,
+        }
+    }

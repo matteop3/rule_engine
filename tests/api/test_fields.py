@@ -694,6 +694,106 @@ class TestFieldStateTransitions:
 
 
 # ============================================================
+# CALCULATION FIELD TRANSITION TESTS
+# ============================================================
+
+class TestFieldCalculationTransitions:
+    """Tests for CALCULATION rule guards on field state transitions."""
+
+    def test_free_to_non_free_blocked_by_calculation_rules(
+        self, client: TestClient, admin_headers, db_session, draft_version
+    ):
+        """
+        Test that free → non-free transition is blocked when CALCULATION rules target the field.
+        This is a CRITICAL business rule.
+        """
+        # Create a free-value field
+        target_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_transition_target",
+            label="Calc Transition Target",
+            data_type=FieldType.STRING.value,
+            is_free_value=True
+        )
+        source_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_transition_source",
+            label="Source",
+            data_type=FieldType.STRING.value,
+            is_free_value=True
+        )
+        db_session.add_all([target_field, source_field])
+        db_session.commit()
+
+        # Create a CALCULATION rule targeting the free field
+        calc_rule = Rule(
+            entity_version_id=draft_version.id,
+            target_field_id=target_field.id,
+            rule_type=RuleType.CALCULATION.value,
+            set_value="forced",
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]}
+        )
+        db_session.add(calc_rule)
+        db_session.commit()
+
+        # Try to switch from free to non-free → should fail
+        payload = {"is_free_value": False}
+
+        response = client.patch(
+            f"/fields/{target_field.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 409
+        assert "calculation" in response.json()["detail"].lower()
+
+    def test_free_to_non_free_allowed_without_calculation_rules(
+        self, client: TestClient, admin_headers, db_session, draft_version
+    ):
+        """Test that free → non-free transition works when no CALCULATION rules exist."""
+        # Create a free-value field with a MANDATORY rule (non-CALCULATION)
+        target_field = Field(
+            entity_version_id=draft_version.id,
+            name="no_calc_transition",
+            label="No Calc Transition",
+            data_type=FieldType.STRING.value,
+            is_free_value=True
+        )
+        source_field = Field(
+            entity_version_id=draft_version.id,
+            name="no_calc_source",
+            label="Source",
+            data_type=FieldType.NUMBER.value,
+            is_free_value=True
+        )
+        db_session.add_all([target_field, source_field])
+        db_session.commit()
+
+        # Create a non-CALCULATION rule
+        mand_rule = Rule(
+            entity_version_id=draft_version.id,
+            target_field_id=target_field.id,
+            rule_type=RuleType.MANDATORY.value,
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]}
+        )
+        db_session.add(mand_rule)
+        db_session.commit()
+
+        # Switch from free to non-free → should succeed
+        payload = {"is_free_value": False}
+
+        response = client.patch(
+            f"/fields/{target_field.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["is_free_value"] is False
+
+
+# ============================================================
 # EDGE CASES
 # ============================================================
 

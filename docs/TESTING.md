@@ -43,6 +43,7 @@ tests/
 ├── engine/                      # Rule engine business logic tests
 │   ├── __init__.py
 │   ├── test_api.py              # Engine calculation endpoint
+│   ├── test_calculation.py      # CALCULATION rule type (forced values, waterfall interactions, SKU, completeness)
 │   ├── test_dropdowns.py        # Cascading dropdown logic
 │   ├── test_logic.py            # Core engine logic (validation, mandatory, visibility, availability)
 │   ├── test_operators.py        # Operator tests (EQUALS, GREATER_THAN, IN, etc.)
@@ -123,6 +124,7 @@ tests/
 - `setup_sku_visibility_scenario`: SKU with visibility rules (hidden fields excluded)
 - `setup_sku_hidden_default_scenario`: SKU with `is_hidden=True` fields
 - `setup_sku_availability_scenario`: SKU integrated with availability rules
+- `setup_calculation_scenario`: CALCULATION rule type scenario with waterfall interactions (visibility, editability, availability, mandatory, validation)
 
 ### Configuration Lifecycle Fixtures (fixtures/configurations_lifecycle.py)
 - **Users:** `lifecycle_admin`, `lifecycle_author`, `lifecycle_user`, `second_lifecycle_user` with corresponding headers
@@ -177,12 +179,12 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
-| API           | 21    | ~270          | Endpoint CRUD and lifecycle ops  |
-| Engine        | 6     | ~58           | Business logic, rules, SKU gen   |
-| Integration   | 11    | ~15           | End-to-end workflows             |
+| API           | 21    | ~290          | Endpoint CRUD and lifecycle ops  |
+| Engine        | 7     | ~75           | Business logic, rules, SKU gen   |
+| Integration   | 12    | ~18           | End-to-end workflows             |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
 | Stress        | 2     | ~15           | Concurrency and edge cases       |
-| **Total**     | **41**| **~373**      |                                  |
+| **Total**     | **43**| **~413**      |                                  |
 
 ## Test Coverage
 
@@ -194,7 +196,7 @@ The test suite provides comprehensive coverage across all application layers:
 - **Configuration Lifecycle** (~155 tests): Status management, clone, upgrade, finalize operations
 - **Entities & Versions**: Lifecycle management, publishing, archiving, cloning
 - **Fields & Values**: CRUD operations, data type validation, constraints, `sku_modifier` attribute
-- **Rules**: CRUD, type-specific logic, edge cases, complex scenarios
+- **Rules**: CRUD, type-specific logic (including CALCULATION `set_value` validation), edge cases, complex scenarios
 - **Users**: User management, role assignment, access control
 
 #### DRAFT-only Policy Coverage
@@ -273,12 +275,25 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **FINALIZED → Soft Deleted**: ADMIN only, USER denied (HTTP 403)
 - **Any → DRAFT**: CLONE always creates new DRAFT
 
-### Rule Engine (~33 tests)
+### Rule Engine (~48 tests)
 - **Core Logic**: Field validation, mandatory checks, visibility rules, availability logic
+- **CALCULATION Rules**: Forced values, waterfall interactions, multiple rules, running context, SKU, completeness
 - **Operators**: All comparison operators (EQUALS, NOT_EQUALS, GREATER_THAN, GREATER_THAN_OR_EQUAL, LESS_THAN, LESS_THAN_OR_EQUAL, IN)
 - **Dropdown Logic**: Cascading dropdowns, dynamic value filtering
 - **SKU Generation**: Smart SKU generation with modifiers (see below)
 - **Stress Tests**: Domino effects, complex dependencies, performance under load
+
+#### CALCULATION Rule Tests (`test_calculation.py`)
+The CALCULATION rule type is comprehensively tested:
+
+| Category | Tests | Description |
+|----------|-------|-------------|
+| Basic Behavior | 4 | Fires/doesn't fire, free-value vs non-free field output |
+| Waterfall Interactions | 6 | Hidden field skip, EDITABILITY/AVAILABILITY skip, MANDATORY kept, VALIDATION safety net |
+| Multiple Rules | 1 | First passing CALCULATION wins |
+| Running Context | 1 | Calculated values propagate to downstream conditions |
+| SKU Integration | 1 | Calculated values feed into SKU generation |
+| Completeness | 2 | Calculated fields satisfy required-field checks |
 
 #### SKU Generation Tests (`test_sku_generation.py`)
 The SKU generation feature is comprehensively tested across multiple scenarios:
@@ -303,7 +318,7 @@ The SKU generation feature is comprehensively tested across multiple scenarios:
 - `test_free_value_field_modifier_combined_with_regular_values`: Free-value modifiers combine correctly with regular value modifiers
 - `test_free_value_field_without_modifier_config_still_ignored`: Backward compatibility - free-value fields without config are still ignored
 
-### Integration & E2E (~15 tests)
+### Integration & E2E (~18 tests)
 - **Data Integrity**: Referential integrity, orphan prevention, unique constraints
 - **Cross-Module Workflows**: Entity lifecycle, cross-router consistency
 - **Cascade Operations**: Delete/update propagation

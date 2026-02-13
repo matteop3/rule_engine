@@ -992,6 +992,90 @@ class TestEngineRules:
 
         assert alarm_field["is_required"] is True
 
+    def test_calculation_rule_forces_value_and_readonly(
+        self, client: TestClient, admin_headers, engine_scenario, db_session
+    ):
+        """Test that CALCULATION rule forces value and makes field readonly via API."""
+        # Add a CALCULATION rule: if vehicle_type == TRUCK → coverage forced to PREMIUM
+        calc_rule = Rule(
+            entity_version_id=engine_scenario["version"].id,
+            target_field_id=engine_scenario["fields"]["coverage"].id,
+            rule_type=RuleType.CALCULATION.value,
+            description="Force premium coverage for trucks",
+            set_value="PREMIUM",
+            conditions={"criteria": [
+                {"field_id": engine_scenario["fields"]["type"].id, "operator": "EQUALS", "value": "TRUCK"}
+            ]}
+        )
+        db_session.add(calc_rule)
+        db_session.commit()
+
+        # Trigger: TRUCK → should force PREMIUM
+        payload = {
+            "entity_id": engine_scenario["entity"].id,
+            "current_state": [
+                {"field_id": engine_scenario["fields"]["type"].id, "value": "TRUCK"}
+            ]
+        }
+
+        response = client.post("/engine/calculate", json=payload, headers=admin_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+
+        coverage = next(
+            f for f in data["fields"]
+            if f["field_id"] == engine_scenario["fields"]["coverage"].id
+        )
+
+        assert coverage["current_value"] == "PREMIUM"
+        assert coverage["is_readonly"] is True
+        # Non-free field: available_options should contain only the forced value
+        assert len(coverage["available_options"]) == 1
+        assert coverage["available_options"][0]["value"] == "PREMIUM"
+
+    def test_calculation_rule_does_not_fire_via_api(
+        self, client: TestClient, admin_headers, engine_scenario, db_session
+    ):
+        """Test that CALCULATION rule does NOT fire when condition is not met via API."""
+        # Add a CALCULATION rule: if vehicle_type == TRUCK → coverage forced to PREMIUM
+        calc_rule = Rule(
+            entity_version_id=engine_scenario["version"].id,
+            target_field_id=engine_scenario["fields"]["coverage"].id,
+            rule_type=RuleType.CALCULATION.value,
+            description="Force premium coverage for trucks",
+            set_value="PREMIUM",
+            conditions={"criteria": [
+                {"field_id": engine_scenario["fields"]["type"].id, "operator": "EQUALS", "value": "TRUCK"}
+            ]}
+        )
+        db_session.add(calc_rule)
+        db_session.commit()
+
+        # Non-trigger: CAR → coverage should stay user-controlled
+        payload = {
+            "entity_id": engine_scenario["entity"].id,
+            "current_state": [
+                {"field_id": engine_scenario["fields"]["type"].id, "value": "CAR"},
+                {"field_id": engine_scenario["fields"]["coverage"].id, "value": "BASIC"}
+            ]
+        }
+
+        response = client.post("/engine/calculate", json=payload, headers=admin_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+
+        coverage = next(
+            f for f in data["fields"]
+            if f["field_id"] == engine_scenario["fields"]["coverage"].id
+        )
+
+        assert coverage["current_value"] == "BASIC"
+        assert coverage["is_readonly"] is False
+        # All options available
+        assert len(coverage["available_options"]) == 2
+
     def test_multiple_rules_on_same_field(
         self, client: TestClient, admin_headers, engine_scenario
     ):

@@ -36,6 +36,7 @@ class RuleBase(BaseSchema):
     description: Optional[str] = None
     rule_type: RuleType = RuleType.AVAILABILITY # Default
     error_message: Optional[str] = None
+    set_value: Optional[str] = None
 
 class RuleCreate(RuleBase):
     """ Payload to create a new version. """
@@ -50,7 +51,9 @@ class RuleCreate(RuleBase):
         r_type = self.rule_type
         t_value = self.target_value_id
         err_msg = self.error_message
+        s_value = self.set_value
 
+        # target_value_id: only AVAILABILITY
         if t_value is not None:
             if r_type != RuleType.AVAILABILITY:
                 raise ValueError(f"Consistency error: if 'target_value_id' is provided, rule_type must be '{RuleType.AVAILABILITY}'. Got '{r_type}'.")
@@ -58,8 +61,15 @@ class RuleCreate(RuleBase):
             if r_type == RuleType.AVAILABILITY:
                  raise ValueError(f"Consistency error: if 'target_value_id' is None, rule_type cannot be '{RuleType.AVAILABILITY}'.")
 
+        # error_message: only VALIDATION
         if err_msg is not None and r_type != RuleType.VALIDATION:
             raise ValueError(f"Consistency error: 'error_message' is only allowed for rule_type '{RuleType.VALIDATION}'. Got '{r_type}'.")
+
+        # set_value: only CALCULATION (and mandatory for it)
+        if s_value is not None and r_type != RuleType.CALCULATION:
+            raise ValueError(f"Consistency error: 'set_value' is only allowed for rule_type '{RuleType.CALCULATION}'. Got '{r_type}'.")
+        if r_type == RuleType.CALCULATION and s_value is None:
+            raise ValueError(f"Consistency error: 'set_value' is required for rule_type '{RuleType.CALCULATION}'.")
 
         return self
 
@@ -75,6 +85,7 @@ class RuleUpdate(BaseSchema):
     description: Optional[str] = None
     rule_type: Optional[RuleType] = None
     error_message: Optional[str] = None
+    set_value: Optional[str] = None
     target_field_id: Optional[int] = None
     target_value_id: Optional[int] = None
 
@@ -98,6 +109,14 @@ class RuleUpdate(BaseSchema):
                 raise ValueError(
                     f"Consistency error: 'error_message' is only allowed for "
                     f"rule_type '{RuleType.VALIDATION}'. Got '{self.rule_type}'."
+                )
+
+        # Validate set_value + rule_type consistency
+        if self.set_value is not None and self.rule_type is not None:
+            if self.rule_type != RuleType.CALCULATION:
+                raise ValueError(
+                    f"Consistency error: 'set_value' is only allowed for "
+                    f"rule_type '{RuleType.CALCULATION}'. Got '{self.rule_type}'."
                 )
 
         return self

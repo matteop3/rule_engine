@@ -331,6 +331,23 @@ def validate_value_not_used_in_rules(db: Session, value: Value) -> None:
             detail=f"Cannot delete Value because it is the explicit target of {rules_targeting_value} Rules."
         )
 
+    # Check CALCULATION rules: set_value references this Value's string
+    from app.models.domain import RuleType
+    calc_rules_count = db.query(Rule).filter(
+        Rule.target_field_id == value.field_id,
+        Rule.rule_type == RuleType.CALCULATION,
+        Rule.set_value == value.value
+    ).count()
+    if calc_rules_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot delete Value '{value.value}' because it is referenced by "
+                f"{calc_rules_count} CALCULATION rule(s) via 'set_value'. "
+                f"Update or delete those rules first."
+            )
+        )
+
     # Deep scan: check usage in JSON conditions (implicit usage)
     parent_field = value.field
     if not parent_field:

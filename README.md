@@ -14,6 +14,7 @@ A headless, API-first rule engine for building product configurators (CPQ system
 
 Product configurators are complex. A laptop configurator needs to:
 - Show/hide fields based on selections (GPU options only for "Pro" models)
+- Force field values based on conditions (Enterprise chassis forces cooling = "Passive")
 - Filter available values dynamically (16GB RAM unavailable with entry-level CPU)
 - Validate combinations (Pro GPU not allowed with Compact chassis)
 - Generate SKU codes from selections (LPT-PRO-16G-512S)
@@ -37,7 +38,7 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 ## Features
 
 ### Core Engine
-- **5 rule types**: Visibility, Availability, Editability, Mandatory, Validation
+- **6 rule types**: Visibility, Calculation, Availability, Editability, Mandatory, Validation
 - **Waterfall evaluation**: Rules processed in field order with cascading effects
 - **Operator support**: Equals, NotEquals, GreaterThan, GreaterThanOrEqual, LessThan, LessThanOrEqual, In
 - **Cascading dropdowns**: Field B options filter based on Field A selection
@@ -243,9 +244,10 @@ erDiagram
         int entity_version_id FK
         int target_field_id FK
         int target_value_id FK "nullable"
-        enum rule_type "visibility|availability|editability|mandatory|validation"
+        enum rule_type "visibility|calculation|availability|editability|mandatory|validation"
         json conditions
-        string error_message
+        string error_message "nullable, VALIDATION only"
+        string set_value "nullable, CALCULATION only"
     }
 
     Configuration {
@@ -329,11 +331,16 @@ flowchart TD
     G --> H{Is visible?}
 
     H -->|No| I[Mark hidden, skip remaining rules]
-    H -->|Yes| J[Apply AVAILABILITY rules]
+    H -->|Yes| CA[Apply CALCULATION rules]
 
-    J --> K[Filter available values]
-    K --> L[Apply EDITABILITY rules]
+    CA --> CB{Is calculated?}
+    CB -->|Yes| CC[Set forced value, mark readonly, skip to MANDATORY]
+    CB -->|No| J[Apply EDITABILITY rules]
+
+    J --> K[Apply AVAILABILITY rules]
+    K --> L[Filter available values]
     L --> M[Apply MANDATORY rules]
+    CC --> M
     M --> N[Apply VALIDATION rules]
 
     N --> O[Collect errors if any]
@@ -490,6 +497,7 @@ rule_engine/
 - [Token Rotation Demo](docs/ROTATION_DEMO.md) - Refresh token rotation examples
 - [ADR: Internationalization](docs/ADR_I18N.md) - i18n architecture decision
 - [ADR: Rule Expressions](docs/ADR_RULE_EXPRESSIONS.md) - Why rules use single-field conditions
+- [ADR: Calculation Rules](docs/ADR_CALCULATION_RULES.md) - How CALCULATION rules derive field values
 - [ADR: Inference Tree](docs/ADR_INFERENCE_TREE.md) - Why rules use waterfall evaluation instead of a dependency graph
 - [ADR: Re-hydration](docs/ADR_REHYDRATION.md) - Why configurations store raw inputs and recalculate on read
 

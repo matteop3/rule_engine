@@ -153,6 +153,7 @@ def upgrade() -> None:
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('conditions', sa.JSON(), nullable=False, comment='JSON condition criteria'),
     sa.Column('error_message', sa.String(), nullable=True),
+    sa.Column('set_value', sa.String(length=255), nullable=True, comment='Only used for CALCULATION rules: value to assign when conditions are met'),
     sa.ForeignKeyConstraint(['entity_version_id'], ['entity_versions.id'], ),
     sa.ForeignKeyConstraint(['target_field_id'], ['fields.id'], ),
     sa.ForeignKeyConstraint(['target_value_id'], ['values.id'], ),

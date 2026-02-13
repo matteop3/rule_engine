@@ -556,6 +556,54 @@ class TestCloneVersion:
         assert new_field_id_in_condition == cloned_value_field.id
         assert new_field_id_in_condition != original_field_id_in_condition
 
+    def test_clone_copies_calculation_rule_set_value(
+        self, client: TestClient, admin_headers, db_session, version_with_data
+    ):
+        """
+        Test Deep Clone: verifies that CALCULATION rules with set_value are properly copied.
+        This is a CRITICAL feature.
+        """
+        from app.models.domain import RuleType
+
+        source_version = version_with_data["version"]
+        source_fields = version_with_data["fields"]
+
+        # Add a CALCULATION rule to the source version
+        calc_rule = Rule(
+            entity_version_id=source_version.id,
+            target_field_id=source_fields["optional"].id,
+            rule_type=RuleType.CALCULATION.value,
+            set_value="forced_value",
+            description="Calculation rule for clone test",
+            conditions={"criteria": [{"field_id": source_fields["type"].id, "operator": "EQUALS", "value": "CAR"}]}
+        )
+        db_session.add(calc_rule)
+        db_session.commit()
+
+        payload = {"changelog": "Clone with CALCULATION"}
+        response = client.post(
+            f"/versions/{source_version.id}/clone",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        new_version_id = response.json()["id"]
+
+        # Get cloned rules
+        cloned_rules = db_session.query(Rule).filter(
+            Rule.entity_version_id == new_version_id
+        ).all()
+
+        # Find the cloned CALCULATION rule
+        cloned_calc = [r for r in cloned_rules if r.rule_type == RuleType.CALCULATION.value]
+        assert len(cloned_calc) == 1
+        assert cloned_calc[0].set_value == "forced_value"
+        assert cloned_calc[0].description == "Calculation rule for clone test"
+
+        # Verify target_field_id was remapped (should not be the same as source)
+        assert cloned_calc[0].target_field_id != source_fields["optional"].id
+
     def test_clone_nonexistent_returns_404(self, client: TestClient, admin_headers):
         """Test that cloning non-existent version returns 404."""
         payload = {"changelog": "Ghost clone"}

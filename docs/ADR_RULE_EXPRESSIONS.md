@@ -85,7 +85,7 @@ For cases where cross-field validation is genuinely required:
 
 Add a field type that computes its value from other fields, then validate against that.
 
-**Deferred**: This is a reasonable future enhancement but adds complexity to the field model and evaluation order. Could be reconsidered if demand arises.
+**Partially addressed**: The CALCULATION rule type (see [ADR: Calculation Rules](ADR_CALCULATION_RULES.md)) covers the most common use case — static value assignment based on conditions (e.g., "if chassis = Compact, force cooling = Passive"). Arithmetic expressions (e.g., `total = quantity * price`) remain out of scope and should be handled at the application layer.
 
 ## Consequences
 

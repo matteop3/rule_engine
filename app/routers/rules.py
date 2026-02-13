@@ -139,6 +139,22 @@ def create_rule(
     if rule_data.target_value_id is not None:
         validate_value_belongs_to_field(db, rule_data.target_value_id, rule_data.target_field_id)
 
+    # Validate set_value against field's defined Values (CALCULATION on non-free fields)
+    if rule_data.rule_type == RuleType.CALCULATION and rule_data.set_value is not None:
+        target_field = db.query(Field).filter(Field.id == rule_data.target_field_id).first()
+        if target_field and not target_field.is_free_value:
+            valid_values = db.query(Value.value).filter(Value.field_id == target_field.id).all()
+            valid_value_strings = [v[0] for v in valid_values]
+            if rule_data.set_value not in valid_value_strings:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Consistency error: 'set_value' ('{rule_data.set_value}') is not among the "
+                        f"defined Values for field '{target_field.name}' (ID {target_field.id}). "
+                        f"Valid values: {valid_value_strings}."
+                    )
+                )
+
     # Create the Rule
     with db_transaction(db, f"create_rule for version {version.id}"):
         new_rule = Rule(**rule_data.model_dump())
@@ -209,6 +225,33 @@ def update_rule(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Consistency error: 'error_message' is only allowed for rule_type 'validation'. Got '{final_rule_type}'."
             )
+
+    # Validate set_value consistency
+    if rule_update.set_value is not None:
+        final_rule_type = rule_update.rule_type if rule_update.rule_type is not None else rule.rule_type
+        if final_rule_type != RuleType.CALCULATION:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Consistency error: 'set_value' is only allowed for rule_type 'calculation'. Got '{final_rule_type}'."
+            )
+
+    # Validate set_value against field's defined Values (CALCULATION on non-free fields)
+    final_rule_type = rule_update.rule_type if rule_update.rule_type is not None else rule.rule_type
+    final_set_value = rule_update.set_value if rule_update.set_value is not None else rule.set_value
+    if final_rule_type == RuleType.CALCULATION and final_set_value is not None:
+        target_field = db.query(Field).filter(Field.id == final_target_field_id).first()
+        if target_field and not target_field.is_free_value:
+            valid_values = db.query(Value.value).filter(Value.field_id == target_field.id).all()
+            valid_value_strings = [v[0] for v in valid_values]
+            if final_set_value not in valid_value_strings:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Consistency error: 'set_value' ('{final_set_value}') is not among the "
+                        f"defined Values for field '{target_field.name}' (ID {target_field.id}). "
+                        f"Valid values: {valid_value_strings}."
+                    )
+                )
 
     # Apply updates
     update_data = rule_update.model_dump(exclude_unset=True)

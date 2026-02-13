@@ -156,6 +156,7 @@ Available fixtures from tests.fixtures.engine:
 - setup_dropdown_scenario (cascading dropdown scenario)
 - setup_operator_scenario (operator testing scenario)
 - setup_stress_scenario (stress testing scenario)
+- setup_calculation_scenario (CALCULATION rule testing scenario)
 
 Usage example:
     def test_something(client, admin_headers, db_session):

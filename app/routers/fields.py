@@ -13,7 +13,7 @@ from app.dependencies import (
     get_editable_field,
     db_transaction
 )
-from app.models.domain import EntityVersion, Field, Value, Rule, User
+from app.models.domain import EntityVersion, Field, Value, Rule, RuleType, User
 from app.schemas import FieldCreate, FieldRead, FieldUpdate
 
 
@@ -220,6 +220,28 @@ def update_field(
                 detail="Cannot set 'default_value' when switching to a non-free field. "
                        "Use Value.is_default instead."
             )
+
+        # Check integrity: are there CALCULATION rules targeting this field?
+        # Free fields accept any set_value, but non-free fields require set_value
+        # to match a defined Value. Since the field has no Values yet, block the transition.
+        calc_rules_count = db.query(Rule).filter(
+            Rule.target_field_id == field.id,
+            Rule.rule_type == RuleType.CALCULATION
+        ).count()
+        if calc_rules_count > 0:
+            logger.warning(
+                f"Update field {field.id} failed: cannot switch to non-free "
+                f"with {calc_rules_count} CALCULATION rules targeting it"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot change 'is_free_value' to False because this field is targeted by "
+                    f"{calc_rules_count} CALCULATION rule(s) with 'set_value' that may not match "
+                    f"future Values. Delete or update those rules first."
+                )
+            )
+
         # Flag to force cleanup later
         force_default_reset = True
 

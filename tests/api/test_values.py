@@ -652,6 +652,209 @@ class TestValueOwnership:
 
 
 # ============================================================
+# CALCULATION VALUE INTEGRITY TESTS
+# ============================================================
+
+class TestValueCalculationIntegrity:
+    """Tests for CALCULATION rule guards on Value delete/update."""
+
+    def test_delete_value_blocked_by_calculation_set_value(
+        self, client: TestClient, admin_headers, db_session, draft_version
+    ):
+        """
+        Test that deleting a Value referenced by a CALCULATION rule's set_value is blocked.
+        This is a CRITICAL business rule.
+        """
+        target_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_del_target",
+            label="Calc Del Target",
+            data_type=FieldType.STRING.value,
+            is_free_value=False
+        )
+        source_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_del_source",
+            label="Source",
+            data_type=FieldType.STRING.value,
+            is_free_value=True
+        )
+        db_session.add_all([target_field, source_field])
+        db_session.flush()
+
+        # Create values for target field
+        val_referenced = Value(field_id=target_field.id, value="REFERENCED", label="Referenced")
+        val_other = Value(field_id=target_field.id, value="OTHER", label="Other")
+        db_session.add_all([val_referenced, val_other])
+        db_session.flush()
+
+        # Create CALCULATION rule that sets "REFERENCED"
+        calc_rule = Rule(
+            entity_version_id=draft_version.id,
+            target_field_id=target_field.id,
+            rule_type=RuleType.CALCULATION.value,
+            set_value="REFERENCED",
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]}
+        )
+        db_session.add(calc_rule)
+        db_session.commit()
+
+        # Try to delete the referenced value → should fail
+        response = client.delete(f"/values/{val_referenced.id}", headers=admin_headers)
+
+        assert response.status_code == 409
+        assert "calculation" in response.json()["detail"].lower()
+
+    def test_delete_value_allowed_when_no_calculation_references(
+        self, client: TestClient, admin_headers, db_session, draft_version
+    ):
+        """Test that deleting a Value not referenced by CALCULATION rules works."""
+        target_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_del_ok",
+            label="Calc Del OK",
+            data_type=FieldType.STRING.value,
+            is_free_value=False
+        )
+        db_session.add(target_field)
+        db_session.flush()
+
+        val = Value(field_id=target_field.id, value="NO_REF", label="No Ref")
+        db_session.add(val)
+        db_session.commit()
+
+        response = client.delete(f"/values/{val.id}", headers=admin_headers)
+
+        assert response.status_code == 204
+
+    def test_update_value_string_blocked_by_calculation_set_value(
+        self, client: TestClient, admin_headers, db_session, draft_version
+    ):
+        """
+        Test that updating a Value.value string referenced by CALCULATION set_value is blocked.
+        This is a CRITICAL business rule.
+        """
+        target_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_upd_target",
+            label="Calc Upd Target",
+            data_type=FieldType.STRING.value,
+            is_free_value=False
+        )
+        source_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_upd_source",
+            label="Source",
+            data_type=FieldType.STRING.value,
+            is_free_value=True
+        )
+        db_session.add_all([target_field, source_field])
+        db_session.flush()
+
+        val = Value(field_id=target_field.id, value="CALC_REF", label="Calc Ref")
+        db_session.add(val)
+        db_session.flush()
+
+        calc_rule = Rule(
+            entity_version_id=draft_version.id,
+            target_field_id=target_field.id,
+            rule_type=RuleType.CALCULATION.value,
+            set_value="CALC_REF",
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]}
+        )
+        db_session.add(calc_rule)
+        db_session.commit()
+
+        # Try to change the value string → should fail
+        payload = {"value": "CHANGED"}
+
+        response = client.patch(
+            f"/values/{val.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 409
+        assert "calculation" in response.json()["detail"].lower()
+
+    def test_update_value_string_allowed_when_no_calculation_references(
+        self, client: TestClient, admin_headers, db_session, draft_version
+    ):
+        """Test that updating Value.value works when no CALCULATION rules reference it."""
+        target_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_upd_ok",
+            label="Calc Upd OK",
+            data_type=FieldType.STRING.value,
+            is_free_value=False
+        )
+        db_session.add(target_field)
+        db_session.flush()
+
+        val = Value(field_id=target_field.id, value="OLD_VAL", label="Old Val")
+        db_session.add(val)
+        db_session.commit()
+
+        payload = {"value": "NEW_VAL"}
+
+        response = client.patch(
+            f"/values/{val.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["value"] == "NEW_VAL"
+
+    def test_update_value_label_allowed_even_with_calculation_reference(
+        self, client: TestClient, admin_headers, db_session, draft_version
+    ):
+        """Test that updating label (not value string) is allowed even with CALCULATION ref."""
+        target_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_label_upd",
+            label="Calc Label Upd",
+            data_type=FieldType.STRING.value,
+            is_free_value=False
+        )
+        source_field = Field(
+            entity_version_id=draft_version.id,
+            name="calc_label_src",
+            label="Source",
+            data_type=FieldType.STRING.value,
+            is_free_value=True
+        )
+        db_session.add_all([target_field, source_field])
+        db_session.flush()
+
+        val = Value(field_id=target_field.id, value="STABLE", label="Old Label")
+        db_session.add(val)
+        db_session.flush()
+
+        calc_rule = Rule(
+            entity_version_id=draft_version.id,
+            target_field_id=target_field.id,
+            rule_type=RuleType.CALCULATION.value,
+            set_value="STABLE",
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]}
+        )
+        db_session.add(calc_rule)
+        db_session.commit()
+
+        # Update only the label → should succeed (value string unchanged)
+        payload = {"label": "New Label"}
+
+        response = client.patch(
+            f"/values/{val.id}",
+            json=payload,
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["label"] == "New Label"
+
+
+# ============================================================
 # EDGE CASES
 # ============================================================
 

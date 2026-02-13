@@ -99,12 +99,14 @@ class RuleType(str, enum.Enum):
 
     - VISIBILITY: Controls whether a field is shown or hidden
     - AVAILABILITY: Filters available options for multi-choice fields
+    - CALCULATION: Sets a field's value and makes it implicitly readonly
     - EDITABILITY: Controls whether a field is read-only or writable
     - MANDATORY: Controls whether a field is required or optional
     - VALIDATION: Validates field content against business rules
     """
     VISIBILITY = "visibility"
     AVAILABILITY = "availability"
+    CALCULATION = "calculation"
     EDITABILITY = "editability"
     MANDATORY = "mandatory"
     VALIDATION = "validation"
@@ -372,6 +374,11 @@ class Rule(Base):
         String,
         nullable=True,
         comment="Only used for VALIDATION rules: message shown when validation fails"
+    )
+    set_value: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Only used for CALCULATION rules: value to assign when conditions are met"
     )
 
     # Relationships

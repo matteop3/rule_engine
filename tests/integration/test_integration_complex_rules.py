@@ -295,3 +295,155 @@ class TestComplexRuleInteractions:
         assert "BASIC" not in business_options
         assert "PRO" in business_options
         assert "ENTERPRISE" in business_options
+
+    def test_calculation_rule_full_workflow(
+        self, client: TestClient, admin_headers
+    ):
+        """
+        E2E: CALCULATION rule forces value and makes field readonly.
+        Create entity → fields → values → CALCULATION rule → publish → calculate.
+        """
+        # Create entity and version
+        entity_resp = client.post(
+            "/entities/",
+            json={"name": "Calculation E2E", "description": "CALCULATION workflow"},
+            headers=admin_headers
+        )
+        entity_id = entity_resp.json()["id"]
+
+        version_resp = client.post(
+            "/versions/",
+            json={"entity_id": entity_id, "changelog": "Calculation version"},
+            headers=admin_headers
+        )
+        version_id = version_resp.json()["id"]
+
+        # Source field (dropdown trigger)
+        field_tier = client.post(
+            "/fields/",
+            json={
+                "entity_version_id": version_id,
+                "name": "tier",
+                "label": "Tier",
+                "data_type": "string",
+                "is_free_value": False,
+                "is_required": True,
+                "sequence": 1
+            },
+            headers=admin_headers
+        ).json()
+
+        # Target field (non-free, will be calculated)
+        field_sla = client.post(
+            "/fields/",
+            json={
+                "entity_version_id": version_id,
+                "name": "sla",
+                "label": "SLA",
+                "data_type": "string",
+                "is_free_value": False,
+                "is_required": True,
+                "sequence": 2
+            },
+            headers=admin_headers
+        ).json()
+
+        # Free-value target field (will also be calculated)
+        field_notes = client.post(
+            "/fields/",
+            json={
+                "entity_version_id": version_id,
+                "name": "auto_notes",
+                "label": "Auto Notes",
+                "data_type": "string",
+                "is_free_value": True,
+                "is_required": False,
+                "sequence": 3
+            },
+            headers=admin_headers
+        ).json()
+
+        # Values for tier
+        client.post("/values/", json={"field_id": field_tier["id"], "value": "BASIC", "label": "Basic", "is_default": True}, headers=admin_headers)
+        client.post("/values/", json={"field_id": field_tier["id"], "value": "ENTERPRISE", "label": "Enterprise", "is_default": False}, headers=admin_headers)
+
+        # Values for sla
+        client.post("/values/", json={"field_id": field_sla["id"], "value": "STANDARD", "label": "Standard", "is_default": True}, headers=admin_headers)
+        client.post("/values/", json={"field_id": field_sla["id"], "value": "PRIORITY", "label": "Priority", "is_default": False}, headers=admin_headers)
+
+        # CALCULATION rule: ENTERPRISE tier → SLA forced to PRIORITY
+        client.post(
+            "/rules/",
+            json={
+                "entity_version_id": version_id,
+                "target_field_id": field_sla["id"],
+                "rule_type": "calculation",
+                "description": "Enterprise gets priority SLA",
+                "set_value": "PRIORITY",
+                "conditions": {"criteria": [{"field_id": field_tier["id"], "operator": "EQUALS", "value": "ENTERPRISE"}]}
+            },
+            headers=admin_headers
+        )
+
+        # CALCULATION rule on free field: ENTERPRISE → auto_notes forced
+        client.post(
+            "/rules/",
+            json={
+                "entity_version_id": version_id,
+                "target_field_id": field_notes["id"],
+                "rule_type": "calculation",
+                "description": "Enterprise gets auto note",
+                "set_value": "Enterprise customer - priority handling",
+                "conditions": {"criteria": [{"field_id": field_tier["id"], "operator": "EQUALS", "value": "ENTERPRISE"}]}
+            },
+            headers=admin_headers
+        )
+
+        # Publish
+        pub_resp = client.post(f"/versions/{version_id}/publish", headers=admin_headers)
+        assert pub_resp.status_code == 200
+
+        # Test Case 1: ENTERPRISE → both fields calculated
+        calc1 = client.post(
+            "/engine/calculate",
+            json={
+                "entity_id": entity_id,
+                "current_state": [
+                    {"field_id": field_tier["id"], "value": "ENTERPRISE"}
+                ]
+            },
+            headers=admin_headers
+        ).json()
+
+        sla1 = next(f for f in calc1["fields"] if f["field_id"] == field_sla["id"])
+        assert sla1["current_value"] == "PRIORITY"
+        assert sla1["is_readonly"] is True
+        assert len(sla1["available_options"]) == 1
+        assert sla1["available_options"][0]["value"] == "PRIORITY"
+
+        notes1 = next(f for f in calc1["fields"] if f["field_id"] == field_notes["id"])
+        assert notes1["current_value"] == "Enterprise customer - priority handling"
+        assert notes1["is_readonly"] is True
+        assert notes1["available_options"] == []
+
+        # Test Case 2: BASIC → no calculation fires, user-controlled
+        calc2 = client.post(
+            "/engine/calculate",
+            json={
+                "entity_id": entity_id,
+                "current_state": [
+                    {"field_id": field_tier["id"], "value": "BASIC"},
+                    {"field_id": field_sla["id"], "value": "STANDARD"}
+                ]
+            },
+            headers=admin_headers
+        ).json()
+
+        sla2 = next(f for f in calc2["fields"] if f["field_id"] == field_sla["id"])
+        assert sla2["current_value"] == "STANDARD"
+        assert sla2["is_readonly"] is False
+        assert len(sla2["available_options"]) == 2  # Both options available
+
+        notes2 = next(f for f in calc2["fields"] if f["field_id"] == field_notes["id"])
+        assert notes2["current_value"] is None
+        assert notes2["is_readonly"] is False

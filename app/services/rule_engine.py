@@ -279,11 +279,12 @@ class RuleEngineService:
     ) -> FieldOutputState:
         """
         Processes a single field through the waterfall logic:
-        1. Visibility
-        2. Editability
-        3. Mandatory
-        4. Availability
-        5. Validation
+        1. Visibility    → if hidden, early return
+        2. Calculation   → if calculated, set value + readonly, skip to Mandatory
+        3. Editability   → skipped if calculated
+        4. Availability  → skipped if calculated
+        5. Mandatory
+        6. Validation
         """
         logger.debug(f"Processing field {field.name} (id={field.id})")
 
@@ -303,14 +304,58 @@ class RuleEngineService:
                 is_hidden=True,
                 error_message=None
             )
-        
-        # Layer 2: Editability
+
+        # Layer 2: Calculation
+        calculated_value = self._evaluate_calculation(field, all_rules, running_context, type_map)
+
+        if calculated_value is not None:
+            logger.debug(f"Field {field.name} is calculated: value={calculated_value}")
+
+            # Update context with calculated value
+            running_context[field.id] = calculated_value
+
+            # Build available_options: single entry for non-free, empty for free
+            calc_options: List[ValueOption] = []
+            if not field.is_free_value:
+                possible_values = values_by_field.get(field.id, [])
+                for v in possible_values:
+                    if v.value == calculated_value:
+                        calc_options = [ValueOption(
+                            id=v.id, value=v.value, label=v.label, is_default=v.is_default
+                        )]
+                        break
+
+            # Skip EDITABILITY and AVAILABILITY, jump to MANDATORY
+            is_required = self._evaluate_mandatory(field, all_rules, running_context, type_map)
+
+            # VALIDATION as safety net
+            validation_error = self._evaluate_validation(
+                field=field, all_rules=all_rules, final_value=calculated_value,
+                running_context=running_context, type_map=type_map, is_required=is_required
+            )
+
+            if validation_error:
+                logger.debug(f"Field {field.name} (calculated) has validation error: {validation_error}")
+
+            return FieldOutputState(
+                field_id=field.id,
+                field_name=field.name,
+                field_label=field.label,
+                current_value=calculated_value,
+                available_options=calc_options,
+                is_required=is_required,
+                is_readonly=True,
+                is_hidden=False,
+                error_message=validation_error
+            )
+
+        # Layer 3: Editability
         is_readonly = self._evaluate_editability(field, all_rules, running_context, type_map)
-        
-        # Layer 3: Mandatory
+
+        # Layer 4: Mandatory
         is_required = self._evaluate_mandatory(field, all_rules, running_context, type_map)
-        
-        # Layer 4: Availability & Value selection
+
+        # Layer 5: Availability & Value selection
         final_value, available_options = self._evaluate_availability(
             field=field,
             values_by_field=values_by_field,
@@ -320,11 +365,11 @@ class RuleEngineService:
             type_map=type_map,
             is_required=is_required
         )
-        
+
         # Update context before validation
         running_context[field.id] = final_value
-        
-        # Layer 5: Validation
+
+        # Layer 6: Validation
         validation_error = self._evaluate_validation(
             field=field,
             all_rules=all_rules,
@@ -447,6 +492,24 @@ class RuleEngineService:
             default_when_no_rules=not field.is_hidden,
             value_when_rule_passes=True  # Visible when rule passes
         )
+
+    def _evaluate_calculation(
+        self,
+        field: Field,
+        all_rules: List[Rule],
+        running_context: Dict[int, Any],
+        type_map: Dict[int, str]
+    ) -> Optional[str]:
+        """
+        Layer 2: Determines if a field's value is system-determined.
+        Returns the set_value if a CALCULATION rule passes, else None.
+        First passing rule wins.
+        """
+        calc_rules = self._get_rules_by_type(field.id, RuleType.CALCULATION, all_rules)
+        for rule in calc_rules:
+            if self._evaluate_rule(rule.conditions, running_context, type_map):
+                return rule.set_value
+        return None
 
     def _evaluate_editability(
         self,
