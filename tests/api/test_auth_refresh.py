@@ -143,12 +143,12 @@ def test_refresh_token_invalid(client: TestClient, test_user):
 
 def test_refresh_token_missing_header(client: TestClient):
     """
-    Test refresh without Authorization header returns 403.
+    Test refresh without Authorization header returns 401/403.
     """
     response = client.post("/auth/refresh")
 
-    # HTTPBearer returns 403 when header is missing
-    assert response.status_code == 403
+    # HTTPBearer returns 403 (older FastAPI) or 401 (newer, per HTTP spec)
+    assert response.status_code in (401, 403)
 
 
 def test_access_token_works(client: TestClient, db_session, test_user):

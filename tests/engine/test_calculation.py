@@ -312,9 +312,7 @@ class TestCalculationInvalidSetValue:
             target_field_id=data["fields"]["notes"],
             rule_type=RuleType.MANDATORY.value,
             conditions={
-                "criteria": [
-                    {"field_id": data["fields"]["cooling_system"], "operator": "EQUALS", "value": "Hydrogen"}
-                ]
+                "criteria": [{"field_id": data["fields"]["cooling_system"], "operator": "EQUALS", "value": "Hydrogen"}]
             },
         )
         db_session.add_all([invalid_rule, downstream_rule])

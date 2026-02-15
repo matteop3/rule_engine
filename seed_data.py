@@ -351,15 +351,9 @@ def seed_db():
         v_rental_15d = Value(field_id=f_rental_car.id, label="15 days", value="15D", sku_modifier="R15")
 
         # --- Premium Tier (calculated by engine) ---
-        v_tier_economy = Value(
-            field_id=f_premium_tier.id, label="Economy", value="ECONOMY", sku_modifier="EC"
-        )
-        v_tier_standard = Value(
-            field_id=f_premium_tier.id, label="Standard", value="STANDARD", sku_modifier="ST"
-        )
-        v_tier_premium = Value(
-            field_id=f_premium_tier.id, label="Premium", value="PREMIUM", sku_modifier="PR"
-        )
+        v_tier_economy = Value(field_id=f_premium_tier.id, label="Economy", value="ECONOMY", sku_modifier="EC")
+        v_tier_standard = Value(field_id=f_premium_tier.id, label="Standard", value="STANDARD", sku_modifier="ST")
+        v_tier_premium = Value(field_id=f_premium_tier.id, label="Premium", value="PREMIUM", sku_modifier="PR")
 
         all_values = [
             v_occ_employee,
