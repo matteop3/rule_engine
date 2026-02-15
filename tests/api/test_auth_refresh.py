@@ -11,13 +11,13 @@ Tests:
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import User, UserRole
 from app.core.security import get_password_hash
-
+from app.models.domain import User, UserRole
 
 # ============================================================
 # FIXTURES
 # ============================================================
+
 
 @pytest.fixture(scope="function")
 def test_user(db_session):
@@ -28,7 +28,7 @@ def test_user(db_session):
         email="testuser@example.com",
         hashed_password=get_password_hash("TestPassword123!"),
         role=UserRole.USER,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -45,7 +45,7 @@ def inactive_user(db_session):
         email="inactive@example.com",
         hashed_password=get_password_hash("TestPassword123!"),
         role=UserRole.USER,
-        is_active=False
+        is_active=False,
     )
     db_session.add(user)
     db_session.commit()
@@ -57,17 +57,12 @@ def inactive_user(db_session):
 # LOGIN TESTS
 # ============================================================
 
+
 def test_login_success(client: TestClient, test_user):
     """
     Test successful login returns both access and refresh tokens.
     """
-    response = client.post(
-        "/auth/token",
-        data={
-            "username": "testuser@example.com",
-            "password": "TestPassword123!"
-        }
-    )
+    response = client.post("/auth/token", data={"username": "testuser@example.com", "password": "TestPassword123!"})
 
     assert response.status_code == 200
     data = response.json()
@@ -86,13 +81,7 @@ def test_login_wrong_password(client: TestClient, test_user):
     """
     Test login with wrong password returns 401.
     """
-    response = client.post(
-        "/auth/token",
-        data={
-            "username": "testuser@example.com",
-            "password": "WrongPassword123!"
-        }
-    )
+    response = client.post("/auth/token", data={"username": "testuser@example.com", "password": "WrongPassword123!"})
 
     assert response.status_code == 401
     assert "Incorrect email" in response.json()["detail"]
@@ -102,13 +91,7 @@ def test_login_nonexistent_user(client: TestClient):
     """
     Test login with non-existent email returns 401.
     """
-    response = client.post(
-        "/auth/token",
-        data={
-            "username": "nonexistent@example.com",
-            "password": "AnyPassword123!"
-        }
-    )
+    response = client.post("/auth/token", data={"username": "nonexistent@example.com", "password": "AnyPassword123!"})
 
     assert response.status_code == 401
 
@@ -117,13 +100,7 @@ def test_login_inactive_user(client: TestClient, inactive_user):
     """
     Test login with inactive user returns 401.
     """
-    response = client.post(
-        "/auth/token",
-        data={
-            "username": "inactive@example.com",
-            "password": "TestPassword123!"
-        }
-    )
+    response = client.post("/auth/token", data={"username": "inactive@example.com", "password": "TestPassword123!"})
 
     assert response.status_code == 401
 
@@ -132,26 +109,20 @@ def test_login_inactive_user(client: TestClient, inactive_user):
 # REFRESH TOKEN TESTS
 # ============================================================
 
+
 def test_refresh_token_success(client: TestClient, test_user):
     """
     Test refresh endpoint returns new access token.
     """
     # First, login to get tokens
     login_response = client.post(
-        "/auth/token",
-        data={
-            "username": "testuser@example.com",
-            "password": "TestPassword123!"
-        }
+        "/auth/token", data={"username": "testuser@example.com", "password": "TestPassword123!"}
     )
     assert login_response.status_code == 200
     refresh_token = login_response.json()["refresh_token"]
 
     # Use refresh token to get new access token
-    refresh_response = client.post(
-        "/auth/refresh",
-        headers={"Authorization": f"Bearer {refresh_token}"}
-    )
+    refresh_response = client.post("/auth/refresh", headers={"Authorization": f"Bearer {refresh_token}"})
 
     assert refresh_response.status_code == 200
     data = refresh_response.json()
@@ -164,10 +135,7 @@ def test_refresh_token_invalid(client: TestClient, test_user):
     """
     Test refresh with invalid token returns 401.
     """
-    response = client.post(
-        "/auth/refresh",
-        headers={"Authorization": "Bearer invalid_token_here"}
-    )
+    response = client.post("/auth/refresh", headers={"Authorization": "Bearer invalid_token_here"})
 
     assert response.status_code == 401
     assert "Invalid or expired" in response.json()["detail"]
@@ -189,11 +157,7 @@ def test_access_token_works(client: TestClient, db_session, test_user):
     """
     # Login to get access token
     login_response = client.post(
-        "/auth/token",
-        data={
-            "username": "testuser@example.com",
-            "password": "TestPassword123!"
-        }
+        "/auth/token", data={"username": "testuser@example.com", "password": "TestPassword123!"}
     )
     access_token = login_response.json()["access_token"]
 
@@ -210,8 +174,7 @@ def test_access_token_works(client: TestClient, db_session, test_user):
 
     # Try to access configurations endpoint (protected)
     response = client.get(
-        f"/configurations/?entity_version_id={version.id}",
-        headers={"Authorization": f"Bearer {access_token}"}
+        f"/configurations/?entity_version_id={version.id}", headers={"Authorization": f"Bearer {access_token}"}
     )
 
     assert response.status_code == 200
@@ -224,22 +187,13 @@ def test_multiple_refresh_tokens(client: TestClient, test_user):
     # Login twice (simulating two devices)
     tokens = []
     for _ in range(2):
-        response = client.post(
-            "/auth/token",
-            data={
-                "username": "testuser@example.com",
-                "password": "TestPassword123!"
-            }
-        )
+        response = client.post("/auth/token", data={"username": "testuser@example.com", "password": "TestPassword123!"})
         assert response.status_code == 200
         tokens.append(response.json()["refresh_token"])
 
     # Both refresh tokens should work
     for refresh_token in tokens:
-        response = client.post(
-            "/auth/refresh",
-            headers={"Authorization": f"Bearer {refresh_token}"}
-        )
+        response = client.post("/auth/refresh", headers={"Authorization": f"Bearer {refresh_token}"})
         assert response.status_code == 200
 
 
@@ -248,6 +202,7 @@ def test_multiple_refresh_tokens(client: TestClient, test_user):
 # ============================================================
 # These tests temporarily enable rate limiting regardless of settings
 # to ensure the rate limiting logic is always tested.
+
 
 @pytest.fixture(autouse=True)
 def reset_rate_limiter():
@@ -259,9 +214,9 @@ def reset_rate_limiter():
 
     # Reset before test
     try:
-        if hasattr(limiter, '_storage') and limiter._storage:
+        if hasattr(limiter, "_storage") and limiter._storage:
             limiter._storage.reset()
-        if hasattr(limiter, 'reset'):
+        if hasattr(limiter, "reset"):
             limiter.reset()
     except Exception:
         pass
@@ -270,9 +225,9 @@ def reset_rate_limiter():
 
     # Reset after test
     try:
-        if hasattr(limiter, '_storage') and limiter._storage:
+        if hasattr(limiter, "_storage") and limiter._storage:
             limiter._storage.reset()
-        if hasattr(limiter, 'reset'):
+        if hasattr(limiter, "reset"):
             limiter.reset()
     except Exception:
         pass
@@ -284,8 +239,8 @@ def enable_rate_limiting():
     Fixture that temporarily enables rate limiting for a test.
     Restores the original state after the test completes.
     """
-    from app.core.rate_limit import limiter
     from app.core.config import settings
+    from app.core.rate_limit import limiter
 
     # Store original state
     original_enabled = limiter.enabled
@@ -317,8 +272,8 @@ def test_rate_limit_login_endpoint(client: TestClient, test_user, enable_rate_li
             "/auth/token",
             data={
                 "username": "testuser@example.com",
-                "password": "WrongPassword!"  # Wrong password to not lock account
-            }
+                "password": "WrongPassword!",  # Wrong password to not lock account
+            },
         )
 
         if response.status_code == 429:
@@ -340,21 +295,14 @@ def test_rate_limit_refresh_endpoint(client: TestClient, test_user, enable_rate_
 
     # First get a valid refresh token
     login_response = client.post(
-        "/auth/token",
-        data={
-            "username": "testuser@example.com",
-            "password": "TestPassword123!"
-        }
+        "/auth/token", data={"username": "testuser@example.com", "password": "TestPassword123!"}
     )
     refresh_token = login_response.json()["refresh_token"]
 
     # Make multiple requests to trigger rate limit
     rate_limited = False
     for i in range(settings.RATE_LIMIT_REFRESH_ATTEMPTS + 2):
-        response = client.post(
-            "/auth/refresh",
-            headers={"Authorization": f"Bearer {refresh_token}"}
-        )
+        response = client.post("/auth/refresh", headers={"Authorization": f"Bearer {refresh_token}"})
 
         if response.status_code == 429:
             rate_limited = True
@@ -377,10 +325,7 @@ def test_rate_limit_response_format(client: TestClient, test_user, enable_rate_l
 
     # Trigger rate limit
     for _ in range(settings.RATE_LIMIT_LOGIN_ATTEMPTS + 2):
-        response = client.post(
-            "/auth/token",
-            data={"username": "testuser@example.com", "password": "wrong"}
-        )
+        response = client.post("/auth/token", data={"username": "testuser@example.com", "password": "wrong"})
         if response.status_code == 429:
             break
 
@@ -406,10 +351,7 @@ def test_rate_limit_resets_after_window(client: TestClient, test_user, enable_ra
 
     # Trigger rate limit
     for _ in range(settings.RATE_LIMIT_LOGIN_ATTEMPTS + 2):
-        response = client.post(
-            "/auth/token",
-            data={"username": "testuser@example.com", "password": "wrong"}
-        )
+        response = client.post("/auth/token", data={"username": "testuser@example.com", "password": "wrong"})
         if response.status_code == 429:
             break
 
@@ -417,19 +359,13 @@ def test_rate_limit_resets_after_window(client: TestClient, test_user, enable_ra
 
     # Reset limiter (simulating window expiration)
     try:
-        if hasattr(limiter, '_storage') and limiter._storage:
+        if hasattr(limiter, "_storage") and limiter._storage:
             limiter._storage.reset()
     except Exception:
         pass
 
     # Should be able to make requests again
-    response = client.post(
-        "/auth/token",
-        data={
-            "username": "testuser@example.com",
-            "password": "TestPassword123!"
-        }
-    )
+    response = client.post("/auth/token", data={"username": "testuser@example.com", "password": "TestPassword123!"})
 
     # Should not be rate limited anymore
     assert response.status_code != 429
@@ -441,8 +377,8 @@ def test_rate_limit_disabled_when_setting_false(client: TestClient, test_user):
 
     When RATE_LIMIT_ENABLED is False, requests should not be rate limited.
     """
-    from app.core.rate_limit import limiter
     from app.core.config import settings
+    from app.core.rate_limit import limiter
 
     # Disable rate limiting
     original_enabled = limiter.enabled
@@ -454,13 +390,9 @@ def test_rate_limit_disabled_when_setting_false(client: TestClient, test_user):
     try:
         # Make many requests - none should be rate limited
         for _ in range(20):
-            response = client.post(
-                "/auth/token",
-                data={"username": "testuser@example.com", "password": "wrong"}
-            )
+            response = client.post("/auth/token", data={"username": "testuser@example.com", "password": "wrong"})
             # Should get 401 (wrong password), never 429 (rate limited)
-            assert response.status_code == 401, \
-                "Rate limiting triggered when it should be disabled"
+            assert response.status_code == 401, "Rate limiting triggered when it should be disabled"
     finally:
         # Restore original state
         limiter.enabled = original_enabled

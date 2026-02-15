@@ -17,15 +17,15 @@ For true concurrent testing, use PostgreSQL in a separate test environment.
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import Entity, EntityVersion, Field, User, UserRole, VersionStatus, FieldType
 from app.core.security import create_access_token, get_password_hash
-from app.services.rule_engine import RuleEngineService
+from app.models.domain import Entity, EntityVersion, Field, FieldType, User, UserRole, VersionStatus
 from app.schemas.engine import CalculationRequest, FieldInputState
-
+from app.services.rule_engine import RuleEngineService
 
 # ============================================================
 # FIXTURES
 # ============================================================
+
 
 @pytest.fixture(scope="function")
 def concurrent_user(db_session):
@@ -34,7 +34,7 @@ def concurrent_user(db_session):
         email="concurrent@example.com",
         hashed_password=get_password_hash("TestPassword123!"),
         role=UserRole.USER,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -69,7 +69,7 @@ def concurrent_scenario(db_session):
         data_type=FieldType.NUMBER.value,
         step=1,
         sequence=1,
-        is_free_value=True
+        is_free_value=True,
     )
     f_status = Field(
         entity_version_id=version.id,
@@ -78,23 +78,19 @@ def concurrent_scenario(db_session):
         data_type=FieldType.STRING.value,
         step=1,
         sequence=2,
-        is_free_value=True
+        is_free_value=True,
     )
 
     db_session.add_all([f_counter, f_status])
     db_session.commit()
 
-    return {
-        "entity_id": entity.id,
-        "version_id": version.id,
-        "f_counter_id": f_counter.id,
-        "f_status_id": f_status.id
-    }
+    return {"entity_id": entity.id, "version_id": version.id, "f_counter_id": f_counter.id, "f_status_id": f_status.id}
 
 
 # ============================================================
 # RAPID SEQUENTIAL UPDATE TESTS
 # ============================================================
+
 
 def test_rapid_updates_same_configuration(client: TestClient, concurrent_auth_headers, concurrent_scenario):
     """
@@ -112,8 +108,8 @@ def test_rapid_updates_same_configuration(client: TestClient, concurrent_auth_he
         "name": "Rapid Update Test Config",
         "data": [
             {"field_id": concurrent_scenario["f_counter_id"], "value": 0},
-            {"field_id": concurrent_scenario["f_status_id"], "value": "initial"}
-        ]
+            {"field_id": concurrent_scenario["f_status_id"], "value": "initial"},
+        ],
     }
     create_resp = client.post("/configurations/", json=create_payload, headers=concurrent_auth_headers)
     assert create_resp.status_code == 201
@@ -129,14 +125,10 @@ def test_rapid_updates_same_configuration(client: TestClient, concurrent_auth_he
             "name": f"Updated iteration {i}",
             "data": [
                 {"field_id": concurrent_scenario["f_counter_id"], "value": i},
-                {"field_id": concurrent_scenario["f_status_id"], "value": f"status_{i}"}
-            ]
+                {"field_id": concurrent_scenario["f_status_id"], "value": f"status_{i}"},
+            ],
         }
-        response = client.patch(
-            f"/configurations/{config_id}",
-            json=update_payload,
-            headers=concurrent_auth_headers
-        )
+        response = client.patch(f"/configurations/{config_id}", json=update_payload, headers=concurrent_auth_headers)
         if response.status_code == 200:
             successful_updates += 1
             last_value = i
@@ -171,9 +163,7 @@ def test_rapid_create_configurations(client: TestClient, concurrent_auth_headers
         payload = {
             "entity_version_id": concurrent_scenario["version_id"],
             "name": f"Rapid Config {i}",
-            "data": [
-                {"field_id": concurrent_scenario["f_counter_id"], "value": i}
-            ]
+            "data": [{"field_id": concurrent_scenario["f_counter_id"], "value": i}],
         }
         response = client.post("/configurations/", json=payload, headers=concurrent_auth_headers)
         assert response.status_code == 201, f"Failed to create config {i}: {response.text}"
@@ -198,7 +188,7 @@ def test_interleaved_read_write(client: TestClient, concurrent_auth_headers, con
     create_payload = {
         "entity_version_id": concurrent_scenario["version_id"],
         "name": "Read-Write Test",
-        "data": [{"field_id": concurrent_scenario["f_counter_id"], "value": 0}]
+        "data": [{"field_id": concurrent_scenario["f_counter_id"], "value": 0}],
     }
     create_resp = client.post("/configurations/", json=create_payload, headers=concurrent_auth_headers)
     config_id = create_resp.json()["id"]
@@ -232,6 +222,7 @@ def test_interleaved_read_write(client: TestClient, concurrent_auth_headers, con
 # RULE ENGINE CALCULATION TESTS
 # ============================================================
 
+
 def test_rapid_rule_engine_calculations(db_session, concurrent_scenario):
     """
     Test that the rule engine handles rapid sequential calculations correctly.
@@ -246,14 +237,11 @@ def test_rapid_rule_engine_calculations(db_session, concurrent_scenario):
             entity_id=concurrent_scenario["entity_id"],
             current_state=[
                 FieldInputState(field_id=concurrent_scenario["f_counter_id"], value=i),
-                FieldInputState(field_id=concurrent_scenario["f_status_id"], value=f"status_{i}")
-            ]
+                FieldInputState(field_id=concurrent_scenario["f_status_id"], value=f"status_{i}"),
+            ],
         )
         response = service.calculate_state(db_session, payload)
-        results.append({
-            "input_value": i,
-            "fields_count": len(response.fields)
-        })
+        results.append({"input_value": i, "fields_count": len(response.fields)})
 
     # All calculations should succeed and return correct field count
     assert len(results) == 20
@@ -271,8 +259,8 @@ def test_rapid_calculate_endpoint(client: TestClient, concurrent_auth_headers, c
         "name": "Calculate Test",
         "data": [
             {"field_id": concurrent_scenario["f_counter_id"], "value": 100},
-            {"field_id": concurrent_scenario["f_status_id"], "value": "active"}
-        ]
+            {"field_id": concurrent_scenario["f_status_id"], "value": "active"},
+        ],
     }
     create_resp = client.post("/configurations/", json=create_payload, headers=concurrent_auth_headers)
     config_id = create_resp.json()["id"]
@@ -295,6 +283,7 @@ def test_rapid_calculate_endpoint(client: TestClient, concurrent_auth_headers, c
 # DELETE OPERATION TESTS
 # ============================================================
 
+
 def test_delete_then_access(client: TestClient, concurrent_auth_headers, concurrent_scenario):
     """
     Test that accessing a deleted configuration returns 404.
@@ -302,11 +291,7 @@ def test_delete_then_access(client: TestClient, concurrent_auth_headers, concurr
     Simulates a race condition where one client deletes while another reads.
     """
     # Create configuration
-    create_payload = {
-        "entity_version_id": concurrent_scenario["version_id"],
-        "name": "Delete Test",
-        "data": []
-    }
+    create_payload = {"entity_version_id": concurrent_scenario["version_id"], "name": "Delete Test", "data": []}
     create_resp = client.post("/configurations/", json=create_payload, headers=concurrent_auth_headers)
     config_id = create_resp.json()["id"]
 
@@ -320,9 +305,7 @@ def test_delete_then_access(client: TestClient, concurrent_auth_headers, concurr
 
     # Update should also return 404
     update_resp = client.patch(
-        f"/configurations/{config_id}",
-        json={"name": "Updated"},
-        headers=concurrent_auth_headers
+        f"/configurations/{config_id}", json={"name": "Updated"}, headers=concurrent_auth_headers
     )
     assert update_resp.status_code == 404
 
@@ -338,11 +321,7 @@ def test_multiple_delete_attempts(client: TestClient, concurrent_auth_headers, c
     First delete succeeds, subsequent ones return 404.
     """
     # Create configuration
-    create_payload = {
-        "entity_version_id": concurrent_scenario["version_id"],
-        "name": "Multi Delete Test",
-        "data": []
-    }
+    create_payload = {"entity_version_id": concurrent_scenario["version_id"], "name": "Multi Delete Test", "data": []}
     create_resp = client.post("/configurations/", json=create_payload, headers=concurrent_auth_headers)
     config_id = create_resp.json()["id"]
 
@@ -361,6 +340,7 @@ def test_multiple_delete_attempts(client: TestClient, concurrent_auth_headers, c
 # MIXED OPERATIONS STRESS TEST
 # ============================================================
 
+
 def test_mixed_operations_stress(client: TestClient, concurrent_auth_headers, concurrent_scenario):
     """
     Stress test with mixed operations in rapid succession.
@@ -374,7 +354,7 @@ def test_mixed_operations_stress(client: TestClient, concurrent_auth_headers, co
         payload = {
             "entity_version_id": concurrent_scenario["version_id"],
             "name": f"Stress Test {i}",
-            "data": [{"field_id": concurrent_scenario["f_counter_id"], "value": i}]
+            "data": [{"field_id": concurrent_scenario["f_counter_id"], "value": i}],
         }
         resp = client.post("/configurations/", json=payload, headers=concurrent_auth_headers)
         assert resp.status_code == 201
@@ -403,11 +383,7 @@ def test_mixed_operations_stress(client: TestClient, concurrent_auth_headers, co
 
         else:
             # Create
-            payload = {
-                "entity_version_id": concurrent_scenario["version_id"],
-                "name": f"Stress Extra {i}",
-                "data": []
-            }
+            payload = {"entity_version_id": concurrent_scenario["version_id"], "name": f"Stress Extra {i}", "data": []}
             resp = client.post("/configurations/", json=payload, headers=concurrent_auth_headers)
             if resp.status_code == 201:
                 operations_results["create"] += 1
@@ -427,6 +403,7 @@ def test_mixed_operations_stress(client: TestClient, concurrent_auth_headers, co
 # DATA INTEGRITY TESTS
 # ============================================================
 
+
 def test_update_preserves_unmodified_fields(client: TestClient, concurrent_auth_headers, concurrent_scenario):
     """
     Test that updating all fields multiple times doesn't corrupt data.
@@ -441,8 +418,8 @@ def test_update_preserves_unmodified_fields(client: TestClient, concurrent_auth_
         "name": "Integrity Test",
         "data": [
             {"field_id": concurrent_scenario["f_counter_id"], "value": 42},
-            {"field_id": concurrent_scenario["f_status_id"], "value": "original"}
-        ]
+            {"field_id": concurrent_scenario["f_status_id"], "value": "original"},
+        ],
     }
     create_resp = client.post("/configurations/", json=create_payload, headers=concurrent_auth_headers)
     config_id = create_resp.json()["id"]
@@ -452,7 +429,7 @@ def test_update_preserves_unmodified_fields(client: TestClient, concurrent_auth_
         update_payload = {
             "data": [
                 {"field_id": concurrent_scenario["f_counter_id"], "value": i},
-                {"field_id": concurrent_scenario["f_status_id"], "value": "original"}
+                {"field_id": concurrent_scenario["f_status_id"], "value": "original"},
             ]
         }
         client.patch(f"/configurations/{config_id}", json=update_payload, headers=concurrent_auth_headers)
@@ -461,14 +438,8 @@ def test_update_preserves_unmodified_fields(client: TestClient, concurrent_auth_
     final_resp = client.get(f"/configurations/{config_id}", headers=concurrent_auth_headers)
     final_data = final_resp.json()
 
-    counter_field = next(
-        (d for d in final_data["data"] if d["field_id"] == concurrent_scenario["f_counter_id"]),
-        None
-    )
-    status_field = next(
-        (d for d in final_data["data"] if d["field_id"] == concurrent_scenario["f_status_id"]),
-        None
-    )
+    counter_field = next((d for d in final_data["data"] if d["field_id"] == concurrent_scenario["f_counter_id"]), None)
+    status_field = next((d for d in final_data["data"] if d["field_id"] == concurrent_scenario["f_status_id"]), None)
 
     assert counter_field is not None, "Counter field was lost during updates"
     assert counter_field["value"] == 9, "Counter field has wrong value"
@@ -484,7 +455,7 @@ def test_rapid_name_updates(client: TestClient, concurrent_auth_headers, concurr
     create_payload = {
         "entity_version_id": concurrent_scenario["version_id"],
         "name": "Original Name",
-        "data": [{"field_id": concurrent_scenario["f_counter_id"], "value": 100}]
+        "data": [{"field_id": concurrent_scenario["f_counter_id"], "value": 100}],
     }
     create_resp = client.post("/configurations/", json=create_payload, headers=concurrent_auth_headers)
     config_id = create_resp.json()["id"]

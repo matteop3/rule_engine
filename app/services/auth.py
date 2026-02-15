@@ -1,14 +1,10 @@
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy.orm import Session
-from app.models.domain import User, RefreshToken
-from app.core.security import (
-    verify_password,
-    create_refresh_token,
-    hash_refresh_token,
-    REFRESH_TOKEN_EXPIRE_DAYS
-)
+
+from app.core.security import REFRESH_TOKEN_EXPIRE_DAYS, create_refresh_token, hash_refresh_token, verify_password
+from app.models.domain import RefreshToken, User
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +12,7 @@ logger = logging.getLogger(__name__)
 class AuthService:
     """Pure authentication logic."""
 
-    def authenticate_user(self, db: Session, email: str, password: str) -> Optional[User]:
+    def authenticate_user(self, db: Session, email: str, password: str) -> User | None:
         """
         Verify user credentials.
         Return User object if valid and active, None otherwise.
@@ -55,11 +51,7 @@ class AuthService:
         return user
 
     def create_user_refresh_token(
-        self,
-        db: Session,
-        user_id: str,
-        user_agent: Optional[str] = None,
-        ip_address: Optional[str] = None
+        self, db: Session, user_id: str, user_agent: str | None = None, ip_address: str | None = None
     ) -> tuple[str, RefreshToken]:
         """
         Create a new refresh token for a user and store it in the database.
@@ -82,15 +74,11 @@ class AuthService:
         token_hash = hash_refresh_token(plaintext_token)
 
         # Calculate expiration
-        expires_at = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        expires_at = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
         # Create database record
         db_token = RefreshToken(
-            user_id=user_id,
-            token_hash=token_hash,
-            expires_at=expires_at,
-            user_agent=user_agent,
-            ip_address=ip_address
+            user_id=user_id, token_hash=token_hash, expires_at=expires_at, user_agent=user_agent, ip_address=ip_address
         )
 
         db.add(db_token)
@@ -101,11 +89,7 @@ class AuthService:
 
         return plaintext_token, db_token
 
-    def verify_user_refresh_token(
-        self,
-        db: Session,
-        plaintext_token: str
-    ) -> Optional[RefreshToken]:
+    def verify_user_refresh_token(self, db: Session, plaintext_token: str) -> RefreshToken | None:
         """
         Verify a refresh token and return the database record if valid.
 
@@ -125,9 +109,7 @@ class AuthService:
         token_hash = hash_refresh_token(plaintext_token)
 
         # Find token in database
-        db_token = db.query(RefreshToken).filter(
-            RefreshToken.token_hash == token_hash
-        ).first()
+        db_token = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
 
         if not db_token:
             logger.warning("Refresh token not found in database")
@@ -139,11 +121,11 @@ class AuthService:
             return None
 
         # Check if expired
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         # Handle timezone-naive datetimes from SQLite
         expires_at = db_token.expires_at
         if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
+            expires_at = expires_at.replace(tzinfo=UTC)
         if expires_at < now_utc:
             logger.warning(f"Refresh token {db_token.id} has expired")
             return None
@@ -174,7 +156,7 @@ class AuthService:
             return False
 
         db_token.is_revoked = True
-        db_token.revoked_at = datetime.now(timezone.utc)
+        db_token.revoked_at = datetime.now(UTC)
         db.commit()
 
         logger.info(f"Revoked refresh token {token_id} for user {db_token.user_id}")
@@ -197,15 +179,13 @@ class AuthService:
         Returns:
             int: Number of tokens revoked
         """
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
 
-        result = db.query(RefreshToken).filter(
-            RefreshToken.user_id == user_id,
-            RefreshToken.is_revoked.is_(False)
-        ).update({
-            "is_revoked": True,
-            "revoked_at": now_utc
-        })
+        result = (
+            db.query(RefreshToken)
+            .filter(RefreshToken.user_id == user_id, RefreshToken.is_revoked.is_(False))
+            .update({"is_revoked": True, "revoked_at": now_utc})
+        )
 
         db.commit()
 
@@ -225,11 +205,9 @@ class AuthService:
         Returns:
             int: Number of tokens deleted
         """
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
 
-        result = db.query(RefreshToken).filter(
-            RefreshToken.expires_at < now_utc
-        ).delete()
+        result = db.query(RefreshToken).filter(RefreshToken.expires_at < now_utc).delete()
 
         db.commit()
 

@@ -10,25 +10,21 @@ Tests the full CRUD lifecycle for Field management including:
 Each test is atomic and independent.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import Field, Value, Rule, RuleType, FieldType
-
+from app.models.domain import Field, FieldType, Rule, RuleType
 
 # ============================================================
 # LIST FIELDS TESTS (GET /fields/)
 # ============================================================
+
 
 class TestListFields:
     """Tests for GET /fields/ endpoint."""
 
     def test_admin_can_list_fields(self, client: TestClient, admin_headers, draft_field):
         """Test that admin can list fields for a version."""
-        response = client.get(
-            f"/fields/?entity_version_id={draft_field.entity_version_id}",
-            headers=admin_headers
-        )
+        response = client.get(f"/fields/?entity_version_id={draft_field.entity_version_id}", headers=admin_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -38,20 +34,14 @@ class TestListFields:
 
     def test_author_can_list_fields(self, client: TestClient, author_headers, draft_field):
         """Test that author can list fields."""
-        response = client.get(
-            f"/fields/?entity_version_id={draft_field.entity_version_id}",
-            headers=author_headers
-        )
+        response = client.get(f"/fields/?entity_version_id={draft_field.entity_version_id}", headers=author_headers)
 
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
     def test_regular_user_cannot_list_fields(self, client: TestClient, user_headers, draft_field):
         """Test that regular user cannot list fields (403)."""
-        response = client.get(
-            f"/fields/?entity_version_id={draft_field.entity_version_id}",
-            headers=user_headers
-        )
+        response = client.get(f"/fields/?entity_version_id={draft_field.entity_version_id}", headers=user_headers)
 
         assert response.status_code == 403
 
@@ -80,15 +70,12 @@ class TestListFields:
                 data_type=FieldType.STRING.value,
                 is_free_value=True,
                 step=step,
-                sequence=seq
+                sequence=seq,
             )
             db_session.add(field)
         db_session.commit()
 
-        response = client.get(
-            f"/fields/?entity_version_id={draft_version.id}",
-            headers=admin_headers
-        )
+        response = client.get(f"/fields/?entity_version_id={draft_version.id}", headers=admin_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -107,15 +94,12 @@ class TestListFields:
                 data_type=FieldType.STRING.value,
                 is_free_value=True,
                 step=1,
-                sequence=i
+                sequence=i,
             )
             db_session.add(field)
         db_session.commit()
 
-        response = client.get(
-            f"/fields/?entity_version_id={draft_version.id}&limit=2",
-            headers=admin_headers
-        )
+        response = client.get(f"/fields/?entity_version_id={draft_version.id}&limit=2", headers=admin_headers)
 
         assert response.status_code == 200
         assert len(response.json()) == 2
@@ -123,8 +107,7 @@ class TestListFields:
     def test_list_fields_limit_over_100_rejected(self, client: TestClient, admin_headers, draft_field):
         """Test that limit > 100 is rejected with 422."""
         response = client.get(
-            f"/fields/?entity_version_id={draft_field.entity_version_id}&limit=200",
-            headers=admin_headers
+            f"/fields/?entity_version_id={draft_field.entity_version_id}&limit=200", headers=admin_headers
         )
 
         assert response.status_code == 422
@@ -133,6 +116,7 @@ class TestListFields:
 # ============================================================
 # READ FIELD TESTS (GET /fields/{field_id})
 # ============================================================
+
 
 class TestReadField:
     """Tests for GET /fields/{field_id} endpoint."""
@@ -176,6 +160,7 @@ class TestReadField:
 # CREATE FIELD TESTS (POST /fields/)
 # ============================================================
 
+
 class TestCreateField:
     """Tests for POST /fields/ endpoint."""
 
@@ -187,7 +172,7 @@ class TestCreateField:
             "label": "New Field",
             "data_type": "string",
             "is_free_value": True,
-            "is_required": False
+            "is_required": False,
         }
 
         response = client.post("/fields/", json=payload, headers=admin_headers)
@@ -205,7 +190,7 @@ class TestCreateField:
             "name": "author_field",
             "label": "Author Field",
             "data_type": "number",
-            "is_free_value": True
+            "is_free_value": True,
         }
 
         response = client.post("/fields/", json=payload, headers=author_headers)
@@ -220,7 +205,7 @@ class TestCreateField:
             "name": "forbidden_field",
             "label": "Forbidden",
             "data_type": "string",
-            "is_free_value": True
+            "is_free_value": True,
         }
 
         response = client.post("/fields/", json=payload, headers=user_headers)
@@ -234,16 +219,14 @@ class TestCreateField:
             "name": "anon_field",
             "label": "Anonymous",
             "data_type": "string",
-            "is_free_value": True
+            "is_free_value": True,
         }
 
         response = client.post("/fields/", json=payload)
 
         assert response.status_code == 401
 
-    def test_cannot_create_field_in_published_version(
-        self, client: TestClient, admin_headers, published_version
-    ):
+    def test_cannot_create_field_in_published_version(self, client: TestClient, admin_headers, published_version):
         """
         Test DRAFT-only policy: cannot create field in PUBLISHED version.
         This is a CRITICAL business rule.
@@ -253,7 +236,7 @@ class TestCreateField:
             "name": "should_fail",
             "label": "Should Fail",
             "data_type": "string",
-            "is_free_value": True
+            "is_free_value": True,
         }
 
         response = client.post("/fields/", json=payload, headers=admin_headers)
@@ -261,9 +244,7 @@ class TestCreateField:
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
-    def test_cannot_create_field_in_archived_version(
-        self, client: TestClient, admin_headers, archived_version
-    ):
+    def test_cannot_create_field_in_archived_version(self, client: TestClient, admin_headers, archived_version):
         """
         Test DRAFT-only policy: cannot create field in ARCHIVED version.
         This is a CRITICAL business rule.
@@ -273,7 +254,7 @@ class TestCreateField:
             "name": "should_fail",
             "label": "Should Fail",
             "data_type": "string",
-            "is_free_value": True
+            "is_free_value": True,
         }
 
         response = client.post("/fields/", json=payload, headers=admin_headers)
@@ -281,9 +262,7 @@ class TestCreateField:
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
-    def test_cannot_set_default_value_on_non_free_field(
-        self, client: TestClient, admin_headers, draft_version
-    ):
+    def test_cannot_set_default_value_on_non_free_field(self, client: TestClient, admin_headers, draft_version):
         """
         Test is_free_value constraint: default_value only allowed for free fields.
         This is a CRITICAL business rule.
@@ -294,7 +273,7 @@ class TestCreateField:
             "label": "Bad Default",
             "data_type": "string",
             "is_free_value": False,
-            "default_value": "should_fail"  # Not allowed for non-free fields
+            "default_value": "should_fail",  # Not allowed for non-free fields
         }
 
         response = client.post("/fields/", json=payload, headers=admin_headers)
@@ -302,9 +281,7 @@ class TestCreateField:
         assert response.status_code == 400
         assert "default_value" in response.json()["detail"].lower()
 
-    def test_can_set_default_value_on_free_field(
-        self, client: TestClient, admin_headers, draft_version
-    ):
+    def test_can_set_default_value_on_free_field(self, client: TestClient, admin_headers, draft_version):
         """Test that default_value IS allowed for free-value fields."""
         payload = {
             "entity_version_id": draft_version.id,
@@ -312,7 +289,7 @@ class TestCreateField:
             "label": "Good Default",
             "data_type": "string",
             "is_free_value": True,
-            "default_value": "allowed"
+            "default_value": "allowed",
         }
 
         response = client.post("/fields/", json=payload, headers=admin_headers)
@@ -327,7 +304,7 @@ class TestCreateField:
             "name": "ghost_field",
             "label": "Ghost Field",
             "data_type": "string",
-            "is_free_value": True
+            "is_free_value": True,
         }
 
         response = client.post("/fields/", json=payload, headers=admin_headers)
@@ -344,7 +321,7 @@ class TestCreateField:
                 "name": f"field_{dtype}",
                 "label": f"Field {dtype}",
                 "data_type": dtype,
-                "is_free_value": True
+                "is_free_value": True,
             }
 
             response = client.post("/fields/", json=payload, headers=admin_headers)
@@ -354,6 +331,7 @@ class TestCreateField:
 # ============================================================
 # UPDATE FIELD TESTS (PUT /fields/{field_id})
 # ============================================================
+
 
 class TestUpdateField:
     """Tests for PUT /fields/{field_id} endpoint."""
@@ -365,14 +343,10 @@ class TestUpdateField:
             "label": "Updated Field",
             "data_type": "string",
             "is_free_value": False,
-            "is_required": True
+            "is_required": True,
         }
 
-        response = client.patch(
-            f"/fields/{draft_field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{draft_field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -381,88 +355,46 @@ class TestUpdateField:
 
     def test_author_can_update_field(self, client: TestClient, author_headers, draft_field):
         """Test that author can update a field."""
-        payload = {
-            "name": "author_update",
-            "label": "Author Update",
-            "data_type": "string",
-            "is_free_value": False
-        }
+        payload = {"name": "author_update", "label": "Author Update", "data_type": "string", "is_free_value": False}
 
-        response = client.patch(
-            f"/fields/{draft_field.id}",
-            json=payload,
-            headers=author_headers
-        )
+        response = client.patch(f"/fields/{draft_field.id}", json=payload, headers=author_headers)
 
         assert response.status_code == 200
         assert response.json()["name"] == "author_update"
 
     def test_regular_user_cannot_update_field(self, client: TestClient, user_headers, draft_field):
         """Test that regular user cannot update fields (403)."""
-        payload = {
-            "name": "user_update",
-            "label": "User Update",
-            "data_type": "string",
-            "is_free_value": False
-        }
+        payload = {"name": "user_update", "label": "User Update", "data_type": "string", "is_free_value": False}
 
-        response = client.patch(
-            f"/fields/{draft_field.id}",
-            json=payload,
-            headers=user_headers
-        )
+        response = client.patch(f"/fields/{draft_field.id}", json=payload, headers=user_headers)
 
         assert response.status_code == 403
 
-    def test_cannot_update_field_in_published_version(
-        self, client: TestClient, admin_headers, published_field
-    ):
+    def test_cannot_update_field_in_published_version(self, client: TestClient, admin_headers, published_field):
         """
         Test DRAFT-only policy: cannot update field in PUBLISHED version.
         This is a CRITICAL business rule.
         """
-        payload = {
-            "name": "should_fail",
-            "label": "Should Fail",
-            "data_type": "string",
-            "is_free_value": False
-        }
+        payload = {"name": "should_fail", "label": "Should Fail", "data_type": "string", "is_free_value": False}
 
-        response = client.patch(
-            f"/fields/{published_field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{published_field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
-    def test_cannot_update_field_in_archived_version(
-        self, client: TestClient, admin_headers, archived_field
-    ):
+    def test_cannot_update_field_in_archived_version(self, client: TestClient, admin_headers, archived_field):
         """
         Test DRAFT-only policy: cannot update field in ARCHIVED version.
         This is a CRITICAL business rule.
         """
-        payload = {
-            "name": "should_fail",
-            "label": "Should Fail",
-            "data_type": "string",
-            "is_free_value": False
-        }
+        payload = {"name": "should_fail", "label": "Should Fail", "data_type": "string", "is_free_value": False}
 
-        response = client.patch(
-            f"/fields/{archived_field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{archived_field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
-    def test_cannot_change_non_free_to_free_with_values(
-        self, client: TestClient, admin_headers, field_with_values
-    ):
+    def test_cannot_change_non_free_to_free_with_values(self, client: TestClient, admin_headers, field_with_values):
         """
         Test state transition: cannot change is_free_value False->True if Values exist.
         This is a CRITICAL business rule.
@@ -472,68 +404,47 @@ class TestUpdateField:
             "name": field.name,
             "label": field.label,
             "data_type": field.data_type,
-            "is_free_value": True  # Try to change from False to True
+            "is_free_value": True,  # Try to change from False to True
         }
 
-        response = client.patch(
-            f"/fields/{field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
         assert "values" in response.json()["detail"].lower()
 
-    def test_can_change_free_to_non_free(
-        self, client: TestClient, admin_headers, free_field
-    ):
+    def test_can_change_free_to_non_free(self, client: TestClient, admin_headers, free_field):
         """Test state transition: can change is_free_value True->False."""
         payload = {
             "name": free_field.name,
             "label": free_field.label,
             "data_type": free_field.data_type,
-            "is_free_value": False  # Change from True to False
+            "is_free_value": False,  # Change from True to False
         }
 
-        response = client.patch(
-            f"/fields/{free_field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{free_field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["is_free_value"] is False
         # default_value should be cleared
         assert response.json()["default_value"] is None
 
-    def test_cannot_set_default_when_switching_to_non_free(
-        self, client: TestClient, admin_headers, free_field
-    ):
+    def test_cannot_set_default_when_switching_to_non_free(self, client: TestClient, admin_headers, free_field):
         """Test that default_value cannot be set when switching to non-free."""
         payload = {
             "name": free_field.name,
             "label": free_field.label,
             "data_type": free_field.data_type,
             "is_free_value": False,
-            "default_value": "not_allowed"  # Should fail
+            "default_value": "not_allowed",  # Should fail
         }
 
-        response = client.patch(
-            f"/fields/{free_field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{free_field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 400
 
     def test_update_nonexistent_field_returns_404(self, client: TestClient, admin_headers):
         """Test that updating non-existent field returns 404."""
-        payload = {
-            "name": "ghost",
-            "label": "Ghost",
-            "data_type": "string",
-            "is_free_value": True
-        }
+        payload = {"name": "ghost", "label": "Ghost", "data_type": "string", "is_free_value": True}
 
         response = client.patch("/fields/99999", json=payload, headers=admin_headers)
 
@@ -543,6 +454,7 @@ class TestUpdateField:
 # ============================================================
 # DELETE FIELD TESTS (DELETE /fields/{field_id})
 # ============================================================
+
 
 class TestDeleteField:
     """Tests for DELETE /fields/{field_id} endpoint."""
@@ -565,9 +477,7 @@ class TestDeleteField:
 
         assert response.status_code == 403
 
-    def test_cannot_delete_field_in_published_version(
-        self, client: TestClient, admin_headers, published_field
-    ):
+    def test_cannot_delete_field_in_published_version(self, client: TestClient, admin_headers, published_field):
         """
         Test DRAFT-only policy: cannot delete field in PUBLISHED version.
         This is a CRITICAL business rule.
@@ -577,9 +487,7 @@ class TestDeleteField:
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
-    def test_cannot_delete_field_in_archived_version(
-        self, client: TestClient, admin_headers, archived_field
-    ):
+    def test_cannot_delete_field_in_archived_version(self, client: TestClient, admin_headers, archived_field):
         """
         Test DRAFT-only policy: cannot delete field in ARCHIVED version.
         This is a CRITICAL business rule.
@@ -589,9 +497,7 @@ class TestDeleteField:
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
-    def test_cannot_delete_field_with_values(
-        self, client: TestClient, admin_headers, field_with_values
-    ):
+    def test_cannot_delete_field_with_values(self, client: TestClient, admin_headers, field_with_values):
         """
         Test guardrail: cannot delete field that has associated Values.
         This is a CRITICAL business rule.
@@ -603,9 +509,7 @@ class TestDeleteField:
         assert response.status_code == 409
         assert "values" in response.json()["detail"].lower()
 
-    def test_cannot_delete_field_targeted_by_rule(
-        self, client: TestClient, admin_headers, field_as_rule_target
-    ):
+    def test_cannot_delete_field_targeted_by_rule(self, client: TestClient, admin_headers, field_as_rule_target):
         """
         Test guardrail: cannot delete field that is target of a Rule.
         This is a CRITICAL business rule.
@@ -617,9 +521,7 @@ class TestDeleteField:
         assert response.status_code == 409
         assert "rule" in response.json()["detail"].lower()
 
-    def test_cannot_delete_field_used_in_rule_conditions(
-        self, client: TestClient, admin_headers, field_as_rule_target
-    ):
+    def test_cannot_delete_field_used_in_rule_conditions(self, client: TestClient, admin_headers, field_as_rule_target):
         """
         Test guardrail: cannot delete field used in Rule conditions JSON.
         This is a CRITICAL business rule - deep scan of conditions.
@@ -648,46 +550,35 @@ class TestDeleteField:
 # STATE TRANSITION TESTS
 # ============================================================
 
+
 class TestFieldStateTransitions:
     """Tests for is_free_value state transitions."""
 
-    def test_can_change_non_free_to_free_without_values(
-        self, client: TestClient, admin_headers, draft_field
-    ):
+    def test_can_change_non_free_to_free_without_values(self, client: TestClient, admin_headers, draft_field):
         """Test that non-free field without values CAN become free."""
         payload = {
             "name": draft_field.name,
             "label": draft_field.label,
             "data_type": draft_field.data_type,
-            "is_free_value": True
+            "is_free_value": True,
         }
 
-        response = client.patch(
-            f"/fields/{draft_field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{draft_field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["is_free_value"] is True
 
-    def test_free_field_can_have_default_updated(
-        self, client: TestClient, admin_headers, free_field
-    ):
+    def test_free_field_can_have_default_updated(self, client: TestClient, admin_headers, free_field):
         """Test that free field default_value can be updated."""
         payload = {
             "name": free_field.name,
             "label": free_field.label,
             "data_type": free_field.data_type,
             "is_free_value": True,
-            "default_value": "new_default"
+            "default_value": "new_default",
         }
 
-        response = client.patch(
-            f"/fields/{free_field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{free_field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["default_value"] == "new_default"
@@ -696,6 +587,7 @@ class TestFieldStateTransitions:
 # ============================================================
 # CALCULATION FIELD TRANSITION TESTS
 # ============================================================
+
 
 class TestFieldCalculationTransitions:
     """Tests for CALCULATION rule guards on field state transitions."""
@@ -713,14 +605,14 @@ class TestFieldCalculationTransitions:
             name="calc_transition_target",
             label="Calc Transition Target",
             data_type=FieldType.STRING.value,
-            is_free_value=True
+            is_free_value=True,
         )
         source_field = Field(
             entity_version_id=draft_version.id,
             name="calc_transition_source",
             label="Source",
             data_type=FieldType.STRING.value,
-            is_free_value=True
+            is_free_value=True,
         )
         db_session.add_all([target_field, source_field])
         db_session.commit()
@@ -731,7 +623,7 @@ class TestFieldCalculationTransitions:
             target_field_id=target_field.id,
             rule_type=RuleType.CALCULATION.value,
             set_value="forced",
-            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]}
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]},
         )
         db_session.add(calc_rule)
         db_session.commit()
@@ -739,11 +631,7 @@ class TestFieldCalculationTransitions:
         # Try to switch from free to non-free → should fail
         payload = {"is_free_value": False}
 
-        response = client.patch(
-            f"/fields/{target_field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{target_field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
         assert "calculation" in response.json()["detail"].lower()
@@ -758,14 +646,14 @@ class TestFieldCalculationTransitions:
             name="no_calc_transition",
             label="No Calc Transition",
             data_type=FieldType.STRING.value,
-            is_free_value=True
+            is_free_value=True,
         )
         source_field = Field(
             entity_version_id=draft_version.id,
             name="no_calc_source",
             label="Source",
             data_type=FieldType.NUMBER.value,
-            is_free_value=True
+            is_free_value=True,
         )
         db_session.add_all([target_field, source_field])
         db_session.commit()
@@ -775,7 +663,7 @@ class TestFieldCalculationTransitions:
             entity_version_id=draft_version.id,
             target_field_id=target_field.id,
             rule_type=RuleType.MANDATORY.value,
-            conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]}
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]},
         )
         db_session.add(mand_rule)
         db_session.commit()
@@ -783,11 +671,7 @@ class TestFieldCalculationTransitions:
         # Switch from free to non-free → should succeed
         payload = {"is_free_value": False}
 
-        response = client.patch(
-            f"/fields/{target_field.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/fields/{target_field.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["is_free_value"] is False
@@ -797,19 +681,18 @@ class TestFieldCalculationTransitions:
 # EDGE CASES
 # ============================================================
 
+
 class TestFieldEdgeCases:
     """Edge case and boundary tests for Field API."""
 
-    def test_field_name_with_special_characters(
-        self, client: TestClient, admin_headers, draft_version
-    ):
+    def test_field_name_with_special_characters(self, client: TestClient, admin_headers, draft_version):
         """Test that field names with underscores are handled."""
         payload = {
             "entity_version_id": draft_version.id,
             "name": "field_with_underscores_123",
             "label": "Field With Special Chars",
             "data_type": "string",
-            "is_free_value": True
+            "is_free_value": True,
         }
 
         response = client.post("/fields/", json=payload, headers=admin_headers)
@@ -817,9 +700,7 @@ class TestFieldEdgeCases:
         assert response.status_code == 201
         assert response.json()["name"] == "field_with_underscores_123"
 
-    def test_field_with_step_and_sequence(
-        self, client: TestClient, admin_headers, draft_version
-    ):
+    def test_field_with_step_and_sequence(self, client: TestClient, admin_headers, draft_version):
         """Test that step and sequence are properly set."""
         payload = {
             "entity_version_id": draft_version.id,
@@ -828,7 +709,7 @@ class TestFieldEdgeCases:
             "data_type": "number",
             "is_free_value": True,
             "step": 3,
-            "sequence": 5
+            "sequence": 5,
         }
 
         response = client.post("/fields/", json=payload, headers=admin_headers)
@@ -838,14 +719,9 @@ class TestFieldEdgeCases:
         assert data["step"] == 3
         assert data["sequence"] == 5
 
-    def test_empty_list_for_version_without_fields(
-        self, client: TestClient, admin_headers, draft_version
-    ):
+    def test_empty_list_for_version_without_fields(self, client: TestClient, admin_headers, draft_version):
         """Test listing fields for version with no fields returns empty list."""
-        response = client.get(
-            f"/fields/?entity_version_id={draft_version.id}",
-            headers=admin_headers
-        )
+        response = client.get(f"/fields/?entity_version_id={draft_version.id}", headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json() == []

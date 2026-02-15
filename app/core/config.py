@@ -1,10 +1,10 @@
 # app/core/config.py
-import os
 import json
-from typing import List, Union
+import os
 from pathlib import Path
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Calculate absolute project root.
 # __file__ is this file (config.py).
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     PASSWORD_REQUIRE_SPECIAL: bool = True
 
     # CORS (who can invoke the API?)
-    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:8000", "http://localhost:3000"]
+    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:8000", "http://localhost:3000"]
 
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+    def assemble_cors_origins(cls, v: str | list[str]) -> list[str]:
         """
         Parse CORS origins from various formats:
         - List: ["url1", "url2"]
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
             # It's a JSON
             if v_clean.startswith("["):
                 try:
-                    return json.loads(v_clean)
+                    return list(json.loads(v_clean))
                 except json.JSONDecodeError:
                     # Broken JSON, go to next check
                     pass
@@ -120,7 +120,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
-        env_file_encoding='utf-8',
+        env_file_encoding="utf-8",
         case_sensitive=True,
     )
 

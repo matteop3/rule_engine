@@ -8,18 +8,14 @@ Tests for referential integrity across the data model:
 - Clone ID remapping integrity
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    FieldType, RuleType, VersionStatus
-)
-
+from app.models.domain import EntityVersion, Field, FieldType, Rule, RuleType, Value, VersionStatus
 
 # ============================================================
 # FIELD → RULE DEPENDENCY TESTS
 # ============================================================
+
 
 class TestValueRuleDependencies:
     """Tests for value dependencies in rules."""
@@ -36,7 +32,7 @@ class TestValueRuleDependencies:
             status=VersionStatus.DRAFT,
             changelog="Test",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -48,7 +44,7 @@ class TestValueRuleDependencies:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         condition_field = Field(
             entity_version_id=version.id,
@@ -57,7 +53,7 @@ class TestValueRuleDependencies:
             data_type=FieldType.STRING.value,
             is_free_value=True,
             is_required=True,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([field, condition_field])
         db_session.flush()
@@ -74,7 +70,7 @@ class TestValueRuleDependencies:
             target_value_id=value.id,
             rule_type=RuleType.AVAILABILITY.value,
             description="Value availability rule",
-            conditions={"criteria": [{"field_id": condition_field.id, "operator": "EQUALS", "value": "YES"}]}
+            conditions={"criteria": [{"field_id": condition_field.id, "operator": "EQUALS", "value": "YES"}]},
         )
         db_session.add(rule)
         db_session.commit()
@@ -96,7 +92,7 @@ class TestValueRuleDependencies:
             status=VersionStatus.DRAFT,
             changelog="Test",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -108,7 +104,7 @@ class TestValueRuleDependencies:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         target_field = Field(
             entity_version_id=version.id,
@@ -117,7 +113,7 @@ class TestValueRuleDependencies:
             data_type=FieldType.BOOLEAN.value,
             is_free_value=True,
             is_required=False,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([source_field, target_field])
         db_session.flush()
@@ -132,7 +128,16 @@ class TestValueRuleDependencies:
             target_field_id=target_field.id,
             rule_type=RuleType.VISIBILITY.value,
             description="Condition uses value_id",
-            conditions={"criteria": [{"field_id": source_field.id, "value_id": condition_value.id, "operator": "EQUALS", "value": "TRIGGER"}]}
+            conditions={
+                "criteria": [
+                    {
+                        "field_id": source_field.id,
+                        "value_id": condition_value.id,
+                        "operator": "EQUALS",
+                        "value": "TRIGGER",
+                    }
+                ]
+            },
         )
         db_session.add(rule)
         db_session.commit()
@@ -146,4 +151,3 @@ class TestValueRuleDependencies:
 # ============================================================
 # CLONE ID REMAPPING INTEGRITY TESTS
 # ============================================================
-

@@ -2,14 +2,16 @@
 Authentication and User fixtures for tests.
 Centralizes all user creation and auth header generation.
 """
-import pytest
-from app.models.domain import User, UserRole
-from app.core.security import get_password_hash, create_access_token
 
+import pytest
+
+from app.core.security import create_access_token, get_password_hash
+from app.models.domain import User, UserRole
 
 # ============================================================
 # USER FIXTURES
 # ============================================================
+
 
 @pytest.fixture(scope="function")
 def admin_user(db_session):
@@ -18,7 +20,7 @@ def admin_user(db_session):
         email="admin@example.com",
         hashed_password=get_password_hash("AdminPassword123!"),
         role=UserRole.ADMIN,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -40,7 +42,7 @@ def author_user(db_session):
         email="author@example.com",
         hashed_password=get_password_hash("AuthorPassword123!"),
         role=UserRole.AUTHOR,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -62,7 +64,7 @@ def regular_user(db_session):
         email="user@example.com",
         hashed_password=get_password_hash("UserPassword123!"),
         role=UserRole.USER,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -84,7 +86,7 @@ def inactive_user(db_session):
         email="inactive@example.com",
         hashed_password=get_password_hash("InactivePassword123!"),
         role=UserRole.USER,
-        is_active=False
+        is_active=False,
     )
     db_session.add(user)
     db_session.commit()

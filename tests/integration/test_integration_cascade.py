@@ -8,26 +8,17 @@ These tests validate that all components work together correctly
 in real-world scenarios.
 """
 
-import pytest
-from datetime import date, timedelta
 from fastapi.testclient import TestClient
-
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    FieldType, RuleType, VersionStatus
-)
-
 
 # ============================================================
 # COMPLETE ENTITY LIFECYCLE TESTS
 # ============================================================
 
+
 class TestCascadeOperations:
     """Tests cascade behavior across entities."""
 
-    def test_delete_draft_version_removes_all_children(
-        self, client: TestClient, admin_headers, db_session
-    ):
+    def test_delete_draft_version_removes_all_children(self, client: TestClient, admin_headers, db_session):
         """
         E2E: Delete DRAFT version → Verify all fields, values deleted.
         Note: Rules require valid conditions, so we test with fields/values only.
@@ -36,15 +27,13 @@ class TestCascadeOperations:
         entity_resp = client.post(
             "/entities/",
             json={"name": "Cascade Delete Test", "description": "Test cascade delete"},
-            headers=admin_headers
+            headers=admin_headers,
         )
         entity_id = entity_resp.json()["id"]
 
         # Create Version
         version_resp = client.post(
-            "/versions/",
-            json={"entity_id": entity_id, "changelog": "To be deleted"},
-            headers=admin_headers
+            "/versions/", json={"entity_id": entity_id, "changelog": "To be deleted"}, headers=admin_headers
         )
         version_id = version_resp.json()["id"]
 
@@ -58,9 +47,9 @@ class TestCascadeOperations:
                 "data_type": "string",
                 "is_free_value": False,
                 "is_required": True,
-                "sequence": 1
+                "sequence": 1,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         field_id = field_resp.json()["id"]
 
@@ -68,7 +57,7 @@ class TestCascadeOperations:
         value_resp = client.post(
             "/values/",
             json={"field_id": field_id, "value": "TEST", "label": "Test", "is_default": True},
-            headers=admin_headers
+            headers=admin_headers,
         )
         value_id = value_resp.json()["id"]
 
@@ -85,27 +74,19 @@ class TestCascadeOperations:
         assert client.get(f"/fields/{field_id}", headers=admin_headers).status_code == 404
         assert client.get(f"/values/{value_id}", headers=admin_headers).status_code == 404
 
-    def test_entity_delete_requires_versions_deleted_first(
-        self, client: TestClient, admin_headers
-    ):
+    def test_entity_delete_requires_versions_deleted_first(self, client: TestClient, admin_headers):
         """
         E2E: Entity with versions cannot be deleted directly.
         Must delete versions first, then entity.
         """
         # Create Entity
         entity_resp = client.post(
-            "/entities/",
-            json={"name": "Delete Order Test", "description": "Test delete order"},
-            headers=admin_headers
+            "/entities/", json={"name": "Delete Order Test", "description": "Test delete order"}, headers=admin_headers
         )
         entity_id = entity_resp.json()["id"]
 
         # Create version
-        v1_resp = client.post(
-            "/versions/",
-            json={"entity_id": entity_id, "changelog": "V1"},
-            headers=admin_headers
-        )
+        v1_resp = client.post("/versions/", json={"entity_id": entity_id, "changelog": "V1"}, headers=admin_headers)
         v1_id = v1_resp.json()["id"]
 
         # Add field to V1
@@ -118,9 +99,9 @@ class TestCascadeOperations:
                 "data_type": "string",
                 "is_free_value": True,
                 "is_required": True,
-                "sequence": 1
+                "sequence": 1,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         field_id = field_resp.json()["id"]
 
@@ -147,4 +128,3 @@ class TestCascadeOperations:
 # ============================================================
 # ROLE-BASED ACCESS CONTROL E2E TESTS
 # ============================================================
-

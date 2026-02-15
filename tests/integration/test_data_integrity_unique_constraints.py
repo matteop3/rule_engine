@@ -8,25 +8,19 @@ Tests for referential integrity across the data model:
 - Clone ID remapping integrity
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    FieldType, RuleType, VersionStatus
-)
-
+from app.models.domain import EntityVersion, VersionStatus
 
 # ============================================================
 # FIELD → RULE DEPENDENCY TESTS
 # ============================================================
 
+
 class TestUniqueConstraints:
     """Tests for unique constraint enforcement."""
 
-    def test_field_names_uniqueness_per_version(
-        self, client: TestClient, admin_headers, draft_version
-    ):
+    def test_field_names_uniqueness_per_version(self, client: TestClient, admin_headers, draft_version):
         """
         Note: Current API allows duplicate field names within a version.
         This test documents current behavior - fields with same name are allowed.
@@ -42,9 +36,9 @@ class TestUniqueConstraints:
                 "data_type": "string",
                 "is_free_value": True,
                 "is_required": True,
-                "sequence": 1
+                "sequence": 1,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert resp1.status_code == 201
         first_id = resp1.json()["id"]
@@ -59,9 +53,9 @@ class TestUniqueConstraints:
                 "data_type": "number",
                 "is_free_value": True,
                 "is_required": False,
-                "sequence": 2
+                "sequence": 2,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         # Document current behavior: duplicates are allowed
         assert resp2.status_code == 201
@@ -70,25 +64,19 @@ class TestUniqueConstraints:
         # Both fields exist with the same name
         assert first_id != second_id
 
-    def test_cannot_create_duplicate_entity_names(
-        self, client: TestClient, admin_headers
-    ):
+    def test_cannot_create_duplicate_entity_names(self, client: TestClient, admin_headers):
         """
         Integrity: Cannot have two entities with the same name.
         """
         # Create first entity
         resp1 = client.post(
-            "/entities/",
-            json={"name": "Unique Entity Name", "description": "First"},
-            headers=admin_headers
+            "/entities/", json={"name": "Unique Entity Name", "description": "First"}, headers=admin_headers
         )
         assert resp1.status_code == 201
 
         # Try to create second entity with same name
         resp2 = client.post(
-            "/entities/",
-            json={"name": "Unique Entity Name", "description": "Second"},
-            headers=admin_headers
+            "/entities/", json={"name": "Unique Entity Name", "description": "Second"}, headers=admin_headers
         )
         assert resp2.status_code in [400, 409]
 
@@ -105,7 +93,7 @@ class TestUniqueConstraints:
             status=VersionStatus.PUBLISHED,
             changelog="V1",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(v1)
         db_session.flush()
@@ -117,7 +105,7 @@ class TestUniqueConstraints:
             status=VersionStatus.DRAFT,
             changelog="V2",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(v2)
         db_session.commit()
@@ -133,9 +121,9 @@ class TestUniqueConstraints:
                     "data_type": "string",
                     "is_free_value": True,
                     "is_required": True,
-                    "sequence": 1
+                    "sequence": 1,
                 },
-                headers=admin_headers
+                headers=admin_headers,
             )
             # V1 is published so should fail, V2 is draft so should succeed
             if version.status == VersionStatus.DRAFT:

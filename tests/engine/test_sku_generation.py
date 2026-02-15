@@ -2,13 +2,10 @@
 Test suite for Smart SKU generation feature.
 Tests SKU generation based on EntityVersion configuration and field selections.
 """
-import pytest
-from app.services.rule_engine import RuleEngineService
+
+from app.models.domain import Entity, EntityVersion, Field, FieldType, Value, VersionStatus
 from app.schemas.engine import CalculationRequest, FieldInputState
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    RuleType, FieldType, VersionStatus
-)
+from app.services.rule_engine import RuleEngineService
 
 
 class TestSKUGeneration:
@@ -33,8 +30,8 @@ class TestSKUGeneration:
             entity_id=data["entity_id"],
             current_state=[
                 FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7"),
-                FieldInputState(field_id=data["fields"]["ram"], value="32GB")
-            ]
+                FieldInputState(field_id=data["fields"]["ram"], value="32GB"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -54,11 +51,7 @@ class TestSKUGeneration:
         db_session.commit()
 
         version = EntityVersion(
-            entity_id=entity.id,
-            version_number=1,
-            status=VersionStatus.PUBLISHED,
-            sku_base="LPT",
-            sku_delimiter="/"
+            entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED, sku_base="LPT", sku_delimiter="/"
         )
         db_session.add(version)
         db_session.commit()
@@ -70,7 +63,7 @@ class TestSKUGeneration:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             step=1,
-            sequence=0
+            sequence=0,
         )
         db_session.add(f_cpu)
         db_session.commit()
@@ -81,8 +74,7 @@ class TestSKUGeneration:
 
         service = RuleEngineService()
         payload = CalculationRequest(
-            entity_id=entity.id,
-            current_state=[FieldInputState(field_id=f_cpu.id, value="Intel i7")]
+            entity_id=entity.id, current_state=[FieldInputState(field_id=f_cpu.id, value="Intel i7")]
         )
 
         response = service.calculate_state(db_session, payload)
@@ -104,11 +96,7 @@ class TestSKUGeneration:
         db_session.commit()
 
         version = EntityVersion(
-            entity_id=entity.id,
-            version_number=1,
-            status=VersionStatus.PUBLISHED,
-            sku_base="LPT",
-            sku_delimiter=""
+            entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED, sku_base="LPT", sku_delimiter=""
         )
         db_session.add(version)
         db_session.commit()
@@ -120,7 +108,7 @@ class TestSKUGeneration:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             step=1,
-            sequence=0
+            sequence=0,
         )
         db_session.add(f_cpu)
         db_session.commit()
@@ -131,8 +119,7 @@ class TestSKUGeneration:
 
         service = RuleEngineService()
         payload = CalculationRequest(
-            entity_id=entity.id,
-            current_state=[FieldInputState(field_id=f_cpu.id, value="Intel i7")]
+            entity_id=entity.id, current_state=[FieldInputState(field_id=f_cpu.id, value="Intel i7")]
         )
 
         response = service.calculate_state(db_session, payload)
@@ -158,7 +145,7 @@ class TestSKUGeneration:
             entity_id=entity.id,
             version_number=1,
             status=VersionStatus.PUBLISHED,
-            sku_base=None  # No SKU base
+            sku_base=None,  # No SKU base
         )
         db_session.add(version)
         db_session.commit()
@@ -170,7 +157,7 @@ class TestSKUGeneration:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             step=1,
-            sequence=0
+            sequence=0,
         )
         db_session.add(f_cpu)
         db_session.commit()
@@ -181,8 +168,7 @@ class TestSKUGeneration:
 
         service = RuleEngineService()
         payload = CalculationRequest(
-            entity_id=entity.id,
-            current_state=[FieldInputState(field_id=f_cpu.id, value="Intel i7")]
+            entity_id=entity.id, current_state=[FieldInputState(field_id=f_cpu.id, value="Intel i7")]
         )
 
         response = service.calculate_state(db_session, payload)
@@ -203,7 +189,7 @@ class TestSKUGeneration:
             entity_id=entity.id,
             version_number=1,
             status=VersionStatus.PUBLISHED,
-            sku_base=""  # Empty string SKU base
+            sku_base="",  # Empty string SKU base
         )
         db_session.add(version)
         db_session.commit()
@@ -215,7 +201,7 @@ class TestSKUGeneration:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             step=1,
-            sequence=0
+            sequence=0,
         )
         db_session.add(f_cpu)
         db_session.commit()
@@ -226,8 +212,7 @@ class TestSKUGeneration:
 
         service = RuleEngineService()
         payload = CalculationRequest(
-            entity_id=entity.id,
-            current_state=[FieldInputState(field_id=f_cpu.id, value="Intel i7")]
+            entity_id=entity.id, current_state=[FieldInputState(field_id=f_cpu.id, value="Intel i7")]
         )
 
         response = service.calculate_state(db_session, payload)
@@ -253,8 +238,8 @@ class TestSKUGeneration:
             entity_id=data["entity_id"],
             current_state=[
                 FieldInputState(field_id=data["fields"]["color"], value="Black"),
-                FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7")
-            ]
+                FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -274,9 +259,7 @@ class TestSKUGeneration:
 
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["color"], value="Black")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["color"], value="Black")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -305,8 +288,8 @@ class TestSKUGeneration:
             current_state=[
                 FieldInputState(field_id=data["fields"]["type"], value="Desktop"),
                 FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7"),
-                FieldInputState(field_id=data["fields"]["ram"], value="32GB")
-            ]
+                FieldInputState(field_id=data["fields"]["ram"], value="32GB"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -329,8 +312,8 @@ class TestSKUGeneration:
             entity_id=data["entity_id"],
             current_state=[
                 FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7"),
-                FieldInputState(field_id=data["fields"]["ram"], value="32GB")
-            ]
+                FieldInputState(field_id=data["fields"]["ram"], value="32GB"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -357,8 +340,8 @@ class TestSKUGeneration:
             entity_id=data["entity_id"],
             current_state=[
                 FieldInputState(field_id=data["fields"]["notes"], value="Custom text"),
-                FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7")
-            ]
+                FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -378,11 +361,7 @@ class TestSKUGeneration:
         db_session.commit()
 
         version = EntityVersion(
-            entity_id=entity.id,
-            version_number=1,
-            status=VersionStatus.PUBLISHED,
-            sku_base="PRD",
-            sku_delimiter="-"
+            entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED, sku_base="PRD", sku_delimiter="-"
         )
         db_session.add(version)
         db_session.commit()
@@ -396,15 +375,14 @@ class TestSKUGeneration:
             is_free_value=True,
             sku_modifier_when_filled="CUSTOM",
             step=1,
-            sequence=0
+            sequence=0,
         )
         db_session.add(f_engraving)
         db_session.commit()
 
         service = RuleEngineService()
         payload = CalculationRequest(
-            entity_id=entity.id,
-            current_state=[FieldInputState(field_id=f_engraving.id, value="Happy Birthday!")]
+            entity_id=entity.id, current_state=[FieldInputState(field_id=f_engraving.id, value="Happy Birthday!")]
         )
 
         response = service.calculate_state(db_session, payload)
@@ -423,11 +401,7 @@ class TestSKUGeneration:
         db_session.commit()
 
         version = EntityVersion(
-            entity_id=entity.id,
-            version_number=1,
-            status=VersionStatus.PUBLISHED,
-            sku_base="PRD",
-            sku_delimiter="-"
+            entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED, sku_base="PRD", sku_delimiter="-"
         )
         db_session.add(version)
         db_session.commit()
@@ -440,7 +414,7 @@ class TestSKUGeneration:
             is_free_value=True,
             sku_modifier_when_filled="CUSTOM",
             step=1,
-            sequence=0
+            sequence=0,
         )
         db_session.add(f_engraving)
         db_session.commit()
@@ -448,7 +422,7 @@ class TestSKUGeneration:
         service = RuleEngineService()
         payload = CalculationRequest(
             entity_id=entity.id,
-            current_state=[]  # No value provided
+            current_state=[],  # No value provided
         )
 
         response = service.calculate_state(db_session, payload)
@@ -469,11 +443,7 @@ class TestSKUGeneration:
         db_session.commit()
 
         version = EntityVersion(
-            entity_id=entity.id,
-            version_number=1,
-            status=VersionStatus.PUBLISHED,
-            sku_base="GIFT",
-            sku_delimiter="-"
+            entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED, sku_base="GIFT", sku_delimiter="-"
         )
         db_session.add(version)
         db_session.commit()
@@ -486,7 +456,7 @@ class TestSKUGeneration:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             step=1,
-            sequence=0
+            sequence=0,
         )
         # Free-value field with modifier
         f_message = Field(
@@ -497,7 +467,7 @@ class TestSKUGeneration:
             is_free_value=True,
             sku_modifier_when_filled="MSG",
             step=2,
-            sequence=0
+            sequence=0,
         )
         db_session.add_all([f_size, f_message])
         db_session.commit()
@@ -512,8 +482,8 @@ class TestSKUGeneration:
             entity_id=entity.id,
             current_state=[
                 FieldInputState(field_id=f_size.id, value="Large"),
-                FieldInputState(field_id=f_message.id, value="Congratulations!")
-            ]
+                FieldInputState(field_id=f_message.id, value="Congratulations!"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -531,11 +501,7 @@ class TestSKUGeneration:
         db_session.commit()
 
         version = EntityVersion(
-            entity_id=entity.id,
-            version_number=1,
-            status=VersionStatus.PUBLISHED,
-            sku_base="PRD",
-            sku_delimiter="-"
+            entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED, sku_base="PRD", sku_delimiter="-"
         )
         db_session.add(version)
         db_session.commit()
@@ -549,15 +515,14 @@ class TestSKUGeneration:
             is_free_value=True,
             sku_modifier_when_filled=None,  # Explicitly None
             step=1,
-            sequence=0
+            sequence=0,
         )
         db_session.add(f_notes)
         db_session.commit()
 
         service = RuleEngineService()
         payload = CalculationRequest(
-            entity_id=entity.id,
-            current_state=[FieldInputState(field_id=f_notes.id, value="Some notes")]
+            entity_id=entity.id, current_state=[FieldInputState(field_id=f_notes.id, value="Some notes")]
         )
 
         response = service.calculate_state(db_session, payload)
@@ -586,9 +551,9 @@ class TestSKUGeneration:
             entity_id=data["entity_id"],
             current_state=[
                 FieldInputState(field_id=data["fields"]["gpu"], value="RTX 4080"),  # step=2, seq=0
-                FieldInputState(field_id=data["fields"]["ram"], value="32GB"),      # step=1, seq=1
-                FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7")   # step=1, seq=0
-            ]
+                FieldInputState(field_id=data["fields"]["ram"], value="32GB"),  # step=1, seq=1
+                FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7"),  # step=1, seq=0
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -612,10 +577,7 @@ class TestSKUGeneration:
 
         # Only select RAM, not CPU
         payload = CalculationRequest(
-            entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["ram"], value="32GB")
-            ]
+            entity_id=data["entity_id"], current_state=[FieldInputState(field_id=data["fields"]["ram"], value="32GB")]
         )
 
         response = service.calculate_state(db_session, payload)
@@ -641,11 +603,7 @@ class TestSKUGeneration:
         # Create a base that will be long
         long_base = "VERY-LONG-BASE-SKU-CODE"
         version = EntityVersion(
-            entity_id=entity.id,
-            version_number=1,
-            status=VersionStatus.PUBLISHED,
-            sku_base=long_base,
-            sku_delimiter="-"
+            entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED, sku_base=long_base, sku_delimiter="-"
         )
         db_session.add(version)
         db_session.commit()
@@ -661,7 +619,7 @@ class TestSKUGeneration:
                 data_type=FieldType.STRING.value,
                 is_free_value=False,
                 step=i,
-                sequence=0
+                sequence=0,
             )
             db_session.add(field)
             db_session.flush()
@@ -671,7 +629,7 @@ class TestSKUGeneration:
                 field_id=field.id,
                 value=f"Option{i}",
                 label=f"Option {i}",
-                sku_modifier=f"MOD{i:05d}XX"  # 10 chars each
+                sku_modifier=f"MOD{i:05d}XX",  # 10 chars each
             )
             fields.append(field)
             values.append(value)
@@ -682,10 +640,7 @@ class TestSKUGeneration:
         service = RuleEngineService()
         payload = CalculationRequest(
             entity_id=entity.id,
-            current_state=[
-                FieldInputState(field_id=f.id, value=f"Option{i}")
-                for i, f in enumerate(fields)
-            ]
+            current_state=[FieldInputState(field_id=f.id, value=f"Option{i}") for i, f in enumerate(fields)],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -714,8 +669,8 @@ class TestSKUGeneration:
             entity_id=data["entity_id"],
             current_state=[
                 FieldInputState(field_id=data["fields"]["type"], value="Standard"),
-                FieldInputState(field_id=data["fields"]["ram"], value="32GB")
-            ]
+                FieldInputState(field_id=data["fields"]["ram"], value="32GB"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -735,8 +690,8 @@ class TestSKUGeneration:
             entity_id=data["entity_id"],
             current_state=[
                 FieldInputState(field_id=data["fields"]["type"], value="Standard"),
-                FieldInputState(field_id=data["fields"]["ram"], value="16GB")
-            ]
+                FieldInputState(field_id=data["fields"]["ram"], value="16GB"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -759,11 +714,7 @@ class TestSKUGeneration:
         db_session.commit()
 
         version = EntityVersion(
-            entity_id=entity.id,
-            version_number=1,
-            status=VersionStatus.PUBLISHED,
-            sku_base="PRD",
-            sku_delimiter="-"
+            entity_id=entity.id, version_number=1, status=VersionStatus.PUBLISHED, sku_base="PRD", sku_delimiter="-"
         )
         db_session.add(version)
         db_session.commit()
@@ -775,7 +726,7 @@ class TestSKUGeneration:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             step=1,
-            sequence=0
+            sequence=0,
         )
         db_session.add(f_size)
         db_session.commit()
@@ -786,8 +737,7 @@ class TestSKUGeneration:
 
         service = RuleEngineService()
         payload = CalculationRequest(
-            entity_id=entity.id,
-            current_state=[FieldInputState(field_id=f_size.id, value="X-Large")]
+            entity_id=entity.id, current_state=[FieldInputState(field_id=f_size.id, value="X-Large")]
         )
 
         response = service.calculate_state(db_session, payload)
@@ -806,7 +756,7 @@ class TestSKUGeneration:
 
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[]  # Empty configuration
+            current_state=[],  # Empty configuration
         )
 
         response = service.calculate_state(db_session, payload)
@@ -827,12 +777,12 @@ class TestSKUGeneration:
         payload = CalculationRequest(
             entity_id=data["entity_id"],
             current_state=[
-                FieldInputState(field_id=data["fields"]["cpu"], value="Intel i9"),    # Has modifier I9
-                FieldInputState(field_id=data["fields"]["ram"], value="16GB"),        # Has modifier 16G
-                FieldInputState(field_id=data["fields"]["gpu"], value="RTX 3060"),    # Has modifier RTX3060
-                FieldInputState(field_id=data["fields"]["color"], value="White"),     # No modifier
-                FieldInputState(field_id=data["fields"]["notes"], value="Test note")  # Free value, ignored
-            ]
+                FieldInputState(field_id=data["fields"]["cpu"], value="Intel i9"),  # Has modifier I9
+                FieldInputState(field_id=data["fields"]["ram"], value="16GB"),  # Has modifier 16G
+                FieldInputState(field_id=data["fields"]["gpu"], value="RTX 3060"),  # Has modifier RTX3060
+                FieldInputState(field_id=data["fields"]["color"], value="White"),  # No modifier
+                FieldInputState(field_id=data["fields"]["notes"], value="Test note"),  # Free value, ignored
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -857,8 +807,8 @@ class TestSKUGeneration:
             current_state=[
                 FieldInputState(field_id=data["fields"]["type"], value="Laptop"),
                 FieldInputState(field_id=data["fields"]["cpu"], value="Intel i7"),
-                FieldInputState(field_id=data["fields"]["ram"], value="32GB")
-            ]
+                FieldInputState(field_id=data["fields"]["ram"], value="32GB"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)

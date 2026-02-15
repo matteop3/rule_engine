@@ -1,6 +1,6 @@
-from typing import List, Optional
 from enum import Enum
-from .base_schema import BaseSchema, AuditSchemaMixin
+
+from .base_schema import AuditSchemaMixin, BaseSchema
 from .engine import FieldInputState
 
 
@@ -11,14 +11,16 @@ class ConfigurationStatusEnum(str, Enum):
     - DRAFT: Work in progress, mutable configuration
     - FINALIZED: Immutable snapshot, read-only
     """
+
     DRAFT = "DRAFT"
     FINALIZED = "FINALIZED"
 
 
 class ConfigurationBase(BaseSchema):
     """Base properties for Configuration schemas."""
-    name: Optional[str] = None
-    data: List[FieldInputState]
+
+    name: str | None = None
+    data: list[FieldInputState]
 
 
 class ConfigurationCreate(ConfigurationBase):
@@ -27,6 +29,7 @@ class ConfigurationCreate(ConfigurationBase):
 
     Note: status is automatically set to DRAFT on creation.
     """
+
     entity_version_id: int
 
 
@@ -36,11 +39,12 @@ class ConfigurationRead(ConfigurationBase, AuditSchemaMixin):
 
     Includes all configuration details including lifecycle status.
     """
+
     id: str  # UUID
     entity_version_id: int
     status: ConfigurationStatusEnum
     is_complete: bool
-    generated_sku: Optional[str] = None
+    generated_sku: str | None = None
     is_deleted: bool = False
 
 
@@ -54,8 +58,9 @@ class ConfigurationUpdate(BaseSchema):
     Note: Updates are only allowed on DRAFT configurations.
     FINALIZED configurations will return HTTP 409 Conflict.
     """
-    name: Optional[str] = None
-    data: Optional[List[FieldInputState]] = None
+
+    name: str | None = None
+    data: list[FieldInputState] | None = None
 
 
 class ConfigurationCloneResponse(ConfigurationRead):
@@ -65,4 +70,5 @@ class ConfigurationCloneResponse(ConfigurationRead):
     The cloned configuration always has status=DRAFT,
     regardless of the source configuration's status.
     """
+
     source_id: str  # UUID of the original configuration

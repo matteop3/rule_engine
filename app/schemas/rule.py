@@ -1,27 +1,29 @@
-from typing import Optional, Any, List, Union, Literal
-from pydantic import BaseModel, model_validator, field_validator
-from .base_schema import BaseSchema
+from typing import Any, Literal
+
+from pydantic import BaseModel, field_validator, model_validator
+
 from app.models.domain import RuleType
 
+from .base_schema import BaseSchema
+
 CriterionOperator = Literal[
-    'EQUALS', 'NOT_EQUALS',
-    'GREATER_THAN', 'GREATER_THAN_OR_EQUAL',
-    'LESS_THAN', 'LESS_THAN_OR_EQUAL',
-    'IN'
+    "EQUALS", "NOT_EQUALS", "GREATER_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN", "LESS_THAN_OR_EQUAL", "IN"
 ]
+
 
 # Strict validation models
 class RuleCriterion(BaseModel):
     field_id: int
     operator: CriterionOperator
-    value: Union[str, int, float, bool, List[Any], None] = None
+    value: str | int | float | bool | list[Any] | None = None
+
 
 class RuleConditions(BaseModel):
     # Implicit AND
-    criteria: List[RuleCriterion]
+    criteria: list[RuleCriterion]
 
     # Ensures that the rule contains at least one criterion.
-    @field_validator('criteria')
+    @field_validator("criteria")
     @classmethod
     def check_not_empty(cls, v):
         if not v:
@@ -31,22 +33,25 @@ class RuleConditions(BaseModel):
 
 # Rule schemas
 class RuleBase(BaseSchema):
-    """ Base properties shared by create and read operations. """
+    """Base properties shared by create and read operations."""
+
     conditions: RuleConditions
-    description: Optional[str] = None
-    rule_type: RuleType = RuleType.AVAILABILITY # Default
-    error_message: Optional[str] = None
-    set_value: Optional[str] = None
+    description: str | None = None
+    rule_type: RuleType = RuleType.AVAILABILITY  # Default
+    error_message: str | None = None
+    set_value: str | None = None
+
 
 class RuleCreate(RuleBase):
-    """ Payload to create a new version. """
-    entity_version_id: int 
-    
+    """Payload to create a new version."""
+
+    entity_version_id: int
+
     target_field_id: int
-    target_value_id: Optional[int] = None
+    target_value_id: int | None = None
 
     # Consistency validator: bad rule_type blocks
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def check_rule_type_consistency(self):
         r_type = self.rule_type
         t_value = self.target_value_id
@@ -56,22 +61,34 @@ class RuleCreate(RuleBase):
         # target_value_id: only AVAILABILITY
         if t_value is not None:
             if r_type != RuleType.AVAILABILITY:
-                raise ValueError(f"Consistency error: if 'target_value_id' is provided, rule_type must be '{RuleType.AVAILABILITY}'. Got '{r_type}'.")
+                raise ValueError(
+                    f"Consistency error: if 'target_value_id' is provided, rule_type must be"
+                    f" '{RuleType.AVAILABILITY}'. Got '{r_type}'."
+                )
         else:
             if r_type == RuleType.AVAILABILITY:
-                 raise ValueError(f"Consistency error: if 'target_value_id' is None, rule_type cannot be '{RuleType.AVAILABILITY}'.")
+                raise ValueError(
+                    f"Consistency error: if 'target_value_id' is None, rule_type cannot be '{RuleType.AVAILABILITY}'."
+                )
 
         # error_message: only VALIDATION
         if err_msg is not None and r_type != RuleType.VALIDATION:
-            raise ValueError(f"Consistency error: 'error_message' is only allowed for rule_type '{RuleType.VALIDATION}'. Got '{r_type}'.")
+            raise ValueError(
+                f"Consistency error: 'error_message' is only allowed for rule_type"
+                f" '{RuleType.VALIDATION}'. Got '{r_type}'."
+            )
 
         # set_value: only CALCULATION (and mandatory for it)
         if s_value is not None and r_type != RuleType.CALCULATION:
-            raise ValueError(f"Consistency error: 'set_value' is only allowed for rule_type '{RuleType.CALCULATION}'. Got '{r_type}'.")
+            raise ValueError(
+                f"Consistency error: 'set_value' is only allowed for rule_type"
+                f" '{RuleType.CALCULATION}'. Got '{r_type}'."
+            )
         if r_type == RuleType.CALCULATION and s_value is None:
             raise ValueError(f"Consistency error: 'set_value' is required for rule_type '{RuleType.CALCULATION}'.")
 
         return self
+
 
 class RuleUpdate(BaseSchema):
     """
@@ -81,15 +98,16 @@ class RuleUpdate(BaseSchema):
     Full consistency validation (rule_type vs target_value_id) is performed at the service layer
     where the existing rule data is available.
     """
-    conditions: Optional[RuleConditions] = None
-    description: Optional[str] = None
-    rule_type: Optional[RuleType] = None
-    error_message: Optional[str] = None
-    set_value: Optional[str] = None
-    target_field_id: Optional[int] = None
-    target_value_id: Optional[int] = None
 
-    @model_validator(mode='after')
+    conditions: RuleConditions | None = None
+    description: str | None = None
+    rule_type: RuleType | None = None
+    error_message: str | None = None
+    set_value: str | None = None
+    target_field_id: int | None = None
+    target_value_id: int | None = None
+
+    @model_validator(mode="after")
     def check_partial_rule_type_consistency(self):
         """
         Validates consistency when fields are explicitly provided together.
@@ -121,9 +139,11 @@ class RuleUpdate(BaseSchema):
 
         return self
 
+
 class RuleRead(RuleBase):
-    """ Output schema for API responses. """
+    """Output schema for API responses."""
+
     id: int
     entity_version_id: int
     target_field_id: int
-    target_value_id: Optional[int] = None
+    target_value_id: int | None = None

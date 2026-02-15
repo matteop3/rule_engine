@@ -8,18 +8,14 @@ Tests for referential integrity across the data model:
 - Clone ID remapping integrity
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    FieldType, RuleType, VersionStatus
-)
-
+from app.models.domain import EntityVersion, Field, FieldType, Rule, RuleType, VersionStatus
 
 # ============================================================
 # FIELD → RULE DEPENDENCY TESTS
 # ============================================================
+
 
 class TestDataConsistency:
     """Tests for data consistency after various operations."""
@@ -37,7 +33,7 @@ class TestDataConsistency:
             status=VersionStatus.PUBLISHED,
             changelog="Original",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(original)
         db_session.flush()
@@ -49,7 +45,7 @@ class TestDataConsistency:
             data_type=FieldType.STRING.value,
             is_free_value=True,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         db_session.add(original_field)
         db_session.commit()
@@ -57,11 +53,7 @@ class TestDataConsistency:
         original_field_id = original_field.id
 
         # Clone
-        clone_resp = client.post(
-            f"/versions/{original.id}/clone",
-            json={"changelog": "Clone"},
-            headers=admin_headers
-        )
+        clone_resp = client.post(f"/versions/{original.id}/clone", json={"changelog": "Clone"}, headers=admin_headers)
         clone_id = clone_resp.json()["id"]
 
         # Get cloned field and modify it
@@ -78,9 +70,9 @@ class TestDataConsistency:
                 "data_type": "string",
                 "is_free_value": True,
                 "is_required": False,
-                "sequence": 1
+                "sequence": 1,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
 
         # Verify original is unchanged
@@ -102,7 +94,7 @@ class TestDataConsistency:
             status=VersionStatus.PUBLISHED,
             changelog="V1",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(v1)
         db_session.flush()
@@ -114,7 +106,7 @@ class TestDataConsistency:
             data_type=FieldType.NUMBER.value,
             is_free_value=True,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         v1_optional = Field(
             entity_version_id=v1.id,
@@ -123,7 +115,7 @@ class TestDataConsistency:
             data_type=FieldType.BOOLEAN.value,
             is_free_value=True,
             is_required=False,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([v1_field, v1_optional])
         db_session.flush()
@@ -134,7 +126,7 @@ class TestDataConsistency:
             target_field_id=v1_optional.id,
             rule_type=RuleType.MANDATORY.value,
             description="V1: Extra if > 100",
-            conditions={"criteria": [{"field_id": v1_field.id, "operator": "GREATER_THAN", "value": 100}]}
+            conditions={"criteria": [{"field_id": v1_field.id, "operator": "GREATER_THAN", "value": 100}]},
         )
         db_session.add(v1_rule)
         db_session.commit()
@@ -145,9 +137,9 @@ class TestDataConsistency:
             json={
                 "entity_id": test_entity.id,
                 "entity_version_id": v1.id,
-                "current_state": [{"field_id": v1_field.id, "value": 200}]
+                "current_state": [{"field_id": v1_field.id, "value": 200}],
             },
-            headers=admin_headers
+            headers=admin_headers,
         ).json()
 
         v1_extra = next(f for f in calc_v1["fields"] if f["field_id"] == v1_optional.id)
@@ -163,7 +155,7 @@ class TestDataConsistency:
             status=VersionStatus.PUBLISHED,
             changelog="V2",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(v2)
         db_session.flush()
@@ -175,7 +167,7 @@ class TestDataConsistency:
             data_type=FieldType.NUMBER.value,
             is_free_value=True,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         v2_optional = Field(
             entity_version_id=v2.id,
@@ -184,7 +176,7 @@ class TestDataConsistency:
             data_type=FieldType.BOOLEAN.value,
             is_free_value=True,
             is_required=False,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([v2_field, v2_optional])
         db_session.flush()
@@ -195,7 +187,7 @@ class TestDataConsistency:
             target_field_id=v2_optional.id,
             rule_type=RuleType.MANDATORY.value,
             description="V2: Extra if > 1000",
-            conditions={"criteria": [{"field_id": v2_field.id, "operator": "GREATER_THAN", "value": 1000}]}
+            conditions={"criteria": [{"field_id": v2_field.id, "operator": "GREATER_THAN", "value": 1000}]},
         )
         db_session.add(v2_rule)
         db_session.commit()
@@ -206,9 +198,9 @@ class TestDataConsistency:
             json={
                 "entity_id": test_entity.id,
                 "entity_version_id": v2.id,
-                "current_state": [{"field_id": v2_field.id, "value": 200}]
+                "current_state": [{"field_id": v2_field.id, "value": 200}],
             },
-            headers=admin_headers
+            headers=admin_headers,
         ).json()
 
         v2_extra = next(f for f in calc_v2["fields"] if f["field_id"] == v2_optional.id)
@@ -218,4 +210,3 @@ class TestDataConsistency:
 # ============================================================
 # UNIQUE CONSTRAINT TESTS
 # ============================================================
-

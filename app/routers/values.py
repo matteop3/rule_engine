@@ -1,23 +1,21 @@
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import (
-    require_admin_or_author,
-    fetch_version_by_id,
+    db_transaction,
     fetch_field_by_id,
-    validate_version_is_draft,
-    validate_value_not_used_in_rules,
-    get_value_or_404,
+    fetch_version_by_id,
     get_editable_value,
-    db_transaction
+    get_value_or_404,
+    require_admin_or_author,
+    validate_value_not_used_in_rules,
+    validate_version_is_draft,
 )
-from app.models.domain import Value, Field, Rule, RuleType, User
+from app.models.domain import Rule, RuleType, User, Value
 from app.schemas import ValueCreate, ValueRead, ValueUpdate
-
 
 # ============================================================
 # LOGGING SETUP
@@ -30,23 +28,21 @@ logger = logging.getLogger(__name__)
 # ROUTER SETUP
 # ============================================================
 
-router = APIRouter(
-    prefix="/values",
-    tags=["Values"]
-)
+router = APIRouter(prefix="/values", tags=["Values"])
 
 
 # ============================================================
 # ENDPOINTS
 # ============================================================
 
-@router.get("/", response_model=List[ValueRead])
+
+@router.get("/", response_model=list[ValueRead])
 def list_values(
-    field_id: Optional[int] = None,
+    field_id: int | None = None,
     skip: int = Query(default=0, ge=0, description="Number of records to skip"),
     limit: int = Query(default=100, ge=0, le=100, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    current_user: User = Depends(require_admin_or_author),
 ):
     """
     Retrieve Values for a specific Field.
@@ -62,10 +58,7 @@ def list_values(
     Returns:
         List[ValueRead]: List of values
     """
-    logger.info(
-        f"Listing values by user {current_user.id}: "
-        f"field={field_id}, skip={skip}, limit={limit}"
-    )
+    logger.info(f"Listing values by user {current_user.id}: field={field_id}, skip={skip}, limit={limit}")
 
     # Cap limit to prevent abuse
     original_limit = limit
@@ -87,10 +80,7 @@ def list_values(
 
 
 @router.get("/{value_id}", response_model=ValueRead)
-def read_value(
-    value: Value = Depends(get_value_or_404),
-    current_user: User = Depends(require_admin_or_author)
-):
+def read_value(value: Value = Depends(get_value_or_404), current_user: User = Depends(require_admin_or_author)):
     """
     Retrieve a single Value.
 
@@ -106,9 +96,7 @@ def read_value(
 
 @router.post("/", response_model=ValueRead, status_code=status.HTTP_201_CREATED)
 def create_value(
-    value_data: ValueCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    value_data: ValueCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_author)
 ):
     """
     Create a new Value related to a Field.
@@ -125,8 +113,7 @@ def create_value(
         ValueRead: The created value
     """
     logger.info(
-        f"Creating value for field {value_data.field_id} "
-        f"by user {current_user.id} (role: {current_user.role_display})"
+        f"Creating value for field {value_data.field_id} by user {current_user.id} (role: {current_user.role_display})"
     )
 
     # Check integrity: does parent Field exist?
@@ -138,15 +125,13 @@ def create_value(
 
     # Prevent creation of Value for free-value Fields
     if field.is_free_value:
-        logger.warning(
-            f"Value creation failed: field {field.id} ('{field.name}') is free-value"
-        )
+        logger.warning(f"Value creation failed: field {field.id} ('{field.name}') is free-value")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 f"Field '{field.name}' (ID {field.id}) is configured as 'Free Value'. "
                 "You cannot define pre-set values for it."
-            )
+            ),
         )
 
     # Value creation
@@ -155,10 +140,7 @@ def create_value(
         db.add(new_value)
         db.flush()
 
-        logger.info(
-            f"Value {new_value.id} created successfully: "
-            f"value='{value_data.value}', field={field.id}"
-        )
+        logger.info(f"Value {new_value.id} created successfully: value='{value_data.value}', field={field.id}")
 
     db.refresh(new_value)
     return new_value
@@ -169,7 +151,7 @@ def update_value(
     value_update: ValueUpdate,
     value: Value = Depends(get_editable_value),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    current_user: User = Depends(require_admin_or_author),
 ):
     """
     Updates an existing Value.
@@ -185,17 +167,13 @@ def update_value(
     Returns:
         ValueRead: The updated value
     """
-    logger.info(
-        f"Updating value {value.id} by user {current_user.id} "
-        f"(role: {current_user.role_display})"
-    )
+    logger.info(f"Updating value {value.id} by user {current_user.id} (role: {current_user.role_display})")
 
     parent_field = value.field
     if not parent_field:
         logger.error(f"Value {value.id} has no parent field")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Corrupted Data: Value has no parent Field."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Corrupted Data: Value has no parent Field."
         )
 
     # If changing the Field_id, validate the new parent Field
@@ -206,12 +184,9 @@ def update_value(
 
         # Check integrity: cannot move value to a Free Field
         if new_field.is_free_value:
-            logger.warning(
-                f"Update value {value.id} failed: cannot move to free-value field {new_field.id}"
-            )
+            logger.warning(f"Update value {value.id} failed: cannot move to free-value field {new_field.id}")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot assign Value to a Field with free value."
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot assign Value to a Field with free value."
             )
 
         # If new_field does not belong to the same version -> Error
@@ -226,16 +201,20 @@ def update_value(
                     "Consistency error: You cannot move a Value to a Field belonging to a different Version. "
                     f"Current Version ID: {parent_field.entity_version_id}, "
                     f"Target Field Version ID: {new_field.entity_version_id}."
-                )
+                ),
             )
 
     # Check CALCULATION rules if value string is being changed
     if value_update.value is not None and value_update.value != value.value:
-        calc_rules_count = db.query(Rule).filter(
-            Rule.target_field_id == value.field_id,
-            Rule.rule_type == RuleType.CALCULATION,
-            Rule.set_value == value.value
-        ).count()
+        calc_rules_count = (
+            db.query(Rule)
+            .filter(
+                Rule.target_field_id == value.field_id,
+                Rule.rule_type == RuleType.CALCULATION,
+                Rule.set_value == value.value,
+            )
+            .count()
+        )
         if calc_rules_count > 0:
             logger.warning(
                 f"Update value {value.id} failed: value string '{value.value}' "
@@ -247,7 +226,7 @@ def update_value(
                     f"Cannot change value string '{value.value}' because it is referenced by "
                     f"{calc_rules_count} CALCULATION rule(s) via 'set_value'. "
                     f"Update or delete those rules first."
-                )
+                ),
             )
 
     # Apply updates
@@ -272,7 +251,7 @@ def update_value(
 def delete_value(
     value: Value = Depends(get_editable_value),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    current_user: User = Depends(require_admin_or_author),
 ):
     """
     Delete a Value.
@@ -288,10 +267,7 @@ def delete_value(
     Returns:
         204 No Content on success
     """
-    logger.info(
-        f"Deleting value {value.id} by user {current_user.id} "
-        f"(role: {current_user.role_display})"
-    )
+    logger.info(f"Deleting value {value.id} by user {current_user.id} (role: {current_user.role_display})")
 
     # Validate value is not used in any rules (explicit or implicit)
     validate_value_not_used_in_rules(db, value)

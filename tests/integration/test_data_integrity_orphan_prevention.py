@@ -8,25 +8,19 @@ Tests for referential integrity across the data model:
 - Clone ID remapping integrity
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    FieldType, RuleType, VersionStatus
-)
-
+from app.models.domain import EntityVersion, Field, FieldType, VersionStatus
 
 # ============================================================
 # FIELD → RULE DEPENDENCY TESTS
 # ============================================================
 
+
 class TestOrphanPrevention:
     """Tests to ensure no orphaned data is created."""
 
-    def test_field_cannot_reference_nonexistent_version(
-        self, client: TestClient, admin_headers
-    ):
+    def test_field_cannot_reference_nonexistent_version(self, client: TestClient, admin_headers):
         """
         Integrity: Cannot create field for non-existent version.
         """
@@ -39,35 +33,26 @@ class TestOrphanPrevention:
                 "data_type": "string",
                 "is_free_value": True,
                 "is_required": False,
-                "sequence": 1
+                "sequence": 1,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
 
         assert resp.status_code == 404
 
-    def test_value_cannot_reference_nonexistent_field(
-        self, client: TestClient, admin_headers
-    ):
+    def test_value_cannot_reference_nonexistent_field(self, client: TestClient, admin_headers):
         """
         Integrity: Cannot create value for non-existent field.
         """
         resp = client.post(
             "/values/",
-            json={
-                "field_id": 99999,
-                "value": "ORPHAN",
-                "label": "Orphan",
-                "is_default": True
-            },
-            headers=admin_headers
+            json={"field_id": 99999, "value": "ORPHAN", "label": "Orphan", "is_default": True},
+            headers=admin_headers,
         )
 
         assert resp.status_code == 404
 
-    def test_rule_cannot_reference_nonexistent_target_field(
-        self, client: TestClient, admin_headers, draft_version
-    ):
+    def test_rule_cannot_reference_nonexistent_target_field(self, client: TestClient, admin_headers, draft_version):
         """
         Integrity: Cannot create rule with non-existent target_field_id.
         """
@@ -78,9 +63,9 @@ class TestOrphanPrevention:
                 "target_field_id": 99999,
                 "rule_type": "validation",
                 "description": "Orphan rule",
-                "conditions": {"criteria": []}
+                "conditions": {"criteria": []},
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
 
         # 400/404 for business logic errors, 422 for Pydantic validation errors
@@ -99,7 +84,7 @@ class TestOrphanPrevention:
             status=VersionStatus.DRAFT,
             changelog="V1",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(v1)
         db_session.flush()
@@ -111,7 +96,7 @@ class TestOrphanPrevention:
             data_type=FieldType.STRING.value,
             is_free_value=True,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         db_session.add(v1_field)
         db_session.flush()
@@ -123,7 +108,7 @@ class TestOrphanPrevention:
             status=VersionStatus.DRAFT,
             changelog="V2",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(v2)
         db_session.commit()
@@ -136,9 +121,9 @@ class TestOrphanPrevention:
                 "target_field_id": v1_field.id,  # Wrong version!
                 "rule_type": "validation",
                 "description": "Cross-version rule",
-                "conditions": {"criteria": []}
+                "conditions": {"criteria": []},
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
 
         # Should fail - field doesn't belong to this version
@@ -149,4 +134,3 @@ class TestOrphanPrevention:
 # ============================================================
 # DATA CONSISTENCY AFTER OPERATIONS
 # ============================================================
-

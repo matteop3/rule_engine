@@ -5,8 +5,9 @@ from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
-from app.routers import entities, fields, values, rules, engine as engine_router, versions, configurations, auth, users
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
+from app.routers import auth, configurations, entities, fields, rules, users, values, versions
+from app.routers import engine as engine_router
 
 
 @asynccontextmanager
@@ -24,10 +25,7 @@ async def lifespan(app: FastAPI):
     # Database migrations are handled by Alembic via docker-entrypoint.sh
     # No create_all() needed - schema is managed through version-controlled migrations
 
-    logging.basicConfig(
-        level=settings.LOG_LEVEL,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=settings.LOG_LEVEL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     yield  # App is running here
 
@@ -39,7 +37,7 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.PROJECT_DESCRIPTION,
     version="0.1.0",
-    lifespan=lifespan  # Register lifespan handler
+    lifespan=lifespan,  # Register lifespan handler
 )
 
 # Add rate limiting
@@ -56,6 +54,7 @@ app.include_router(values.router)
 app.include_router(rules.router)
 app.include_router(engine_router.router)
 app.include_router(configurations.router)
+
 
 @app.get("/")
 def health_check() -> dict[str, str]:

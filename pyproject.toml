@@ -1,0 +1,46 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "SIM", # simplify
+]
+ignore = [
+    "B008",   # function-call-in-default-argument (FastAPI Depends() pattern)
+    "UP042",  # replace-str-enum (StrEnum not compatible with SQLAlchemy enums)
+    "SIM102", # collapsible-if (reduces readability in complex conditions)
+    "SIM108", # if-else-block-instead-of-if-exp (ternary not always clearer)
+    "SIM110", # reimplemented-builtin (explicit loops can be clearer)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/env.py" = ["F401", "E402"]   # imports needed for model registration
+"tests/*" = ["F841", "E501", "B007", "B905", "E712"]  # relaxed rules for test code
+"app/*/__init__.py" = ["F401"]        # re-exports from __init__.py
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

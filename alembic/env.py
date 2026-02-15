@@ -5,6 +5,7 @@ This file configures Alembic to:
 1. Read DATABASE_URL from environment variable (Docker-friendly)
 2. Import all models for autogenerate support
 """
+
 import os
 from logging.config import fileConfig
 
@@ -39,14 +40,14 @@ from app.database import Base
 # Import all models to ensure they are registered with Base.metadata
 # This is CRITICAL: models must be imported before autogenerate runs
 from app.models.domain import (
+    Configuration,
     Entity,
     EntityVersion,
     Field,
-    Value,
+    RefreshToken,
     Rule,
     User,
-    Configuration,
-    RefreshToken,
+    Value,
 )
 
 target_metadata = Base.metadata
@@ -54,6 +55,7 @@ target_metadata = Base.metadata
 # =============================================================================
 # Migration Functions
 # =============================================================================
+
 
 def run_migrations_offline() -> None:
     """

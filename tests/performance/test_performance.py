@@ -19,18 +19,26 @@ Note: These tests require pytest-benchmark. Install with: pip install pytest-ben
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import (
-    Entity, EntityVersion, Field, Rule, Value,
-    User, UserRole, VersionStatus, FieldType, RuleType
-)
 from app.core.security import create_access_token, get_password_hash
-from app.services.rule_engine import RuleEngineService
+from app.models.domain import (
+    Entity,
+    EntityVersion,
+    Field,
+    FieldType,
+    Rule,
+    RuleType,
+    User,
+    UserRole,
+    Value,
+    VersionStatus,
+)
 from app.schemas.engine import CalculationRequest, FieldInputState
-
+from app.services.rule_engine import RuleEngineService
 
 # ============================================================
 # FIXTURES
 # ============================================================
+
 
 @pytest.fixture(scope="function")
 def perf_user(db_session):
@@ -39,7 +47,7 @@ def perf_user(db_session):
         email="perfuser@example.com",
         hashed_password=get_password_hash("TestPassword123!"),
         role=UserRole.USER,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -76,17 +84,13 @@ def simple_scenario(db_session):
             label=f"Field {i}",
             data_type=FieldType.STRING.value,
             sequence=i,
-            is_free_value=True
+            is_free_value=True,
         )
         fields.append(field)
     db_session.add_all(fields)
     db_session.commit()
 
-    return {
-        "entity_id": entity.id,
-        "version_id": version.id,
-        "field_ids": [f.id for f in fields]
-    }
+    return {"entity_id": entity.id, "version_id": version.id, "field_ids": [f.id for f in fields]}
 
 
 @pytest.fixture(scope="function")
@@ -112,7 +116,7 @@ def medium_scenario(db_session):
             label=f"Field {i}",
             data_type=data_type,
             sequence=i,
-            is_free_value=True
+            is_free_value=True,
         )
         fields.append(field)
     db_session.add_all(fields)
@@ -129,7 +133,7 @@ def medium_scenario(db_session):
             entity_version_id=version.id,
             target_field_id=fields[target_idx].id,
             rule_type=rule_type,
-            conditions={"criteria": [{"field_id": fields[source_idx].id, "operator": "EQUALS", "value": "trigger"}]}
+            conditions={"criteria": [{"field_id": fields[source_idx].id, "operator": "EQUALS", "value": "trigger"}]},
         )
         rules.append(rule)
     db_session.add_all(rules)
@@ -139,7 +143,7 @@ def medium_scenario(db_session):
         "entity_id": entity.id,
         "version_id": version.id,
         "field_ids": [f.id for f in fields],
-        "rule_count": len(rules)
+        "rule_count": len(rules),
     }
 
 
@@ -160,14 +164,16 @@ def complex_scenario(db_session):
     # Create 50 fields
     fields = []
     for i in range(50):
-        data_type = [FieldType.STRING.value, FieldType.NUMBER.value, FieldType.BOOLEAN.value, FieldType.DATE.value][i % 4]
+        data_type = [FieldType.STRING.value, FieldType.NUMBER.value, FieldType.BOOLEAN.value, FieldType.DATE.value][
+            i % 4
+        ]
         field = Field(
             entity_version_id=version.id,
             name=f"field_{i}",
             label=f"Field {i}",
             data_type=data_type,
             sequence=i,
-            is_free_value=True
+            is_free_value=True,
         )
         fields.append(field)
     db_session.add_all(fields)
@@ -187,10 +193,12 @@ def complex_scenario(db_session):
             target_field_id=fields[target_idx].id,
             rule_type=rule_type,
             error_message=f"Validation error {i}" if rule_type == RuleType.VALIDATION.value else None,
-            conditions={"criteria": [
-                {"field_id": fields[source_idx].id, "operator": "EQUALS", "value": "trigger"},
-                {"field_id": fields[(source_idx + 1) % 10].id, "operator": "NOT_EQUALS", "value": "block"}
-            ]}
+            conditions={
+                "criteria": [
+                    {"field_id": fields[source_idx].id, "operator": "EQUALS", "value": "trigger"},
+                    {"field_id": fields[(source_idx + 1) % 10].id, "operator": "NOT_EQUALS", "value": "block"},
+                ]
+            },
         )
         rules.append(rule)
     db_session.add_all(rules)
@@ -200,7 +208,7 @@ def complex_scenario(db_session):
         "entity_id": entity.id,
         "version_id": version.id,
         "field_ids": [f.id for f in fields],
-        "rule_count": len(rules)
+        "rule_count": len(rules),
     }
 
 
@@ -227,7 +235,7 @@ def dropdown_scenario(db_session):
             label=f"Dropdown {i}",
             data_type=FieldType.STRING.value,
             sequence=i,
-            is_free_value=False  # Dropdown
+            is_free_value=False,  # Dropdown
         )
         fields.append(field)
     db_session.add_all(fields)
@@ -237,11 +245,7 @@ def dropdown_scenario(db_session):
     all_values = []
     for field in fields:
         for j in range(10):
-            value = Value(
-                field_id=field.id,
-                label=f"Option {j}",
-                value=f"option_{j}"
-            )
+            value = Value(field_id=field.id, label=f"Option {j}", value=f"option_{j}")
             all_values.append(value)
     db_session.add_all(all_values)
     db_session.commit()
@@ -260,7 +264,7 @@ def dropdown_scenario(db_session):
                 target_field_id=target_field.id,
                 target_value_id=val.id,
                 rule_type=RuleType.AVAILABILITY.value,
-                conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": f"option_{j}"}]}
+                conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": f"option_{j}"}]},
             )
             rules.append(rule)
     db_session.add_all(rules)
@@ -270,13 +274,14 @@ def dropdown_scenario(db_session):
         "entity_id": entity.id,
         "version_id": version.id,
         "field_ids": [f.id for f in fields],
-        "rule_count": len(rules)
+        "rule_count": len(rules),
     }
 
 
 # ============================================================
 # BENCHMARK TESTS - RULE ENGINE
 # ============================================================
+
 
 @pytest.mark.benchmark(group="rule-engine")
 def test_benchmark_simple_calculation(benchmark, db_session, simple_scenario):
@@ -290,9 +295,8 @@ def test_benchmark_simple_calculation(benchmark, db_session, simple_scenario):
         payload = CalculationRequest(
             entity_id=simple_scenario["entity_id"],
             current_state=[
-                FieldInputState(field_id=fid, value=f"value_{i}")
-                for i, fid in enumerate(simple_scenario["field_ids"])
-            ]
+                FieldInputState(field_id=fid, value=f"value_{i}") for i, fid in enumerate(simple_scenario["field_ids"])
+            ],
         )
         return service.calculate_state(db_session, payload)
 
@@ -312,9 +316,8 @@ def test_benchmark_medium_calculation(benchmark, db_session, medium_scenario):
         payload = CalculationRequest(
             entity_id=medium_scenario["entity_id"],
             current_state=[
-                FieldInputState(field_id=fid, value=f"value_{i}")
-                for i, fid in enumerate(medium_scenario["field_ids"])
-            ]
+                FieldInputState(field_id=fid, value=f"value_{i}") for i, fid in enumerate(medium_scenario["field_ids"])
+            ],
         )
         return service.calculate_state(db_session, payload)
 
@@ -335,9 +338,8 @@ def test_benchmark_complex_calculation(benchmark, db_session, complex_scenario):
         payload = CalculationRequest(
             entity_id=complex_scenario["entity_id"],
             current_state=[
-                FieldInputState(field_id=fid, value=f"value_{i}")
-                for i, fid in enumerate(complex_scenario["field_ids"])
-            ]
+                FieldInputState(field_id=fid, value=f"value_{i}") for i, fid in enumerate(complex_scenario["field_ids"])
+            ],
         )
         return service.calculate_state(db_session, payload)
 
@@ -357,10 +359,7 @@ def test_benchmark_dropdown_cascading(benchmark, db_session, dropdown_scenario):
     def run_calculation():
         payload = CalculationRequest(
             entity_id=dropdown_scenario["entity_id"],
-            current_state=[
-                FieldInputState(field_id=fid, value="option_0")
-                for fid in dropdown_scenario["field_ids"]
-            ]
+            current_state=[FieldInputState(field_id=fid, value="option_0") for fid in dropdown_scenario["field_ids"]],
         )
         return service.calculate_state(db_session, payload)
 
@@ -372,6 +371,7 @@ def test_benchmark_dropdown_cascading(benchmark, db_session, dropdown_scenario):
 # BENCHMARK TESTS - API ENDPOINTS
 # ============================================================
 
+
 @pytest.mark.benchmark(group="api")
 def test_benchmark_api_list_configurations(benchmark, client: TestClient, perf_auth_headers, simple_scenario):
     """
@@ -381,18 +381,13 @@ def test_benchmark_api_list_configurations(benchmark, client: TestClient, perf_a
     for i in range(5):
         client.post(
             "/configurations/",
-            json={
-                "entity_version_id": simple_scenario["version_id"],
-                "name": f"Perf Config {i}",
-                "data": []
-            },
-            headers=perf_auth_headers
+            json={"entity_version_id": simple_scenario["version_id"], "name": f"Perf Config {i}", "data": []},
+            headers=perf_auth_headers,
         )
 
     def call_list():
         return client.get(
-            f"/configurations/?entity_version_id={simple_scenario['version_id']}",
-            headers=perf_auth_headers
+            f"/configurations/?entity_version_id={simple_scenario['version_id']}", headers=perf_auth_headers
         )
 
     result = benchmark(call_list)
@@ -413,11 +408,9 @@ def test_benchmark_api_create_configuration(benchmark, client: TestClient, perf_
             json={
                 "entity_version_id": simple_scenario["version_id"],
                 "name": f"Benchmark Config {counter[0]}",
-                "data": [
-                    {"field_id": simple_scenario["field_ids"][0], "value": "test"}
-                ]
+                "data": [{"field_id": simple_scenario["field_ids"][0], "value": "test"}],
             },
-            headers=perf_auth_headers
+            headers=perf_auth_headers,
         )
 
     result = benchmark(create_config)
@@ -435,20 +428,14 @@ def test_benchmark_api_calculate(benchmark, client: TestClient, perf_auth_header
         json={
             "entity_version_id": medium_scenario["version_id"],
             "name": "Calc Benchmark",
-            "data": [
-                {"field_id": fid, "value": f"val_{i}"}
-                for i, fid in enumerate(medium_scenario["field_ids"][:10])
-            ]
+            "data": [{"field_id": fid, "value": f"val_{i}"} for i, fid in enumerate(medium_scenario["field_ids"][:10])],
         },
-        headers=perf_auth_headers
+        headers=perf_auth_headers,
     )
     config_id = create_resp.json()["id"]
 
     def call_calculate():
-        return client.get(
-            f"/configurations/{config_id}/calculate",
-            headers=perf_auth_headers
-        )
+        return client.get(f"/configurations/{config_id}/calculate", headers=perf_auth_headers)
 
     result = benchmark(call_calculate)
     assert result.status_code == 200
@@ -457,6 +444,7 @@ def test_benchmark_api_calculate(benchmark, client: TestClient, perf_auth_header
 # ============================================================
 # THROUGHPUT TESTS
 # ============================================================
+
 
 def test_throughput_calculations(db_session, medium_scenario):
     """
@@ -472,10 +460,7 @@ def test_throughput_calculations(db_session, medium_scenario):
     for i in range(iterations):
         payload = CalculationRequest(
             entity_id=medium_scenario["entity_id"],
-            current_state=[
-                FieldInputState(field_id=fid, value=f"value_{i}")
-                for fid in medium_scenario["field_ids"]
-            ]
+            current_state=[FieldInputState(field_id=fid, value=f"value_{i}") for fid in medium_scenario["field_ids"]],
         )
         service.calculate_state(db_session, payload)
 
@@ -499,12 +484,8 @@ def test_throughput_api_requests(client: TestClient, perf_auth_headers, simple_s
     # Create a configuration to read
     create_resp = client.post(
         "/configurations/",
-        json={
-            "entity_version_id": simple_scenario["version_id"],
-            "name": "Throughput Test",
-            "data": []
-        },
-        headers=perf_auth_headers
+        json={"entity_version_id": simple_scenario["version_id"], "name": "Throughput Test", "data": []},
+        headers=perf_auth_headers,
     )
     config_id = create_resp.json()["id"]
 
@@ -528,6 +509,7 @@ def test_throughput_api_requests(client: TestClient, perf_auth_headers, simple_s
 # ============================================================
 # SCALING TESTS
 # ============================================================
+
 
 def test_scaling_fields(db_session):
     """
@@ -556,7 +538,7 @@ def test_scaling_fields(db_session):
                 label=f"Field {i}",
                 data_type=FieldType.STRING.value,
                 sequence=i,
-                is_free_value=True
+                is_free_value=True,
             )
             fields.append(field)
         db_session.add_all(fields)
@@ -569,20 +551,14 @@ def test_scaling_fields(db_session):
         for _ in range(iterations):
             payload = CalculationRequest(
                 entity_id=entity.id,
-                current_state=[
-                    FieldInputState(field_id=f.id, value=f"value_{i}")
-                    for i, f in enumerate(fields)
-                ]
+                current_state=[FieldInputState(field_id=f.id, value=f"value_{i}") for i, f in enumerate(fields)],
             )
             service.calculate_state(db_session, payload)
 
         elapsed = time.time() - start_time
         avg_time_ms = (elapsed / iterations) * 1000
 
-        results.append({
-            "fields": num_fields,
-            "avg_time_ms": avg_time_ms
-        })
+        results.append({"fields": num_fields, "avg_time_ms": avg_time_ms})
 
         # Cleanup
         db_session.query(Field).filter(Field.entity_version_id == version.id).delete()
@@ -633,7 +609,7 @@ def test_scaling_rules(db_session):
                 label=f"Field {i}",
                 data_type=FieldType.STRING.value,
                 sequence=i,
-                is_free_value=True
+                is_free_value=True,
             )
             fields.append(field)
         db_session.add_all(fields)
@@ -646,7 +622,7 @@ def test_scaling_rules(db_session):
                 entity_version_id=version.id,
                 target_field_id=fields[(i + 5) % 20].id,
                 rule_type=RuleType.VISIBILITY.value,
-                conditions={"criteria": [{"field_id": fields[i % 5].id, "operator": "EQUALS", "value": "x"}]}
+                conditions={"criteria": [{"field_id": fields[i % 5].id, "operator": "EQUALS", "value": "x"}]},
             )
             rules.append(rule)
         if rules:
@@ -660,20 +636,14 @@ def test_scaling_rules(db_session):
         for _ in range(iterations):
             payload = CalculationRequest(
                 entity_id=entity.id,
-                current_state=[
-                    FieldInputState(field_id=f.id, value=f"value_{i}")
-                    for i, f in enumerate(fields)
-                ]
+                current_state=[FieldInputState(field_id=f.id, value=f"value_{i}") for i, f in enumerate(fields)],
             )
             service.calculate_state(db_session, payload)
 
         elapsed = time.time() - start_time
         avg_time_ms = (elapsed / iterations) * 1000
 
-        results.append({
-            "rules": num_rules,
-            "avg_time_ms": avg_time_ms
-        })
+        results.append({"rules": num_rules, "avg_time_ms": avg_time_ms})
 
         # Cleanup
         db_session.query(Rule).filter(Rule.entity_version_id == version.id).delete()
@@ -694,6 +664,7 @@ def test_scaling_rules(db_session):
 # MEMORY TESTS (Optional - requires memory_profiler)
 # ============================================================
 
+
 def test_memory_large_payload(db_session, complex_scenario):
     """
     Test memory usage with large payloads.
@@ -713,7 +684,7 @@ def test_memory_large_payload(db_session, complex_scenario):
             current_state=[
                 FieldInputState(field_id=fid, value=f"value_{i}_{j}")
                 for j, fid in enumerate(complex_scenario["field_ids"])
-            ]
+            ],
         )
         result = service.calculate_state(db_session, payload)
         # Explicitly delete reference
@@ -730,6 +701,7 @@ def test_memory_large_payload(db_session, complex_scenario):
 # RESPONSE TIME SLA TESTS
 # ============================================================
 
+
 def test_sla_simple_under_100ms(db_session, simple_scenario):
     """
     SLA Test: Simple calculations must complete under 100ms.
@@ -741,9 +713,8 @@ def test_sla_simple_under_100ms(db_session, simple_scenario):
     payload = CalculationRequest(
         entity_id=simple_scenario["entity_id"],
         current_state=[
-            FieldInputState(field_id=fid, value=f"value_{i}")
-            for i, fid in enumerate(simple_scenario["field_ids"])
-        ]
+            FieldInputState(field_id=fid, value=f"value_{i}") for i, fid in enumerate(simple_scenario["field_ids"])
+        ],
     )
 
     start_time = time.time()
@@ -764,9 +735,8 @@ def test_sla_medium_under_500ms(db_session, medium_scenario):
     payload = CalculationRequest(
         entity_id=medium_scenario["entity_id"],
         current_state=[
-            FieldInputState(field_id=fid, value=f"value_{i}")
-            for i, fid in enumerate(medium_scenario["field_ids"])
-        ]
+            FieldInputState(field_id=fid, value=f"value_{i}") for i, fid in enumerate(medium_scenario["field_ids"])
+        ],
     )
 
     start_time = time.time()
@@ -787,9 +757,8 @@ def test_sla_complex_under_2000ms(db_session, complex_scenario):
     payload = CalculationRequest(
         entity_id=complex_scenario["entity_id"],
         current_state=[
-            FieldInputState(field_id=fid, value=f"value_{i}")
-            for i, fid in enumerate(complex_scenario["field_ids"])
-        ]
+            FieldInputState(field_id=fid, value=f"value_{i}") for i, fid in enumerate(complex_scenario["field_ids"])
+        ],
     )
 
     start_time = time.time()

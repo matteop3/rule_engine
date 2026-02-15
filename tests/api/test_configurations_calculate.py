@@ -8,13 +8,13 @@ Each test is atomic and independent.
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import Entity, EntityVersion, Field, User, UserRole, VersionStatus, FieldType
 from app.core.security import create_access_token, get_password_hash
-
+from app.models.domain import Entity, EntityVersion, Field, FieldType, User, UserRole, VersionStatus
 
 # ============================================================
 # AUTH FIXTURES (local to this module)
 # ============================================================
+
 
 @pytest.fixture(scope="function")
 def test_user_for_config(db_session):
@@ -26,7 +26,7 @@ def test_user_for_config(db_session):
         email="configuser@example.com",
         hashed_password=get_password_hash("TestPassword123!"),
         role=UserRole.USER,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -48,6 +48,7 @@ def auth_headers(db_session, test_user_for_config):
 # FIXTURES
 # ============================================================
 
+
 @pytest.fixture(scope="function")
 def config_scenario(db_session):
     """
@@ -68,7 +69,7 @@ def config_scenario(db_session):
         data_type=FieldType.STRING.value,
         step=1,
         sequence=1,
-        is_free_value=True
+        is_free_value=True,
     )
     f_color = Field(
         entity_version_id=version.id,
@@ -77,23 +78,19 @@ def config_scenario(db_session):
         data_type=FieldType.STRING.value,
         step=1,
         sequence=2,
-        is_free_value=True
+        is_free_value=True,
     )
 
     db_session.add_all([f_model, f_color])
     db_session.commit()
 
-    return {
-        "entity_id": entity.id,
-        "version_id": version.id,
-        "f_model_id": f_model.id,
-        "f_color_id": f_color.id
-    }
+    return {"entity_id": entity.id, "version_id": version.id, "f_model_id": f_model.id, "f_color_id": f_color.id}
 
 
 # ============================================================
 # CALCULATE (RULE ENGINE INTEGRATION) TESTS
 # ============================================================
+
 
 def test_calculate_configuration_success(client: TestClient, auth_headers, config_scenario):
     """
@@ -105,8 +102,8 @@ def test_calculate_configuration_success(client: TestClient, auth_headers, confi
         "name": "Calculate Test",
         "data": [
             {"field_id": config_scenario["f_model_id"], "value": "Porsche 911"},
-            {"field_id": config_scenario["f_color_id"], "value": "Black"}
-        ]
+            {"field_id": config_scenario["f_color_id"], "value": "Black"},
+        ],
     }
     create_resp = client.post("/configurations/", json=payload, headers=auth_headers)
     config_id = create_resp.json()["id"]
@@ -122,10 +119,7 @@ def test_calculate_configuration_success(client: TestClient, auth_headers, confi
     assert "is_complete" in engine_response
 
     # Find the model field in the response
-    model_field = next(
-        (f for f in engine_response["fields"] if f["field_id"] == config_scenario["f_model_id"]),
-        None
-    )
+    model_field = next((f for f in engine_response["fields"] if f["field_id"] == config_scenario["f_model_id"]), None)
     assert model_field is not None
     assert model_field["current_value"] == "Porsche 911"
     assert model_field["is_hidden"] is False
@@ -145,11 +139,7 @@ def test_calculate_configuration_without_auth(client: TestClient, auth_headers, 
     Test calculate without auth returns 401.
     """
     # Create config first
-    payload = {
-        "entity_version_id": config_scenario["version_id"],
-        "name": "Calc Test",
-        "data": []
-    }
+    payload = {"entity_version_id": config_scenario["version_id"], "name": "Calc Test", "data": []}
     create_resp = client.post("/configurations/", json=payload, headers=auth_headers)
     config_id = create_resp.json()["id"]
 

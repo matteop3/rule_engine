@@ -1,15 +1,14 @@
+import hashlib
 import logging
 import re
 import secrets
-import hashlib
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Union, Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import bcrypt as _bcrypt
-from jose import jwt, JWTError
+from jose import JWTError, jwt
 
 from app.core.config import settings
-
 
 # ============================================================
 # LOGGING SETUP
@@ -31,6 +30,7 @@ REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
 # ============================================================
 # PASSWORD FUNCTIONS
 # ============================================================
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
@@ -80,7 +80,7 @@ def get_password_hash(password: str) -> str:
         raise
 
 
-def validate_password_policy(password: str) -> tuple[bool, Optional[str]]:
+def validate_password_policy(password: str) -> tuple[bool, str | None]:
     """
     Validate password against security policy defined in settings.
 
@@ -100,15 +100,15 @@ def validate_password_policy(password: str) -> tuple[bool, Optional[str]]:
         return False, f"Password must be at least {settings.PASSWORD_MIN_LENGTH} characters long"
 
     # Check for uppercase letter
-    if settings.PASSWORD_REQUIRE_UPPERCASE and not re.search(r'[A-Z]', password):
+    if settings.PASSWORD_REQUIRE_UPPERCASE and not re.search(r"[A-Z]", password):
         return False, "Password must contain at least one uppercase letter"
 
     # Check for lowercase letter
-    if settings.PASSWORD_REQUIRE_LOWERCASE and not re.search(r'[a-z]', password):
+    if settings.PASSWORD_REQUIRE_LOWERCASE and not re.search(r"[a-z]", password):
         return False, "Password must contain at least one lowercase letter"
 
     # Check for digit
-    if settings.PASSWORD_REQUIRE_DIGIT and not re.search(r'\d', password):
+    if settings.PASSWORD_REQUIRE_DIGIT and not re.search(r"\d", password):
         return False, "Password must contain at least one digit"
 
     # Check for special character
@@ -123,10 +123,8 @@ def validate_password_policy(password: str) -> tuple[bool, Optional[str]]:
 # JWT TOKEN FUNCTIONS
 # ============================================================
 
-def create_access_token(
-    subject: Union[str, Any],
-    expires_delta: Optional[timedelta] = None
-) -> str:
+
+def create_access_token(subject: str | Any, expires_delta: timedelta | None = None) -> str:
     """
     Generate a signed JWT access token.
 
@@ -142,7 +140,7 @@ def create_access_token(
         >>> token = create_access_token(subject="user123", expires_delta=timedelta(hours=1))
     """
     try:
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
 
         if expires_delta:
             expire = now_utc + expires_delta
@@ -157,13 +155,13 @@ def create_access_token(
         logger.info(f"Access token created for subject: {subject}")
         logger.debug(f"Token expires at: {expire.isoformat()}")
 
-        return encoded_jwt
+        return str(encoded_jwt)
     except Exception as e:
         logger.error(f"Token creation error: {str(e)}", exc_info=True)
         raise
 
 
-def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
+def decode_access_token(token: str) -> dict[str, Any] | None:
     """
     Decode and validate a JWT access token.
 
@@ -183,7 +181,7 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
 
         logger.debug(f"Token decoded successfully for subject: {payload.get('sub')}")
 
-        return payload
+        return dict(payload)
     except JWTError as e:
         logger.warning(f"Token decode error: {str(e)}")
         return None
@@ -213,6 +211,7 @@ def verify_token_signature(token: str) -> bool:
 # ============================================================
 # REFRESH TOKEN FUNCTIONS
 # ============================================================
+
 
 def create_refresh_token() -> str:
     """

@@ -8,26 +8,19 @@ These tests validate that all components work together correctly
 in real-world scenarios.
 """
 
-import pytest
-from datetime import date, timedelta
 from fastapi.testclient import TestClient
 
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    FieldType, RuleType, VersionStatus
-)
-
+from app.models.domain import EntityVersion, Field, FieldType, VersionStatus
 
 # ============================================================
 # COMPLETE ENTITY LIFECYCLE TESTS
 # ============================================================
 
+
 class TestCompleteEntityLifecycle:
     """Full lifecycle test from entity creation to engine calculation."""
 
-    def test_create_entity_through_engine_calculation(
-        self, client: TestClient, admin_headers
-    ):
+    def test_create_entity_through_engine_calculation(self, client: TestClient, admin_headers):
         """
         E2E: Create entity → Create version → Add fields → Add values →
              Add rules → Publish → Calculate via Engine.
@@ -38,16 +31,14 @@ class TestCompleteEntityLifecycle:
         entity_resp = client.post(
             "/entities/",
             json={"name": "E2E Test Insurance", "description": "End-to-end test entity"},
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert entity_resp.status_code == 201
         entity_id = entity_resp.json()["id"]
 
         # Step 2: Create Draft Version
         version_resp = client.post(
-            "/versions/",
-            json={"entity_id": entity_id, "changelog": "Initial E2E version"},
-            headers=admin_headers
+            "/versions/", json={"entity_id": entity_id, "changelog": "Initial E2E version"}, headers=admin_headers
         )
         assert version_resp.status_code == 201
         version_id = version_resp.json()["id"]
@@ -64,9 +55,9 @@ class TestCompleteEntityLifecycle:
                 "data_type": "string",
                 "is_free_value": False,
                 "is_required": True,
-                "sequence": 1
+                "sequence": 1,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert field_type_resp.status_code == 201
         field_type_id = field_type_resp.json()["id"]
@@ -81,9 +72,9 @@ class TestCompleteEntityLifecycle:
                 "data_type": "number",
                 "is_free_value": True,
                 "is_required": True,
-                "sequence": 2
+                "sequence": 2,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert field_value_resp.status_code == 201
         field_value_id = field_value_resp.json()["id"]
@@ -98,9 +89,9 @@ class TestCompleteEntityLifecycle:
                 "data_type": "boolean",
                 "is_free_value": True,
                 "is_required": False,
-                "sequence": 3
+                "sequence": 3,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert field_gps_resp.status_code == 201
         field_gps_id = field_gps_resp.json()["id"]
@@ -109,14 +100,14 @@ class TestCompleteEntityLifecycle:
         value_car_resp = client.post(
             "/values/",
             json={"field_id": field_type_id, "value": "CAR", "label": "Car", "is_default": True},
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert value_car_resp.status_code == 201
 
         value_moto_resp = client.post(
             "/values/",
             json={"field_id": field_type_id, "value": "MOTO", "label": "Motorcycle", "is_default": False},
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert value_moto_resp.status_code == 201
 
@@ -129,21 +120,14 @@ class TestCompleteEntityLifecycle:
                 "target_field_id": field_gps_id,
                 "rule_type": "mandatory",
                 "description": "GPS mandatory for high-value vehicles",
-                "conditions": {
-                    "criteria": [
-                        {"field_id": field_value_id, "operator": "GREATER_THAN", "value": 30000}
-                    ]
-                }
+                "conditions": {"criteria": [{"field_id": field_value_id, "operator": "GREATER_THAN", "value": 30000}]},
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert rule_resp.status_code == 201
 
         # Step 6: Publish Version
-        publish_resp = client.post(
-            f"/versions/{version_id}/publish",
-            headers=admin_headers
-        )
+        publish_resp = client.post(f"/versions/{version_id}/publish", headers=admin_headers)
         assert publish_resp.status_code == 200
         assert publish_resp.json()["status"] == "PUBLISHED"
 
@@ -154,10 +138,10 @@ class TestCompleteEntityLifecycle:
                 "entity_id": entity_id,
                 "current_state": [
                     {"field_id": field_type_id, "value": "CAR"},
-                    {"field_id": field_value_id, "value": 20000}
-                ]
+                    {"field_id": field_value_id, "value": 20000},
+                ],
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert calc_low_resp.status_code == 200
         low_result = calc_low_resp.json()
@@ -172,10 +156,10 @@ class TestCompleteEntityLifecycle:
                 "entity_id": entity_id,
                 "current_state": [
                     {"field_id": field_type_id, "value": "CAR"},
-                    {"field_id": field_value_id, "value": 50000}
-                ]
+                    {"field_id": field_value_id, "value": 50000},
+                ],
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert calc_high_resp.status_code == 200
         high_result = calc_high_resp.json()
@@ -196,7 +180,7 @@ class TestCompleteEntityLifecycle:
             status=VersionStatus.PUBLISHED,
             changelog="Published version",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -208,7 +192,7 @@ class TestCompleteEntityLifecycle:
             data_type=FieldType.STRING.value,
             is_free_value=True,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         db_session.add(field)
         db_session.commit()
@@ -223,17 +207,15 @@ class TestCompleteEntityLifecycle:
                 "data_type": "string",
                 "is_free_value": True,
                 "is_required": False,
-                "sequence": 2
+                "sequence": 2,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert add_field_resp.status_code == 409  # Conflict - version not in DRAFT
 
         # Clone to create new draft
         clone_resp = client.post(
-            f"/versions/{version.id}/clone",
-            json={"changelog": "Cloned for modifications"},
-            headers=admin_headers
+            f"/versions/{version.id}/clone", json={"changelog": "Cloned for modifications"}, headers=admin_headers
         )
         assert clone_resp.status_code == 201
         new_version_id = clone_resp.json()["id"]
@@ -249,9 +231,9 @@ class TestCompleteEntityLifecycle:
                 "data_type": "string",
                 "is_free_value": True,
                 "is_required": False,
-                "sequence": 2
+                "sequence": 2,
             },
-            headers=admin_headers
+            headers=admin_headers,
         )
         assert add_field_new_resp.status_code == 201
 
@@ -259,4 +241,3 @@ class TestCompleteEntityLifecycle:
 # ============================================================
 # CROSS-ROUTER DATA CONSISTENCY TESTS
 # ============================================================
-

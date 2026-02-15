@@ -1,15 +1,14 @@
 import logging
-from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_role, get_user_service, get_user_or_404
+from app.dependencies import get_current_user, get_user_or_404, get_user_service, require_role
 from app.exceptions import DatabaseError
 from app.models.domain import User, UserRole
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.users import UserService
-
 
 # ============================================================
 # LOGGING SETUP
@@ -22,22 +21,20 @@ logger = logging.getLogger(__name__)
 # ROUTER SETUP
 # ============================================================
 
-router = APIRouter(
-    prefix="/users",
-    tags=["Users"]
-)
+router = APIRouter(prefix="/users", tags=["Users"])
 
 
 # ============================================================
 # ENDPOINTS
 # ============================================================
 
+
 @router.post("/", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
     user_in: UserCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),  # Auth required
-    user_service: UserService = Depends(get_user_service)
+    user_service: UserService = Depends(get_user_service),
 ):
     """
     Create a new user.
@@ -60,20 +57,20 @@ def create_user(
     except DatabaseError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred"
-        )
+            detail="An internal error occurred",
+        ) from None
 
     logger.info(f"User {new_user.id} created successfully: email={user_in.email}, role={user_in.role.value}")
 
     return new_user
 
 
-@router.get("/", response_model=List[UserRead])
+@router.get("/", response_model=list[UserRead])
 def list_users(
     skip: int = Query(default=0, ge=0, description="Number of records to skip"),
     limit: int = Query(default=100, ge=0, le=100, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)  # Auth required
+    current_user: User = Depends(get_current_user),  # Auth required
 ):
     """
     List all users.
@@ -97,7 +94,7 @@ def list_users(
 
 @router.get("/me", response_model=UserRead)
 def read_user_me(
-    current_user: User = Depends(get_current_user)  # Auth required
+    current_user: User = Depends(get_current_user),  # Auth required
 ):
     """
     Get current user profile.
@@ -110,7 +107,7 @@ def read_user_me(
 @router.get("/{user_id}", response_model=UserRead)
 def read_user(
     user: User = Depends(get_user_or_404),
-    current_user: User = Depends(get_current_user)  # Auth required
+    current_user: User = Depends(get_current_user),  # Auth required
 ):
     """
     Get user by ID.
@@ -128,7 +125,7 @@ def update_user(
     user: User = Depends(get_user_or_404),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),  # Auth required
-    user_service: UserService = Depends(get_user_service)
+    user_service: UserService = Depends(get_user_service),
 ):
     """
     Update user. Use this to BAN users (is_active=False) or change role.
@@ -147,8 +144,8 @@ def update_user(
     except DatabaseError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred"
-        )
+            detail="An internal error occurred",
+        ) from None
 
     logger.info(f"User {user.id} updated successfully by admin {current_user.id}")
 
@@ -160,7 +157,7 @@ def delete_user(
     user: User = Depends(get_user_or_404),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),  # Auth required
-    user_service: UserService = Depends(get_user_service)
+    user_service: UserService = Depends(get_user_service),
 ):
     """
     Disable a user (soft delete).
@@ -171,18 +168,15 @@ def delete_user(
 
     if user.id == current_user.id:
         logger.warning(f"Admin {current_user.id} attempted to delete own account")
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="You cannot delete your own account."
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="You cannot delete your own account.")
 
     try:
         user_service.soft_delete_user(db, user, current_user.id)
     except DatabaseError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred"
-        )
+            detail="An internal error occurred",
+        ) from None
 
     logger.info(f"User {user.id} soft-deleted successfully by admin {current_user.id}")
 

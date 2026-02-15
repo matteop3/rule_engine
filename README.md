@@ -7,6 +7,8 @@ A headless, API-first rule engine for building product configurators (CPQ system
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-red.svg)](https://www.sqlalchemy.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/matteop3/rule_engine/actions/workflows/ci.yml/badge.svg)](https://github.com/matteop3/rule_engine/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/matteop3/rule_engine/branch/main/graph/badge.svg)](https://codecov.io/gh/matteop3/rule_engine)
 
 ---
 
@@ -135,7 +137,7 @@ POST /engine/calculate
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/rule-engine.git
+git clone https://github.com/matteop3/rule-engine.git
 cd rule-engine
 
 # Create environment file
@@ -146,6 +148,53 @@ docker compose up --build
 
 # API available at http://localhost:8000
 # Interactive docs at http://localhost:8000/docs
+```
+
+### Load Demo Data
+
+The project includes a seed script that populates the database with a realistic insurance configurator scenario, covering all engine features:
+
+```bash
+# With the database running:
+python seed_data.py
+```
+
+This creates:
+
+| Resource | Count | Details |
+|----------|-------|---------|
+| Entity + Version | 1 | "Auto Insurance Gold" with SKU generation |
+| Fields | 15 | 4 steps, all data types (string, number, boolean, date) |
+| Values | 32 | With SKU modifiers |
+| Rules | 19 | All 6 rule types, all 7 operators |
+| Users | 3 | One per role (see below) |
+| Configurations | 3 | 1 finalized + 2 drafts |
+
+**Demo users** (password: `password123`):
+
+| Email | Role | Permissions |
+|-------|------|-------------|
+| `admin@demo.com` | ADMIN | Full access, soft delete finalized configs |
+| `author@demo.com` | AUTHOR | Create/edit entities, fields, rules |
+| `user@demo.com` | USER | Create/edit configurations |
+
+**Try it out** — get a token and call the engine:
+
+```bash
+# Login
+curl -X POST http://localhost:8000/auth/token \
+  -d "username=user@demo.com&password=password123"
+
+# Calculate state (stateless, no auth required)
+curl -X POST http://localhost:8000/engine/calculate \
+  -H "Content-Type: application/json" \
+  -d '{"entity_id": 1, "current_state": [
+    {"field_id": 1, "value": "John Doe"},
+    {"field_id": 2, "value": "1990-01-01"},
+    {"field_id": 3, "value": "EMPLOYEE"},
+    {"field_id": 4, "value": "CAR"},
+    {"field_id": 5, "value": 25000}
+  ]}'
 ```
 
 ### Run Tests

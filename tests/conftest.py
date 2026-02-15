@@ -10,15 +10,16 @@ Database schema is managed by:
 - Tests: Base.metadata.create_all() in db_session fixture (ephemeral)
 - Production: Alembic migrations via docker-entrypoint.sh
 """
+
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
 from testcontainers.postgres import PostgresContainer
 
+from app.core.rate_limit import limiter
 from app.database import Base, get_db
 from app.main import app
-from app.core.rate_limit import limiter
 
 # Import all fixtures from subdirectories via pytest_plugins
 # This makes all fixtures available automatically in all test files
@@ -26,13 +27,14 @@ pytest_plugins = [
     "tests.fixtures.auth",
     "tests.fixtures.entities",
     "tests.fixtures.engine",
-    "tests.fixtures.configurations_lifecycle"
+    "tests.fixtures.configurations_lifecycle",
 ]
 
 
 # ============================================================
 # DATABASE SETUP (PostgreSQL via testcontainers)
 # ============================================================
+
 
 @pytest.fixture(scope="session")
 def postgres_container():

@@ -8,18 +8,14 @@ Tests for referential integrity across the data model:
 - Clone ID remapping integrity
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    FieldType, RuleType, VersionStatus
-)
-
+from app.models.domain import EntityVersion, Field, FieldType, Rule, RuleType, VersionStatus
 
 # ============================================================
 # FIELD → RULE DEPENDENCY TESTS
 # ============================================================
+
 
 class TestFieldRuleDependencies:
     """Tests for field dependencies in rules."""
@@ -37,7 +33,7 @@ class TestFieldRuleDependencies:
             status=VersionStatus.DRAFT,
             changelog="Test",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -49,7 +45,7 @@ class TestFieldRuleDependencies:
             data_type=FieldType.BOOLEAN.value,
             is_free_value=True,
             is_required=False,
-            sequence=1
+            sequence=1,
         )
         source_field = Field(
             entity_version_id=version.id,
@@ -58,7 +54,7 @@ class TestFieldRuleDependencies:
             data_type=FieldType.NUMBER.value,
             is_free_value=True,
             is_required=True,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([target_field, source_field])
         db_session.flush()
@@ -68,7 +64,7 @@ class TestFieldRuleDependencies:
             target_field_id=target_field.id,
             rule_type=RuleType.MANDATORY.value,
             description="Test rule",
-            conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]}
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]},
         )
         db_session.add(rule)
         db_session.commit()
@@ -92,7 +88,7 @@ class TestFieldRuleDependencies:
             status=VersionStatus.DRAFT,
             changelog="Test",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -104,7 +100,7 @@ class TestFieldRuleDependencies:
             data_type=FieldType.BOOLEAN.value,
             is_free_value=True,
             is_required=False,
-            sequence=1
+            sequence=1,
         )
         condition_field = Field(
             entity_version_id=version.id,
@@ -113,7 +109,7 @@ class TestFieldRuleDependencies:
             data_type=FieldType.NUMBER.value,
             is_free_value=True,
             is_required=True,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([target_field, condition_field])
         db_session.flush()
@@ -124,7 +120,7 @@ class TestFieldRuleDependencies:
             target_field_id=target_field.id,
             rule_type=RuleType.VISIBILITY.value,
             description="Test rule",
-            conditions={"criteria": [{"field_id": condition_field.id, "operator": "EQUALS", "value": 100}]}
+            conditions={"criteria": [{"field_id": condition_field.id, "operator": "EQUALS", "value": 100}]},
         )
         db_session.add(rule)
         db_session.commit()
@@ -146,7 +142,7 @@ class TestFieldRuleDependencies:
             status=VersionStatus.DRAFT,
             changelog="Test",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -158,7 +154,7 @@ class TestFieldRuleDependencies:
             data_type=FieldType.STRING.value,
             is_free_value=True,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         db_session.add(field)
         db_session.flush()
@@ -168,7 +164,7 @@ class TestFieldRuleDependencies:
             target_field_id=field.id,
             rule_type=RuleType.VALIDATION.value,
             description="Will be deleted",
-            conditions={"criteria": []}
+            conditions={"criteria": []},
         )
         db_session.add(rule)
         db_session.commit()
@@ -188,4 +184,3 @@ class TestFieldRuleDependencies:
 # ============================================================
 # VALUE → RULE DEPENDENCY TESTS
 # ============================================================
-

@@ -6,11 +6,11 @@ to prevent abuse and brute force attacks.
 """
 
 import logging
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.core.config import settings
 
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # RATE LIMITER SETUP
 # ============================================================
+
 
 def get_client_identifier(request: Request) -> str:
     """
@@ -60,6 +61,7 @@ limiter = Limiter(
 # RATE LIMIT EXCEPTION HANDLER
 # ============================================================
 
+
 def rate_limit_exceeded_handler(request: Request, exc: Exception) -> JSONResponse:
     """
     Custom handler for rate limit exceeded errors.
@@ -73,18 +75,15 @@ def rate_limit_exceeded_handler(request: Request, exc: Exception) -> JSONRespons
     Returns:
         JSONResponse: Error response with 429 status code
     """
-    logger.warning(
-        f"Rate limit exceeded for {get_client_identifier(request)} "
-        f"on endpoint {request.url.path}"
-    )
+    logger.warning(f"Rate limit exceeded for {get_client_identifier(request)} on endpoint {request.url.path}")
 
     return JSONResponse(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         content={
             "error": "rate_limit_exceeded",
             "detail": "Too many requests. Please try again later.",
-            "retry_after": getattr(exc, "detail", None)
-        }
+            "retry_after": getattr(exc, "detail", None),
+        },
     )
 
 
@@ -94,6 +93,7 @@ def rate_limit_exceeded_handler(request: Request, exc: Exception) -> JSONRespons
 
 # These are the rate limit strings used by slowapi
 # Format: "count/period" where period can be: second, minute, hour, day
+
 
 def get_login_rate_limit() -> str:
     """Get rate limit string for login endpoint."""

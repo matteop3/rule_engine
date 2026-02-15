@@ -11,25 +11,21 @@ Tests the full CRUD lifecycle for Value management including:
 Each test is atomic and independent.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import Field, Value, Rule, RuleType, FieldType
-
+from app.models.domain import Field, FieldType, Rule, RuleType, Value
 
 # ============================================================
 # LIST VALUES TESTS (GET /values/)
 # ============================================================
+
 
 class TestListValues:
     """Tests for GET /values/ endpoint."""
 
     def test_admin_can_list_values(self, client: TestClient, admin_headers, draft_value):
         """Test that admin can list values."""
-        response = client.get(
-            f"/values/?field_id={draft_value.field_id}",
-            headers=admin_headers
-        )
+        response = client.get(f"/values/?field_id={draft_value.field_id}", headers=admin_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -38,20 +34,14 @@ class TestListValues:
 
     def test_author_can_list_values(self, client: TestClient, author_headers, draft_value):
         """Test that author can list values."""
-        response = client.get(
-            f"/values/?field_id={draft_value.field_id}",
-            headers=author_headers
-        )
+        response = client.get(f"/values/?field_id={draft_value.field_id}", headers=author_headers)
 
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
     def test_regular_user_cannot_list_values(self, client: TestClient, user_headers, draft_value):
         """Test that regular user cannot list values (403)."""
-        response = client.get(
-            f"/values/?field_id={draft_value.field_id}",
-            headers=user_headers
-        )
+        response = client.get(f"/values/?field_id={draft_value.field_id}", headers=user_headers)
 
         assert response.status_code == 403
 
@@ -98,6 +88,7 @@ class TestListValues:
 # READ VALUE TESTS (GET /values/{value_id})
 # ============================================================
 
+
 class TestReadValue:
     """Tests for GET /values/{value_id} endpoint."""
 
@@ -140,17 +131,13 @@ class TestReadValue:
 # CREATE VALUE TESTS (POST /values/)
 # ============================================================
 
+
 class TestCreateValue:
     """Tests for POST /values/ endpoint."""
 
     def test_admin_can_create_value(self, client: TestClient, admin_headers, draft_field):
         """Test that admin can create a value for a non-free field."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "NEW_VALUE",
-            "label": "New Value",
-            "is_default": False
-        }
+        payload = {"field_id": draft_field.id, "value": "NEW_VALUE", "label": "New Value", "is_default": False}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
@@ -162,11 +149,7 @@ class TestCreateValue:
 
     def test_author_can_create_value(self, client: TestClient, author_headers, draft_field):
         """Test that author can create a value."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "AUTHOR_VALUE",
-            "label": "Author Value"
-        }
+        payload = {"field_id": draft_field.id, "value": "AUTHOR_VALUE", "label": "Author Value"}
 
         response = client.post("/values/", json=payload, headers=author_headers)
 
@@ -175,11 +158,7 @@ class TestCreateValue:
 
     def test_regular_user_cannot_create_value(self, client: TestClient, user_headers, draft_field):
         """Test that regular user cannot create values (403)."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "USER_VALUE",
-            "label": "User Value"
-        }
+        payload = {"field_id": draft_field.id, "value": "USER_VALUE", "label": "User Value"}
 
         response = client.post("/values/", json=payload, headers=user_headers)
 
@@ -187,64 +166,42 @@ class TestCreateValue:
 
     def test_unauthenticated_cannot_create_value(self, client: TestClient, draft_field):
         """Test that unauthenticated request returns 401."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "ANON_VALUE",
-            "label": "Anonymous Value"
-        }
+        payload = {"field_id": draft_field.id, "value": "ANON_VALUE", "label": "Anonymous Value"}
 
         response = client.post("/values/", json=payload)
 
         assert response.status_code == 401
 
-    def test_cannot_create_value_for_free_field(
-        self, client: TestClient, admin_headers, free_field
-    ):
+    def test_cannot_create_value_for_free_field(self, client: TestClient, admin_headers, free_field):
         """
         Test free-field restriction: cannot create Value for is_free_value=True field.
         This is a CRITICAL business rule.
         """
-        payload = {
-            "field_id": free_field.id,
-            "value": "SHOULD_FAIL",
-            "label": "Should Fail"
-        }
+        payload = {"field_id": free_field.id, "value": "SHOULD_FAIL", "label": "Should Fail"}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
         assert response.status_code == 400
         assert "free" in response.json()["detail"].lower()
 
-    def test_cannot_create_value_in_published_version(
-        self, client: TestClient, admin_headers, published_field
-    ):
+    def test_cannot_create_value_in_published_version(self, client: TestClient, admin_headers, published_field):
         """
         Test DRAFT-only policy: cannot create value for field in PUBLISHED version.
         This is a CRITICAL business rule.
         """
-        payload = {
-            "field_id": published_field.id,
-            "value": "SHOULD_FAIL",
-            "label": "Should Fail"
-        }
+        payload = {"field_id": published_field.id, "value": "SHOULD_FAIL", "label": "Should Fail"}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
-    def test_cannot_create_value_in_archived_version(
-        self, client: TestClient, admin_headers, archived_field
-    ):
+    def test_cannot_create_value_in_archived_version(self, client: TestClient, admin_headers, archived_field):
         """
         Test DRAFT-only policy: cannot create value for field in ARCHIVED version.
         This is a CRITICAL business rule.
         """
-        payload = {
-            "field_id": archived_field.id,
-            "value": "SHOULD_FAIL",
-            "label": "Should Fail"
-        }
+        payload = {"field_id": archived_field.id, "value": "SHOULD_FAIL", "label": "Should Fail"}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
@@ -253,11 +210,7 @@ class TestCreateValue:
 
     def test_cannot_create_value_for_nonexistent_field(self, client: TestClient, admin_headers):
         """Test that creating value for non-existent field fails."""
-        payload = {
-            "field_id": 99999,
-            "value": "GHOST_VALUE",
-            "label": "Ghost Value"
-        }
+        payload = {"field_id": 99999, "value": "GHOST_VALUE", "label": "Ghost Value"}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
@@ -265,12 +218,7 @@ class TestCreateValue:
 
     def test_create_value_with_is_default(self, client: TestClient, admin_headers, draft_field):
         """Test that is_default flag is properly set."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "DEFAULT_VALUE",
-            "label": "Default Value",
-            "is_default": True
-        }
+        payload = {"field_id": draft_field.id, "value": "DEFAULT_VALUE", "label": "Default Value", "is_default": True}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
@@ -282,21 +230,15 @@ class TestCreateValue:
 # UPDATE VALUE TESTS (PATCH /values/{value_id})
 # ============================================================
 
+
 class TestUpdateValue:
     """Tests for PATCH /values/{value_id} endpoint."""
 
     def test_admin_can_update_value(self, client: TestClient, admin_headers, draft_value):
         """Test that admin can update a value in DRAFT version."""
-        payload = {
-            "value": "UPDATED_VALUE",
-            "label": "Updated Value"
-        }
+        payload = {"value": "UPDATED_VALUE", "label": "Updated Value"}
 
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -307,11 +249,7 @@ class TestUpdateValue:
         """Test that author can update a value."""
         payload = {"label": "Author Updated"}
 
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json=payload,
-            headers=author_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=author_headers)
 
         assert response.status_code == 200
         assert response.json()["label"] == "Author Updated"
@@ -320,11 +258,7 @@ class TestUpdateValue:
         """Test that regular user cannot update values (403)."""
         payload = {"label": "User Updated"}
 
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json=payload,
-            headers=user_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=user_headers)
 
         assert response.status_code == 403
 
@@ -336,21 +270,13 @@ class TestUpdateValue:
         This is a CRITICAL business rule.
         """
         # Create a value for the published field
-        value = Value(
-            field_id=published_field.id,
-            value="PUB_VALUE",
-            label="Published Value"
-        )
+        value = Value(field_id=published_field.id, value="PUB_VALUE", label="Published Value")
         db_session.add(value)
         db_session.commit()
 
         payload = {"label": "Should Fail"}
 
-        response = client.patch(
-            f"/values/{value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
@@ -363,21 +289,13 @@ class TestUpdateValue:
         This is a CRITICAL business rule.
         """
         # Create a value for the archived field
-        value = Value(
-            field_id=archived_field.id,
-            value="ARCH_VALUE",
-            label="Archived Value"
-        )
+        value = Value(field_id=archived_field.id, value="ARCH_VALUE", label="Archived Value")
         db_session.add(value)
         db_session.commit()
 
         payload = {"label": "Should Fail"}
 
-        response = client.patch(
-            f"/values/{value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
@@ -398,7 +316,7 @@ class TestUpdateValue:
             status=VersionStatus.DRAFT,
             changelog="Other version",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(other_version)
         db_session.flush()
@@ -408,7 +326,7 @@ class TestUpdateValue:
             name="other_field",
             label="Other Field",
             data_type=FieldType.STRING.value,
-            is_free_value=False
+            is_free_value=False,
         )
         db_session.add(other_field)
         db_session.commit()
@@ -416,29 +334,19 @@ class TestUpdateValue:
         # Try to move value to field in different version
         payload = {"field_id": other_field.id}
 
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 400
         assert "version" in response.json()["detail"].lower()
 
-    def test_cannot_move_value_to_free_field(
-        self, client: TestClient, admin_headers, draft_value, free_field
-    ):
+    def test_cannot_move_value_to_free_field(self, client: TestClient, admin_headers, draft_value, free_field):
         """
         Test free-field restriction: cannot move value to a free-value field.
         This is a CRITICAL business rule.
         """
         payload = {"field_id": free_field.id}
 
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 400
         assert "free" in response.json()["detail"].lower()
@@ -453,18 +361,14 @@ class TestUpdateValue:
             name="another_field",
             label="Another Field",
             data_type=FieldType.STRING.value,
-            is_free_value=False
+            is_free_value=False,
         )
         db_session.add(another_field)
         db_session.commit()
 
         payload = {"field_id": another_field.id}
 
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["field_id"] == another_field.id
@@ -473,22 +377,14 @@ class TestUpdateValue:
         """Test that is_default flag can be updated."""
         payload = {"is_default": True}
 
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["is_default"] is True
 
     def test_empty_update_handled(self, client: TestClient, admin_headers, draft_value):
         """Test that empty update payload is handled gracefully."""
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json={},
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json={}, headers=admin_headers)
 
         assert response.status_code == 200
 
@@ -505,6 +401,7 @@ class TestUpdateValue:
 # DELETE VALUE TESTS (DELETE /values/{value_id})
 # ============================================================
 
+
 class TestDeleteValue:
     """Tests for DELETE /values/{value_id} endpoint."""
 
@@ -514,9 +411,7 @@ class TestDeleteValue:
 
         assert response.status_code == 204
 
-    def test_author_can_delete_value(
-        self, client: TestClient, author_headers, db_session, draft_field
-    ):
+    def test_author_can_delete_value(self, client: TestClient, author_headers, db_session, draft_field):
         """Test that author can delete a value."""
         value = Value(field_id=draft_field.id, value="TO_DELETE", label="To Delete")
         db_session.add(value)
@@ -539,11 +434,7 @@ class TestDeleteValue:
         Test DRAFT-only policy: cannot delete value in PUBLISHED version.
         This is a CRITICAL business rule.
         """
-        value = Value(
-            field_id=published_field.id,
-            value="PUB_VALUE",
-            label="Published Value"
-        )
+        value = Value(field_id=published_field.id, value="PUB_VALUE", label="Published Value")
         db_session.add(value)
         db_session.commit()
 
@@ -559,11 +450,7 @@ class TestDeleteValue:
         Test DRAFT-only policy: cannot delete value in ARCHIVED version.
         This is a CRITICAL business rule.
         """
-        value = Value(
-            field_id=archived_field.id,
-            value="ARCH_VALUE",
-            label="Archived Value"
-        )
+        value = Value(field_id=archived_field.id, value="ARCH_VALUE", label="Archived Value")
         db_session.add(value)
         db_session.commit()
 
@@ -572,9 +459,7 @@ class TestDeleteValue:
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
-    def test_cannot_delete_value_targeted_by_rule(
-        self, client: TestClient, admin_headers, value_in_rule_target
-    ):
+    def test_cannot_delete_value_targeted_by_rule(self, client: TestClient, admin_headers, value_in_rule_target):
         """
         Test guardrail: cannot delete value that is explicit target of a Rule.
         This is a CRITICAL business rule.
@@ -617,6 +502,7 @@ class TestDeleteValue:
 # OWNERSHIP AND INTEGRITY TESTS
 # ============================================================
 
+
 class TestValueOwnership:
     """Tests for value ownership and data integrity."""
 
@@ -628,32 +514,24 @@ class TestValueOwnership:
         data = response.json()
         assert data["field_id"] == draft_value.field_id
 
-    def test_multiple_values_for_same_field(
-        self, client: TestClient, admin_headers, draft_field
-    ):
+    def test_multiple_values_for_same_field(self, client: TestClient, admin_headers, draft_field):
         """Test that a field can have multiple values."""
         values = ["VALUE_1", "VALUE_2", "VALUE_3"]
 
         for val in values:
-            payload = {
-                "field_id": draft_field.id,
-                "value": val,
-                "label": f"Label {val}"
-            }
+            payload = {"field_id": draft_field.id, "value": val, "label": f"Label {val}"}
             response = client.post("/values/", json=payload, headers=admin_headers)
             assert response.status_code == 201
 
         # Verify all values exist
-        list_response = client.get(
-            f"/values/?field_id={draft_field.id}",
-            headers=admin_headers
-        )
+        list_response = client.get(f"/values/?field_id={draft_field.id}", headers=admin_headers)
         assert len(list_response.json()) == 3
 
 
 # ============================================================
 # CALCULATION VALUE INTEGRITY TESTS
 # ============================================================
+
 
 class TestValueCalculationIntegrity:
     """Tests for CALCULATION rule guards on Value delete/update."""
@@ -670,14 +548,14 @@ class TestValueCalculationIntegrity:
             name="calc_del_target",
             label="Calc Del Target",
             data_type=FieldType.STRING.value,
-            is_free_value=False
+            is_free_value=False,
         )
         source_field = Field(
             entity_version_id=draft_version.id,
             name="calc_del_source",
             label="Source",
             data_type=FieldType.STRING.value,
-            is_free_value=True
+            is_free_value=True,
         )
         db_session.add_all([target_field, source_field])
         db_session.flush()
@@ -694,7 +572,7 @@ class TestValueCalculationIntegrity:
             target_field_id=target_field.id,
             rule_type=RuleType.CALCULATION.value,
             set_value="REFERENCED",
-            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]}
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]},
         )
         db_session.add(calc_rule)
         db_session.commit()
@@ -714,7 +592,7 @@ class TestValueCalculationIntegrity:
             name="calc_del_ok",
             label="Calc Del OK",
             data_type=FieldType.STRING.value,
-            is_free_value=False
+            is_free_value=False,
         )
         db_session.add(target_field)
         db_session.flush()
@@ -739,14 +617,14 @@ class TestValueCalculationIntegrity:
             name="calc_upd_target",
             label="Calc Upd Target",
             data_type=FieldType.STRING.value,
-            is_free_value=False
+            is_free_value=False,
         )
         source_field = Field(
             entity_version_id=draft_version.id,
             name="calc_upd_source",
             label="Source",
             data_type=FieldType.STRING.value,
-            is_free_value=True
+            is_free_value=True,
         )
         db_session.add_all([target_field, source_field])
         db_session.flush()
@@ -760,7 +638,7 @@ class TestValueCalculationIntegrity:
             target_field_id=target_field.id,
             rule_type=RuleType.CALCULATION.value,
             set_value="CALC_REF",
-            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]}
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]},
         )
         db_session.add(calc_rule)
         db_session.commit()
@@ -768,11 +646,7 @@ class TestValueCalculationIntegrity:
         # Try to change the value string → should fail
         payload = {"value": "CHANGED"}
 
-        response = client.patch(
-            f"/values/{val.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{val.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
         assert "calculation" in response.json()["detail"].lower()
@@ -786,7 +660,7 @@ class TestValueCalculationIntegrity:
             name="calc_upd_ok",
             label="Calc Upd OK",
             data_type=FieldType.STRING.value,
-            is_free_value=False
+            is_free_value=False,
         )
         db_session.add(target_field)
         db_session.flush()
@@ -797,11 +671,7 @@ class TestValueCalculationIntegrity:
 
         payload = {"value": "NEW_VAL"}
 
-        response = client.patch(
-            f"/values/{val.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{val.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["value"] == "NEW_VAL"
@@ -815,14 +685,14 @@ class TestValueCalculationIntegrity:
             name="calc_label_upd",
             label="Calc Label Upd",
             data_type=FieldType.STRING.value,
-            is_free_value=False
+            is_free_value=False,
         )
         source_field = Field(
             entity_version_id=draft_version.id,
             name="calc_label_src",
             label="Source",
             data_type=FieldType.STRING.value,
-            is_free_value=True
+            is_free_value=True,
         )
         db_session.add_all([target_field, source_field])
         db_session.flush()
@@ -836,7 +706,7 @@ class TestValueCalculationIntegrity:
             target_field_id=target_field.id,
             rule_type=RuleType.CALCULATION.value,
             set_value="STABLE",
-            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]}
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "x"}]},
         )
         db_session.add(calc_rule)
         db_session.commit()
@@ -844,11 +714,7 @@ class TestValueCalculationIntegrity:
         # Update only the label → should succeed (value string unchanged)
         payload = {"label": "New Label"}
 
-        response = client.patch(
-            f"/values/{val.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{val.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["label"] == "New Label"
@@ -858,18 +724,13 @@ class TestValueCalculationIntegrity:
 # EDGE CASES
 # ============================================================
 
+
 class TestValueEdgeCases:
     """Edge case and boundary tests for Value API."""
 
-    def test_value_with_special_characters(
-        self, client: TestClient, admin_headers, draft_field
-    ):
+    def test_value_with_special_characters(self, client: TestClient, admin_headers, draft_field):
         """Test that value strings with special characters are handled."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "SPECIAL_VALUE-123",
-            "label": "Value with dashes & underscores"
-        }
+        payload = {"field_id": draft_field.id, "value": "SPECIAL_VALUE-123", "label": "Value with dashes & underscores"}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
@@ -878,50 +739,29 @@ class TestValueEdgeCases:
 
     def test_value_with_long_label(self, client: TestClient, admin_headers, draft_field):
         """Test that long labels are handled."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "LONG",
-            "label": "A" * 200
-        }
+        payload = {"field_id": draft_field.id, "value": "LONG", "label": "A" * 200}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
         # Should either succeed or return validation error
         assert response.status_code in [201, 422]
 
-    def test_empty_list_for_field_without_values(
-        self, client: TestClient, admin_headers, draft_field
-    ):
+    def test_empty_list_for_field_without_values(self, client: TestClient, admin_headers, draft_field):
         """Test listing values for field with no values returns empty list."""
-        response = client.get(
-            f"/values/?field_id={draft_field.id}",
-            headers=admin_headers
-        )
+        response = client.get(f"/values/?field_id={draft_field.id}", headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json() == []
 
-    def test_only_one_default_value_recommended(
-        self, client: TestClient, admin_headers, draft_field
-    ):
+    def test_only_one_default_value_recommended(self, client: TestClient, admin_headers, draft_field):
         """Test behavior when multiple values are marked as default."""
         # Create first default value
-        payload1 = {
-            "field_id": draft_field.id,
-            "value": "DEFAULT_1",
-            "label": "Default 1",
-            "is_default": True
-        }
+        payload1 = {"field_id": draft_field.id, "value": "DEFAULT_1", "label": "Default 1", "is_default": True}
         resp1 = client.post("/values/", json=payload1, headers=admin_headers)
         assert resp1.status_code == 201
 
         # Create second default value (may succeed - business logic may allow it)
-        payload2 = {
-            "field_id": draft_field.id,
-            "value": "DEFAULT_2",
-            "label": "Default 2",
-            "is_default": True
-        }
+        payload2 = {"field_id": draft_field.id, "value": "DEFAULT_2", "label": "Default 2", "is_default": True}
         resp2 = client.post("/values/", json=payload2, headers=admin_headers)
         # Document current behavior - may succeed or fail
         assert resp2.status_code in [201, 400]
@@ -931,17 +771,13 @@ class TestValueEdgeCases:
 # SKU MODIFIER CRUD TESTS
 # ============================================================
 
+
 class TestValueSKUModifier:
     """Tests for Value sku_modifier attribute CRUD operations."""
 
     def test_create_value_with_sku_modifier(self, client: TestClient, admin_headers, draft_field):
         """Test that value can be created with sku_modifier."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "INTEL_I7",
-            "label": "Intel Core i7",
-            "sku_modifier": "I7"
-        }
+        payload = {"field_id": draft_field.id, "value": "INTEL_I7", "label": "Intel Core i7", "sku_modifier": "I7"}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
@@ -952,11 +788,7 @@ class TestValueSKUModifier:
 
     def test_create_value_without_sku_modifier(self, client: TestClient, admin_headers, draft_field):
         """Test that sku_modifier is optional on value creation."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "NO_SKU",
-            "label": "No SKU Modifier"
-        }
+        payload = {"field_id": draft_field.id, "value": "NO_SKU", "label": "No SKU Modifier"}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
@@ -969,29 +801,16 @@ class TestValueSKUModifier:
         """Test that sku_modifier can be updated on a value in DRAFT version."""
         payload = {"sku_modifier": "NEW_MOD"}
 
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["sku_modifier"] == "NEW_MOD"
 
-    def test_update_value_with_other_fields_and_sku_modifier(
-        self, client: TestClient, admin_headers, draft_value
-    ):
+    def test_update_value_with_other_fields_and_sku_modifier(self, client: TestClient, admin_headers, draft_value):
         """Test that sku_modifier can be updated together with other fields."""
-        payload = {
-            "label": "Updated Label",
-            "sku_modifier": "UPD"
-        }
+        payload = {"label": "Updated Label", "sku_modifier": "UPD"}
 
-        response = client.patch(
-            f"/values/{draft_value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -1001,22 +820,13 @@ class TestValueSKUModifier:
     def test_clear_sku_modifier(self, client: TestClient, admin_headers, db_session, draft_field):
         """Test that sku_modifier can be cleared (set to null)."""
         # Create value with sku_modifier
-        value = Value(
-            field_id=draft_field.id,
-            value="WITH_MOD",
-            label="With Modifier",
-            sku_modifier="MOD"
-        )
+        value = Value(field_id=draft_field.id, value="WITH_MOD", label="With Modifier", sku_modifier="MOD")
         db_session.add(value)
         db_session.commit()
 
         # Clear sku_modifier
         payload = {"sku_modifier": None}
-        response = client.patch(
-            f"/values/{value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         assert response.json()["sku_modifier"] is None
@@ -1029,34 +839,20 @@ class TestValueSKUModifier:
         This is a CRITICAL business rule.
         """
         # Create value in published version
-        value = Value(
-            field_id=published_field.id,
-            value="PUB_VALUE",
-            label="Published Value",
-            sku_modifier="PUB"
-        )
+        value = Value(field_id=published_field.id, value="PUB_VALUE", label="Published Value", sku_modifier="PUB")
         db_session.add(value)
         db_session.commit()
 
         payload = {"sku_modifier": "SHOULD_FAIL"}
 
-        response = client.patch(
-            f"/values/{value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
         assert "draft" in response.json()["detail"].lower()
 
     def test_read_value_includes_sku_modifier(self, client: TestClient, admin_headers, db_session, draft_field):
         """Test that reading a value includes sku_modifier in response."""
-        value = Value(
-            field_id=draft_field.id,
-            value="READ_TEST",
-            label="Read Test",
-            sku_modifier="RT"
-        )
+        value = Value(field_id=draft_field.id, value="READ_TEST", label="Read Test", sku_modifier="RT")
         db_session.add(value)
         db_session.commit()
 
@@ -1067,9 +863,7 @@ class TestValueSKUModifier:
         assert data["value"] == "READ_TEST"
         assert data["sku_modifier"] == "RT"
 
-    def test_list_values_includes_sku_modifier(
-        self, client: TestClient, admin_headers, db_session, draft_field
-    ):
+    def test_list_values_includes_sku_modifier(self, client: TestClient, admin_headers, db_session, draft_field):
         """Test that listing values includes sku_modifier for each value."""
         # Create values with different sku_modifiers
         v1 = Value(field_id=draft_field.id, value="V1", label="Value 1", sku_modifier="M1")
@@ -1078,10 +872,7 @@ class TestValueSKUModifier:
         db_session.add_all([v1, v2, v3])
         db_session.commit()
 
-        response = client.get(
-            f"/values/?field_id={draft_field.id}",
-            headers=admin_headers
-        )
+        response = client.get(f"/values/?field_id={draft_field.id}", headers=admin_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -1103,51 +894,35 @@ class TestValueSKUModifier:
             name="field1",
             label="Field 1",
             data_type=FieldType.STRING.value,
-            is_free_value=False
+            is_free_value=False,
         )
         field2 = Field(
             entity_version_id=draft_version.id,
             name="field2",
             label="Field 2",
             data_type=FieldType.STRING.value,
-            is_free_value=False
+            is_free_value=False,
         )
         db_session.add_all([field1, field2])
         db_session.commit()
 
         # Create value with sku_modifier in field1
-        value = Value(
-            field_id=field1.id,
-            value="MOVE_ME",
-            label="Move Me",
-            sku_modifier="MV"
-        )
+        value = Value(field_id=field1.id, value="MOVE_ME", label="Move Me", sku_modifier="MV")
         db_session.add(value)
         db_session.commit()
 
         # Move to field2
         payload = {"field_id": field2.id}
-        response = client.patch(
-            f"/values/{value.id}",
-            json=payload,
-            headers=admin_headers
-        )
+        response = client.patch(f"/values/{value.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 200
         data = response.json()
         assert data["field_id"] == field2.id
         assert data["sku_modifier"] == "MV"  # Preserved
 
-    def test_sku_modifier_with_special_characters(
-        self, client: TestClient, admin_headers, draft_field
-    ):
+    def test_sku_modifier_with_special_characters(self, client: TestClient, admin_headers, draft_field):
         """Test that sku_modifier can contain special characters."""
-        payload = {
-            "field_id": draft_field.id,
-            "value": "SPECIAL",
-            "label": "Special Chars",
-            "sku_modifier": "X-L_32"
-        }
+        payload = {"field_id": draft_field.id, "value": "SPECIAL", "label": "Special Chars", "sku_modifier": "X-L_32"}
 
         response = client.post("/values/", json=payload, headers=admin_headers)
 
@@ -1161,7 +936,7 @@ class TestValueSKUModifier:
             "field_id": draft_field.id,
             "value": "LONG_MOD",
             "label": "Long Modifier",
-            "sku_modifier": long_modifier
+            "sku_modifier": long_modifier,
         }
 
         response = client.post("/values/", json=payload, headers=admin_headers)

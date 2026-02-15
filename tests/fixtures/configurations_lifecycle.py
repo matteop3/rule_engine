@@ -2,18 +2,29 @@
 Configuration lifecycle fixtures for tests.
 Provides fixtures for testing DRAFT/FINALIZED status, clone, upgrade, finalize operations.
 """
-import pytest
-from datetime import datetime, timezone
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule, Configuration,
-    User, UserRole, RuleType, FieldType, VersionStatus, ConfigurationStatus
-)
-from app.core.security import get_password_hash, create_access_token
 
+from datetime import UTC, datetime
+
+import pytest
+
+from app.core.security import create_access_token, get_password_hash
+from app.models.domain import (
+    Configuration,
+    ConfigurationStatus,
+    Entity,
+    EntityVersion,
+    Field,
+    FieldType,
+    User,
+    UserRole,
+    Value,
+    VersionStatus,
+)
 
 # ============================================================
 # USER FIXTURES FOR LIFECYCLE TESTS
 # ============================================================
+
 
 @pytest.fixture(scope="function")
 def lifecycle_admin(db_session):
@@ -22,7 +33,7 @@ def lifecycle_admin(db_session):
         email="lifecycle_admin@example.com",
         hashed_password=get_password_hash("AdminPassword123!"),
         role=UserRole.ADMIN,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -44,7 +55,7 @@ def lifecycle_author(db_session):
         email="lifecycle_author@example.com",
         hashed_password=get_password_hash("AuthorPassword123!"),
         role=UserRole.AUTHOR,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -66,7 +77,7 @@ def lifecycle_user(db_session):
         email="lifecycle_user@example.com",
         hashed_password=get_password_hash("UserPassword123!"),
         role=UserRole.USER,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -88,7 +99,7 @@ def second_lifecycle_user(db_session):
         email="lifecycle_user2@example.com",
         hashed_password=get_password_hash("UserPassword123!"),
         role=UserRole.USER,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -107,6 +118,7 @@ def second_lifecycle_user_headers(second_lifecycle_user):
 # ENTITY & VERSION FIXTURES
 # ============================================================
 
+
 @pytest.fixture(scope="function")
 def lifecycle_entity(db_session, lifecycle_admin):
     """Creates a basic Entity for lifecycle tests."""
@@ -114,7 +126,7 @@ def lifecycle_entity(db_session, lifecycle_admin):
         name="Lifecycle Test Entity",
         description="Entity for configuration lifecycle testing",
         created_by_id=lifecycle_admin.id,
-        updated_by_id=lifecycle_admin.id
+        updated_by_id=lifecycle_admin.id,
     )
     db_session.add(entity)
     db_session.commit()
@@ -134,7 +146,7 @@ def multi_version_entity(db_session, lifecycle_admin):
         name="Multi-Version Entity",
         description="Entity with ARCHIVED, PUBLISHED, and DRAFT versions",
         created_by_id=lifecycle_admin.id,
-        updated_by_id=lifecycle_admin.id
+        updated_by_id=lifecycle_admin.id,
     )
     db_session.add(entity)
     db_session.flush()
@@ -145,9 +157,9 @@ def multi_version_entity(db_session, lifecycle_admin):
         version_number=1,
         status=VersionStatus.ARCHIVED,
         changelog="Archived version for testing",
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         created_by_id=lifecycle_admin.id,
-        updated_by_id=lifecycle_admin.id
+        updated_by_id=lifecycle_admin.id,
     )
     db_session.add(archived_version)
     db_session.flush()
@@ -160,7 +172,7 @@ def multi_version_entity(db_session, lifecycle_admin):
         data_type=FieldType.STRING.value,
         is_free_value=True,
         is_required=True,
-        sequence=1
+        sequence=1,
     )
     db_session.add(archived_field)
     db_session.flush()
@@ -171,9 +183,9 @@ def multi_version_entity(db_session, lifecycle_admin):
         version_number=2,
         status=VersionStatus.PUBLISHED,
         changelog="Current published version",
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         created_by_id=lifecycle_admin.id,
-        updated_by_id=lifecycle_admin.id
+        updated_by_id=lifecycle_admin.id,
     )
     db_session.add(published_version)
     db_session.flush()
@@ -186,7 +198,7 @@ def multi_version_entity(db_session, lifecycle_admin):
         data_type=FieldType.STRING.value,
         is_free_value=False,
         is_required=True,
-        sequence=1
+        sequence=1,
     )
     pub_field_value = Field(
         entity_version_id=published_version.id,
@@ -195,7 +207,7 @@ def multi_version_entity(db_session, lifecycle_admin):
         data_type=FieldType.NUMBER.value,
         is_free_value=True,
         is_required=True,
-        sequence=2
+        sequence=2,
     )
     pub_field_optional = Field(
         entity_version_id=published_version.id,
@@ -204,7 +216,7 @@ def multi_version_entity(db_session, lifecycle_admin):
         data_type=FieldType.BOOLEAN.value,
         is_free_value=True,
         is_required=False,
-        sequence=3
+        sequence=3,
     )
     db_session.add_all([pub_field_type, pub_field_value, pub_field_optional])
     db_session.flush()
@@ -222,7 +234,7 @@ def multi_version_entity(db_session, lifecycle_admin):
         status=VersionStatus.DRAFT,
         changelog="Draft version for future",
         created_by_id=lifecycle_admin.id,
-        updated_by_id=lifecycle_admin.id
+        updated_by_id=lifecycle_admin.id,
     )
     db_session.add(draft_version)
     db_session.flush()
@@ -235,7 +247,7 @@ def multi_version_entity(db_session, lifecycle_admin):
         data_type=FieldType.STRING.value,
         is_free_value=False,
         is_required=True,
-        sequence=1
+        sequence=1,
     )
     draft_field_value = Field(
         entity_version_id=draft_version.id,
@@ -244,7 +256,7 @@ def multi_version_entity(db_session, lifecycle_admin):
         data_type=FieldType.NUMBER.value,
         is_free_value=True,
         is_required=True,
-        sequence=2
+        sequence=2,
     )
     draft_field_new = Field(
         entity_version_id=draft_version.id,
@@ -253,7 +265,7 @@ def multi_version_entity(db_session, lifecycle_admin):
         data_type=FieldType.STRING.value,
         is_free_value=True,
         is_required=True,
-        sequence=3
+        sequence=3,
     )
     db_session.add_all([draft_field_type, draft_field_value, draft_field_new])
     db_session.flush()
@@ -266,20 +278,9 @@ def multi_version_entity(db_session, lifecycle_admin):
         "published_version": published_version,
         "draft_version": draft_version,
         "archived_fields": {"legacy": archived_field},
-        "published_fields": {
-            "type": pub_field_type,
-            "value": pub_field_value,
-            "optional": pub_field_optional
-        },
-        "published_values": {
-            "basic": value_basic,
-            "premium": value_premium
-        },
-        "draft_fields": {
-            "type": draft_field_type,
-            "value": draft_field_value,
-            "new_required": draft_field_new
-        }
+        "published_fields": {"type": pub_field_type, "value": pub_field_value, "optional": pub_field_optional},
+        "published_values": {"basic": value_basic, "premium": value_premium},
+        "draft_fields": {"type": draft_field_type, "value": draft_field_value, "new_required": draft_field_new},
     }
 
 
@@ -291,9 +292,9 @@ def published_version_for_lifecycle(db_session, lifecycle_entity, lifecycle_admi
         version_number=1,
         status=VersionStatus.PUBLISHED,
         changelog="Published version for lifecycle tests",
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         created_by_id=lifecycle_admin.id,
-        updated_by_id=lifecycle_admin.id
+        updated_by_id=lifecycle_admin.id,
     )
     db_session.add(version)
     db_session.flush()
@@ -306,7 +307,7 @@ def published_version_for_lifecycle(db_session, lifecycle_entity, lifecycle_admi
         data_type=FieldType.STRING.value,
         is_free_value=True,
         is_required=True,
-        sequence=1
+        sequence=1,
     )
     field_amount = Field(
         entity_version_id=version.id,
@@ -315,7 +316,7 @@ def published_version_for_lifecycle(db_session, lifecycle_entity, lifecycle_admi
         data_type=FieldType.NUMBER.value,
         is_free_value=True,
         is_required=True,
-        sequence=2
+        sequence=2,
     )
     field_optional = Field(
         entity_version_id=version.id,
@@ -324,26 +325,20 @@ def published_version_for_lifecycle(db_session, lifecycle_entity, lifecycle_admi
         data_type=FieldType.STRING.value,
         is_free_value=True,
         is_required=False,
-        sequence=3
+        sequence=3,
     )
     db_session.add_all([field_name, field_amount, field_optional])
     db_session.commit()
 
     db_session.refresh(version)
 
-    return {
-        "version": version,
-        "fields": {
-            "name": field_name,
-            "amount": field_amount,
-            "optional": field_optional
-        }
-    }
+    return {"version": version, "fields": {"name": field_name, "amount": field_amount, "optional": field_optional}}
 
 
 # ============================================================
 # CONFIGURATION FIXTURES
 # ============================================================
+
 
 @pytest.fixture(scope="function")
 def draft_configuration(db_session, lifecycle_user, published_version_for_lifecycle):
@@ -359,11 +354,8 @@ def draft_configuration(db_session, lifecycle_user, published_version_for_lifecy
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
-        data=[
-            {"field_id": fields["name"].id, "value": "John Doe"},
-            {"field_id": fields["amount"].id, "value": 1000}
-        ],
-        created_by_id=lifecycle_user.id
+        data=[{"field_id": fields["name"].id, "value": "John Doe"}, {"field_id": fields["amount"].id, "value": 1000}],
+        created_by_id=lifecycle_user.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -385,12 +377,9 @@ def finalized_configuration(db_session, lifecycle_user, published_version_for_li
         status=ConfigurationStatus.FINALIZED,
         is_complete=True,
         is_deleted=False,
-        data=[
-            {"field_id": fields["name"].id, "value": "Jane Doe"},
-            {"field_id": fields["amount"].id, "value": 2000}
-        ],
+        data=[{"field_id": fields["name"].id, "value": "Jane Doe"}, {"field_id": fields["amount"].id, "value": 2000}],
         created_by_id=lifecycle_user.id,
-        updated_by_id=lifecycle_user.id
+        updated_by_id=lifecycle_user.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -414,10 +403,10 @@ def soft_deleted_configuration(db_session, lifecycle_admin, published_version_fo
         is_deleted=True,
         data=[
             {"field_id": fields["name"].id, "value": "Deleted User"},
-            {"field_id": fields["amount"].id, "value": 500}
+            {"field_id": fields["amount"].id, "value": 500},
         ],
         created_by_id=lifecycle_admin.id,
-        updated_by_id=lifecycle_admin.id
+        updated_by_id=lifecycle_admin.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -439,7 +428,7 @@ def configuration_with_empty_data(db_session, lifecycle_user, published_version_
         is_complete=False,
         is_deleted=False,
         data=[],
-        created_by_id=lifecycle_user.id
+        created_by_id=lifecycle_user.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -461,11 +450,8 @@ def configuration_null_name(db_session, lifecycle_user, published_version_for_li
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
-        data=[
-            {"field_id": fields["name"].id, "value": "Anonymous"},
-            {"field_id": fields["amount"].id, "value": 100}
-        ],
-        created_by_id=lifecycle_user.id
+        data=[{"field_id": fields["name"].id, "value": "Anonymous"}, {"field_id": fields["amount"].id, "value": 100}],
+        created_by_id=lifecycle_user.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -487,11 +473,8 @@ def admin_owned_draft_configuration(db_session, lifecycle_admin, published_versi
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
-        data=[
-            {"field_id": fields["name"].id, "value": "Admin User"},
-            {"field_id": fields["amount"].id, "value": 5000}
-        ],
-        created_by_id=lifecycle_admin.id
+        data=[{"field_id": fields["name"].id, "value": "Admin User"}, {"field_id": fields["amount"].id, "value": 5000}],
+        created_by_id=lifecycle_admin.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -515,10 +498,10 @@ def admin_owned_finalized_configuration(db_session, lifecycle_admin, published_v
         is_deleted=False,
         data=[
             {"field_id": fields["name"].id, "value": "Admin Finalized"},
-            {"field_id": fields["amount"].id, "value": 10000}
+            {"field_id": fields["amount"].id, "value": 10000},
         ],
         created_by_id=lifecycle_admin.id,
-        updated_by_id=lifecycle_admin.id
+        updated_by_id=lifecycle_admin.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -542,9 +525,9 @@ def author_owned_draft_configuration(db_session, lifecycle_author, published_ver
         is_deleted=False,
         data=[
             {"field_id": fields["name"].id, "value": "Author User"},
-            {"field_id": fields["amount"].id, "value": 3000}
+            {"field_id": fields["amount"].id, "value": 3000},
         ],
-        created_by_id=lifecycle_author.id
+        created_by_id=lifecycle_author.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -566,11 +549,8 @@ def second_user_draft_configuration(db_session, second_lifecycle_user, published
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
-        data=[
-            {"field_id": fields["name"].id, "value": "Second User"},
-            {"field_id": fields["amount"].id, "value": 750}
-        ],
-        created_by_id=second_lifecycle_user.id
+        data=[{"field_id": fields["name"].id, "value": "Second User"}, {"field_id": fields["amount"].id, "value": 750}],
+        created_by_id=second_lifecycle_user.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -594,10 +574,10 @@ def second_user_finalized_configuration(db_session, second_lifecycle_user, publi
         is_deleted=False,
         data=[
             {"field_id": fields["name"].id, "value": "Second User Final"},
-            {"field_id": fields["amount"].id, "value": 999}
+            {"field_id": fields["amount"].id, "value": 999},
         ],
         created_by_id=second_lifecycle_user.id,
-        updated_by_id=second_lifecycle_user.id
+        updated_by_id=second_lifecycle_user.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -608,6 +588,7 @@ def second_user_finalized_configuration(db_session, second_lifecycle_user, publi
 # ============================================================
 # CONFIGURATION WITH ARCHIVED VERSION (for upgrade tests)
 # ============================================================
+
 
 @pytest.fixture(scope="function")
 def configuration_on_archived_version(db_session, lifecycle_user, multi_version_entity):
@@ -622,10 +603,8 @@ def configuration_on_archived_version(db_session, lifecycle_user, multi_version_
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
-        data=[
-            {"field_id": archived_fields["legacy"].id, "value": "Legacy Value"}
-        ],
-        created_by_id=lifecycle_user.id
+        data=[{"field_id": archived_fields["legacy"].id, "value": "Legacy Value"}],
+        created_by_id=lifecycle_user.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -648,9 +627,9 @@ def configuration_on_published_multi_version(db_session, lifecycle_user, multi_v
         is_deleted=False,
         data=[
             {"field_id": published_fields["type"].id, "value": "BASIC"},
-            {"field_id": published_fields["value"].id, "value": 1500}
+            {"field_id": published_fields["value"].id, "value": 1500},
         ],
-        created_by_id=lifecycle_user.id
+        created_by_id=lifecycle_user.id,
     )
     db_session.add(config)
     db_session.commit()
@@ -662,6 +641,7 @@ def configuration_on_published_multi_version(db_session, lifecycle_user, multi_v
 # HELPER FUNCTIONS
 # ============================================================
 
+
 def create_sample_input_data(fields: dict) -> list:
     """
     Creates sample input data for configuration tests.
@@ -672,10 +652,7 @@ def create_sample_input_data(fields: dict) -> list:
     Returns:
         List of field input dicts
     """
-    data = [
-        {"field_id": fields["name"].id, "value": "Sample User"},
-        {"field_id": fields["amount"].id, "value": 1234}
-    ]
+    data = [{"field_id": fields["name"].id, "value": "Sample User"}, {"field_id": fields["amount"].id, "value": 1234}]
     if "optional" in fields:
         data.append({"field_id": fields["optional"].id, "value": "Optional notes"})
     return data

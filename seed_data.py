@@ -1,15 +1,26 @@
-import sys
 import os
+import sys
 from datetime import date
 
-# Fix path per importare i moduli app dalla root
+# Fix path to import app modules from root
 sys.path.append(os.getcwd())
 
-from sqlalchemy.orm import Session
-from app.database import SessionLocal, engine, Base
+from app.core.security import get_password_hash
+from app.database import Base, SessionLocal, engine
 from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    RuleType, FieldType, VersionStatus
+    Configuration,
+    ConfigurationStatus,
+    Entity,
+    EntityVersion,
+    Field,
+    FieldType,
+    RefreshToken,
+    Rule,
+    RuleType,
+    User,
+    UserRole,
+    Value,
+    VersionStatus,
 )
 
 
@@ -17,494 +28,717 @@ def seed_db():
     db = SessionLocal()
     try:
         print("=" * 70)
-        print("SEED DATA - Polizza Auto Gold (Extended con Cascading Rules)")
+        print("SEED DATA - Auto Insurance Gold (Full Demo with Cascading Rules)")
         print("=" * 70)
 
-        # 1. Pulizia
+        # 1. Cleanup (order: FK dependencies)
+        db.query(RefreshToken).delete()
+        db.query(Configuration).delete()
         db.query(Rule).delete()
         db.query(Value).delete()
         db.query(Field).delete()
         db.query(EntityVersion).delete()
         db.query(Entity).delete()
+        db.query(User).delete()
         db.commit()
-        print("\n[1/7] Database pulito.")
+        print("\n[1/9] Database cleaned.")
 
         # 2. Entity
         entity = Entity(
-            name="Polizza Auto Gold",
-            description="Configuratore preventivi auto completo con regole a cascata"
+            name="Auto Insurance Gold",
+            description="Full-featured auto insurance quote configurator with cascading rules",
         )
         db.add(entity)
         db.commit()
-        print(f"[2/7] Entity creata: {entity.name} (ID: {entity.id})")
+        print(f"[2/9] Entity created: {entity.name} (ID: {entity.id})")
 
-        # 3. Version (con SKU configuration)
+        # 3. Version (with SKU configuration)
         version = EntityVersion(
             entity_id=entity.id,
             version_number=1,
             status=VersionStatus.PUBLISHED,
-            changelog="Versione completa con cascading rules e SKU generation",
+            changelog="Full version with cascading rules and SKU generation",
             sku_base="POL-AUTO",
-            sku_delimiter="-"
+            sku_delimiter="-",
         )
         db.add(version)
         db.commit()
-        print(f"[3/7] Version creata: v{version.version_number} (SKU: {version.sku_base})")
+        print(f"[3/9] Version created: v{version.version_number} (SKU: {version.sku_base})")
 
         # ============================================================
-        # 4. FIELDS (12 campi in 4 steps)
+        # 4. FIELDS (15 fields in 4 steps)
         # ============================================================
 
-        # --- STEP 1: Dati Contraente ---
-        f_nome = Field(
+        # --- STEP 1: Policyholder Data ---
+        f_name = Field(
             entity_version_id=version.id,
-            name="contraente_nome",
-            label="Nome Completo",
+            name="policyholder_name",
+            label="Full Name",
             data_type=FieldType.STRING.value,
             is_free_value=True,
-            step=1, sequence=10,
-            is_required=True
+            step=1,
+            sequence=10,
+            is_required=True,
         )
 
-        f_nascita = Field(
+        f_dob = Field(
             entity_version_id=version.id,
-            name="contraente_nascita",
-            label="Data di Nascita",
+            name="policyholder_dob",
+            label="Date of Birth",
             data_type=FieldType.DATE.value,
             is_free_value=True,
-            step=1, sequence=20,
-            is_required=True
+            step=1,
+            sequence=20,
+            is_required=True,
         )
 
-        f_professione = Field(
+        f_occupation = Field(
             entity_version_id=version.id,
-            name="contraente_professione",
-            label="Professione",
+            name="policyholder_occupation",
+            label="Occupation",
             data_type=FieldType.STRING.value,
             is_free_value=False,
-            step=1, sequence=30,
-            is_required=True
+            step=1,
+            sequence=30,
+            is_required=True,
         )
 
-        # --- STEP 2: Dati Veicolo ---
-        f_tipo = Field(
+        # --- STEP 2: Vehicle Data ---
+        f_vehicle_type = Field(
             entity_version_id=version.id,
-            name="veicolo_tipo",
-            label="Tipologia Mezzo",
+            name="vehicle_type",
+            label="Vehicle Type",
             data_type=FieldType.STRING.value,
             is_free_value=False,
-            step=2, sequence=10,
-            is_required=True
+            step=2,
+            sequence=10,
+            is_required=True,
         )
 
-        f_valore = Field(
+        f_vehicle_value = Field(
             entity_version_id=version.id,
-            name="veicolo_valore",
-            label="Valore Veicolo (€)",
+            name="vehicle_value",
+            label="Vehicle Value ($)",
             data_type=FieldType.NUMBER.value,
             is_free_value=True,
-            step=2, sequence=20,
-            is_required=True
+            step=2,
+            sequence=20,
+            is_required=True,
         )
 
-        f_satellitare = Field(
+        f_satellite_tracker = Field(
             entity_version_id=version.id,
-            name="veicolo_antifurto",
-            label="Antifurto Satellitare?",
+            name="vehicle_satellite_tracker",
+            label="Satellite Anti-Theft?",
             data_type=FieldType.BOOLEAN.value,
             is_free_value=True,
-            step=2, sequence=30
+            step=2,
+            sequence=30,
         )
 
-        # --- CASCADING CHAIN 1: Camion → Tipo Trasporto → Certificazione ADR ---
-        # Questi campi sono visibili solo se si seleziona CAMION
-        f_tipo_trasporto = Field(
+        # --- CASCADING CHAIN 1: Truck → Cargo Type → ADR Certification ---
+        # These fields are only visible when vehicle type = TRUCK
+        f_cargo_type = Field(
             entity_version_id=version.id,
-            name="camion_tipo_trasporto",
-            label="Tipo di Trasporto",
+            name="truck_cargo_type",
+            label="Cargo Type",
             data_type=FieldType.STRING.value,
             is_free_value=False,
-            is_hidden=True,  # Nascosto di default, visibile solo per CAMION
-            step=2, sequence=40,
-            is_required=False  # Diventa required dinamicamente
+            is_hidden=True,  # Hidden by default, visible only for TRUCK
+            step=2,
+            sequence=40,
+            is_required=False,  # Becomes required dynamically
         )
 
-        f_certificazione_adr = Field(
+        f_adr_certification = Field(
             entity_version_id=version.id,
-            name="camion_certificazione_adr",
-            label="Certificazione ADR",
+            name="truck_adr_certification",
+            label="ADR Certification",
             data_type=FieldType.STRING.value,
             is_free_value=False,
-            is_hidden=True,  # Nascosto di default, visibile solo per merci pericolose
-            step=2, sequence=50,
-            is_required=False  # Diventa required dinamicamente
+            is_hidden=True,  # Hidden by default, visible only for hazardous goods
+            step=2,
+            sequence=50,
+            is_required=False,  # Becomes required dynamically
         )
 
-        # --- STEP 3: Coperture Base ---
-        f_massimale = Field(
+        # --- STEP 3: Coverage ---
+        f_premium_tier = Field(
             entity_version_id=version.id,
-            name="polizza_massimale",
-            label="Massimale RC",
+            name="policy_premium_tier",
+            label="Estimated Premium Tier",
             data_type=FieldType.STRING.value,
-            is_free_value=False,
-            step=3, sequence=10,
-            is_required=True
+            is_free_value=True,
+            is_readonly=True,  # Always readonly: value is calculated by the engine
+            sku_modifier_when_filled="PR",  # Appends "PR" to SKU when the field has a value
+            step=3,
+            sequence=5,
         )
 
-        f_infortuni = Field(
+        f_liability_limit = Field(
             entity_version_id=version.id,
-            name="polizza_infortuni",
-            label="Copertura Infortuni",
+            name="policy_liability_limit",
+            label="Liability Limit",
             data_type=FieldType.STRING.value,
             is_free_value=False,
-            step=3, sequence=20
+            step=3,
+            sequence=10,
+            is_required=True,
         )
 
-        f_furto = Field(
+        f_injury_coverage = Field(
             entity_version_id=version.id,
-            name="polizza_furto",
-            label="Copertura Furto/Incendio",
+            name="policy_injury_coverage",
+            label="Personal Injury Coverage",
             data_type=FieldType.STRING.value,
             is_free_value=False,
-            step=3, sequence=30
+            step=3,
+            sequence=20,
         )
 
-        # --- STEP 4: Servizi Aggiuntivi (CASCADING CHAIN 2) ---
-        # Assistenza Stradale → Auto Sostitutiva (visibile solo con assistenza premium)
-        f_assistenza = Field(
+        f_theft_coverage = Field(
             entity_version_id=version.id,
-            name="servizi_assistenza",
-            label="Assistenza Stradale",
+            name="policy_theft_coverage",
+            label="Theft & Fire Coverage",
             data_type=FieldType.STRING.value,
             is_free_value=False,
-            step=4, sequence=10
+            step=3,
+            sequence=30,
         )
 
-        f_auto_sostitutiva = Field(
+        # --- STEP 4: Additional Services (CASCADING CHAIN 2) ---
+        # Roadside Assistance → Rental Car (visible only with premium assistance)
+        f_roadside = Field(
             entity_version_id=version.id,
-            name="servizi_auto_sostitutiva",
-            label="Auto Sostitutiva",
+            name="services_roadside",
+            label="Roadside Assistance",
             data_type=FieldType.STRING.value,
             is_free_value=False,
-            is_hidden=True,  # Visibile solo con assistenza PREMIUM
-            step=4, sequence=20
+            step=4,
+            sequence=10,
+        )
+
+        f_rental_car = Field(
+            entity_version_id=version.id,
+            name="services_rental_car",
+            label="Rental Car",
+            data_type=FieldType.STRING.value,
+            is_free_value=False,
+            is_hidden=True,  # Visible only with PREMIUM assistance
+            step=4,
+            sequence=20,
+        )
+
+        f_notes = Field(
+            entity_version_id=version.id,
+            name="additional_notes",
+            label="Additional Notes",
+            data_type=FieldType.STRING.value,
+            is_free_value=True,
+            is_readonly=True,  # Readonly by default, editable only for some occupations
+            default_value="No notes",
+            step=4,
+            sequence=30,
         )
 
         all_fields = [
-            f_nome, f_nascita, f_professione,
-            f_tipo, f_valore, f_satellitare, f_tipo_trasporto, f_certificazione_adr,
-            f_massimale, f_infortuni, f_furto,
-            f_assistenza, f_auto_sostitutiva
+            f_name,
+            f_dob,
+            f_occupation,
+            f_vehicle_type,
+            f_vehicle_value,
+            f_satellite_tracker,
+            f_cargo_type,
+            f_adr_certification,
+            f_premium_tier,
+            f_liability_limit,
+            f_injury_coverage,
+            f_theft_coverage,
+            f_roadside,
+            f_rental_car,
+            f_notes,
         ]
         db.add_all(all_fields)
         db.commit()
-        print(f"[4/7] Campi creati: {len(all_fields)} fields in 4 steps")
+        print(f"[4/9] Fields created: {len(all_fields)} fields in 4 steps")
 
         # ============================================================
-        # 5. VALUES (con SKU modifiers)
+        # 5. VALUES (with SKU modifiers)
         # ============================================================
 
-        # --- Professione ---
-        v_prof_dip = Value(field_id=f_professione.id, label="Dipendente", value="DIPENDENTE",
-                          is_default=True, sku_modifier=None)
-        v_prof_aut = Value(field_id=f_professione.id, label="Autonomo/Libero Prof.", value="AUTONOMO",
-                          sku_modifier=None)
-        v_prof_pens = Value(field_id=f_professione.id, label="Pensionato", value="PENSIONATO",
-                           sku_modifier="P")  # Sconto pensionati → marker nel codice
-        v_prof_stud = Value(field_id=f_professione.id, label="Studente", value="STUDENTE",
-                           sku_modifier="S")  # Sconto studenti → marker nel codice
+        # --- Occupation ---
+        v_occ_employee = Value(
+            field_id=f_occupation.id, label="Employee", value="EMPLOYEE", is_default=True, sku_modifier=None
+        )
+        v_occ_self = Value(field_id=f_occupation.id, label="Self-Employed", value="SELF_EMPLOYED", sku_modifier=None)
+        v_occ_retired = Value(
+            field_id=f_occupation.id, label="Retired", value="RETIRED", sku_modifier="P"
+        )  # Retiree discount marker
+        v_occ_student = Value(
+            field_id=f_occupation.id, label="Student", value="STUDENT", sku_modifier="S"
+        )  # Student discount marker
 
-        # --- Tipo Veicolo ---
-        v_auto = Value(field_id=f_tipo.id, label="Automobile", value="AUTO",
-                      is_default=True, sku_modifier="A")
-        v_moto = Value(field_id=f_tipo.id, label="Motociclo", value="MOTO",
-                      sku_modifier="M")
-        v_camion = Value(field_id=f_tipo.id, label="Autocarro", value="CAMION",
-                        sku_modifier="C")
-        v_furgone = Value(field_id=f_tipo.id, label="Furgone", value="FURGONE",
-                         sku_modifier="F")
+        # --- Vehicle Type ---
+        v_car = Value(field_id=f_vehicle_type.id, label="Car", value="CAR", is_default=True, sku_modifier="A")
+        v_motorcycle = Value(field_id=f_vehicle_type.id, label="Motorcycle", value="MOTORCYCLE", sku_modifier="M")
+        v_truck = Value(field_id=f_vehicle_type.id, label="Truck", value="TRUCK", sku_modifier="C")
+        v_van = Value(field_id=f_vehicle_type.id, label="Van", value="VAN", sku_modifier="F")
 
-        # --- Tipo Trasporto (solo per CAMION) ---
-        v_trasp_normale = Value(field_id=f_tipo_trasporto.id, label="Merci Normali", value="NORMALE",
-                               is_default=True, sku_modifier="TN")
-        v_trasp_refrig = Value(field_id=f_tipo_trasporto.id, label="Merci Refrigerate", value="REFRIGERATO",
-                              sku_modifier="TR")
-        v_trasp_peric = Value(field_id=f_tipo_trasporto.id, label="Merci Pericolose (ADR)", value="PERICOLOSO",
-                             sku_modifier="TP")
+        # --- Cargo Type (only for TRUCK) ---
+        v_cargo_standard = Value(
+            field_id=f_cargo_type.id, label="Standard Goods", value="STANDARD", is_default=True, sku_modifier="TN"
+        )
+        v_cargo_refrigerated = Value(
+            field_id=f_cargo_type.id, label="Refrigerated Goods", value="REFRIGERATED", sku_modifier="TR"
+        )
+        v_cargo_hazardous = Value(
+            field_id=f_cargo_type.id, label="Hazardous Goods (ADR)", value="HAZARDOUS", sku_modifier="TP"
+        )
 
-        # --- Certificazione ADR (solo per merci pericolose) ---
-        v_adr_base = Value(field_id=f_certificazione_adr.id, label="ADR Base", value="ADR_BASE",
-                          is_default=True, sku_modifier="ADR1")
-        v_adr_cisterne = Value(field_id=f_certificazione_adr.id, label="ADR Cisterne", value="ADR_CISTERNE",
-                               sku_modifier="ADR2")
-        v_adr_esplosivi = Value(field_id=f_certificazione_adr.id, label="ADR Esplosivi (Classe 1)", value="ADR_ESPLOSIVI",
-                                sku_modifier="ADR3")
+        # --- ADR Certification (only for hazardous goods) ---
+        v_adr_base = Value(
+            field_id=f_adr_certification.id, label="ADR Basic", value="ADR_BASIC", is_default=True, sku_modifier="ADR1"
+        )
+        v_adr_tanks = Value(field_id=f_adr_certification.id, label="ADR Tanks", value="ADR_TANKS", sku_modifier="ADR2")
+        v_adr_explosives = Value(
+            field_id=f_adr_certification.id,
+            label="ADR Explosives (Class 1)",
+            value="ADR_EXPLOSIVES",
+            sku_modifier="ADR3",
+        )
 
-        # --- Massimale RC ---
-        v_mass_base = Value(field_id=f_massimale.id, label="Minimo di Legge (6M)", value="MINIMO",
-                           is_default=True, sku_modifier="6M")
-        v_mass_med = Value(field_id=f_massimale.id, label="Standard (10M)", value="STANDARD",
-                          sku_modifier="10M")
-        v_mass_high = Value(field_id=f_massimale.id, label="Elevato (25M)", value="ELEVATO",
-                           sku_modifier="25M")
-        v_mass_vip = Value(field_id=f_massimale.id, label="Premium (50M)", value="VIP",
-                          sku_modifier="50M")
+        # --- Liability Limit ---
+        v_limit_min = Value(
+            field_id=f_liability_limit.id,
+            label="Legal Minimum (6M)",
+            value="MINIMUM",
+            is_default=True,
+            sku_modifier="6M",
+        )
+        v_limit_std = Value(field_id=f_liability_limit.id, label="Standard (10M)", value="STANDARD", sku_modifier="10M")
+        v_limit_high = Value(field_id=f_liability_limit.id, label="High (25M)", value="HIGH", sku_modifier="25M")
+        v_limit_vip = Value(field_id=f_liability_limit.id, label="Premium (50M)", value="VIP", sku_modifier="50M")
 
-        # --- Copertura Infortuni ---
-        v_infortuni_no = Value(field_id=f_infortuni.id, label="Non inclusa", value="NO",
-                              is_default=True, sku_modifier=None)
-        v_infortuni_base = Value(field_id=f_infortuni.id, label="Base (50k)", value="BASE",
-                                sku_modifier="INF1")
-        v_infortuni_full = Value(field_id=f_infortuni.id, label="Completa (100k)", value="FULL",
-                                sku_modifier="INF2")
+        # --- Personal Injury Coverage ---
+        v_injury_none = Value(
+            field_id=f_injury_coverage.id, label="Not Included", value="NO", is_default=True, sku_modifier=None
+        )
+        v_injury_basic = Value(field_id=f_injury_coverage.id, label="Basic (50k)", value="BASIC", sku_modifier="INF1")
+        v_injury_full = Value(field_id=f_injury_coverage.id, label="Full (100k)", value="FULL", sku_modifier="INF2")
 
-        # --- Copertura Furto/Incendio ---
-        v_furto_no = Value(field_id=f_furto.id, label="Non inclusa", value="NO",
-                          is_default=True, sku_modifier=None)
-        v_furto_inc = Value(field_id=f_furto.id, label="Solo Incendio", value="INCENDIO",
-                           sku_modifier="INC")
-        v_furto_full = Value(field_id=f_furto.id, label="Furto + Incendio", value="FULL",
-                            sku_modifier="FI")
+        # --- Theft & Fire Coverage ---
+        v_theft_none = Value(
+            field_id=f_theft_coverage.id, label="Not Included", value="NO", is_default=True, sku_modifier=None
+        )
+        v_theft_fire = Value(field_id=f_theft_coverage.id, label="Fire Only", value="FIRE", sku_modifier="INC")
+        v_theft_full = Value(field_id=f_theft_coverage.id, label="Theft + Fire", value="FULL", sku_modifier="FI")
 
-        # --- Assistenza Stradale ---
-        v_assist_no = Value(field_id=f_assistenza.id, label="Non inclusa", value="NO",
-                           is_default=True, sku_modifier=None)
-        v_assist_base = Value(field_id=f_assistenza.id, label="Base (solo traino)", value="BASE",
-                             sku_modifier="AS1")
-        v_assist_plus = Value(field_id=f_assistenza.id, label="Plus (traino + taxi)", value="PLUS",
-                             sku_modifier="AS2")
-        v_assist_premium = Value(field_id=f_assistenza.id, label="Premium (tutto incluso)", value="PREMIUM",
-                                sku_modifier="AS3")
+        # --- Roadside Assistance ---
+        v_road_none = Value(
+            field_id=f_roadside.id, label="Not Included", value="NO", is_default=True, sku_modifier=None
+        )
+        v_road_basic = Value(field_id=f_roadside.id, label="Basic (tow only)", value="BASIC", sku_modifier="AS1")
+        v_road_plus = Value(field_id=f_roadside.id, label="Plus (tow + taxi)", value="PLUS", sku_modifier="AS2")
+        v_road_premium = Value(
+            field_id=f_roadside.id, label="Premium (all inclusive)", value="PREMIUM", sku_modifier="AS3"
+        )
 
-        # --- Auto Sostitutiva (solo con assistenza PREMIUM) ---
-        v_auto_sost_no = Value(field_id=f_auto_sostitutiva.id, label="Non inclusa", value="NO",
-                              is_default=True, sku_modifier=None)
-        v_auto_sost_3g = Value(field_id=f_auto_sostitutiva.id, label="3 giorni", value="3G",
-                              sku_modifier="R3")
-        v_auto_sost_7g = Value(field_id=f_auto_sostitutiva.id, label="7 giorni", value="7G",
-                              sku_modifier="R7")
-        v_auto_sost_15g = Value(field_id=f_auto_sostitutiva.id, label="15 giorni", value="15G",
-                               sku_modifier="R15")
+        # --- Rental Car (only with PREMIUM assistance) ---
+        v_rental_none = Value(
+            field_id=f_rental_car.id, label="Not Included", value="NO", is_default=True, sku_modifier=None
+        )
+        v_rental_3d = Value(field_id=f_rental_car.id, label="3 days", value="3D", sku_modifier="R3")
+        v_rental_7d = Value(field_id=f_rental_car.id, label="7 days", value="7D", sku_modifier="R7")
+        v_rental_15d = Value(field_id=f_rental_car.id, label="15 days", value="15D", sku_modifier="R15")
 
         all_values = [
-            v_prof_dip, v_prof_aut, v_prof_pens, v_prof_stud,
-            v_auto, v_moto, v_camion, v_furgone,
-            v_trasp_normale, v_trasp_refrig, v_trasp_peric,
-            v_adr_base, v_adr_cisterne, v_adr_esplosivi,
-            v_mass_base, v_mass_med, v_mass_high, v_mass_vip,
-            v_infortuni_no, v_infortuni_base, v_infortuni_full,
-            v_furto_no, v_furto_inc, v_furto_full,
-            v_assist_no, v_assist_base, v_assist_plus, v_assist_premium,
-            v_auto_sost_no, v_auto_sost_3g, v_auto_sost_7g, v_auto_sost_15g
+            v_occ_employee,
+            v_occ_self,
+            v_occ_retired,
+            v_occ_student,
+            v_car,
+            v_motorcycle,
+            v_truck,
+            v_van,
+            v_cargo_standard,
+            v_cargo_refrigerated,
+            v_cargo_hazardous,
+            v_adr_base,
+            v_adr_tanks,
+            v_adr_explosives,
+            v_limit_min,
+            v_limit_std,
+            v_limit_high,
+            v_limit_vip,
+            v_injury_none,
+            v_injury_basic,
+            v_injury_full,
+            v_theft_none,
+            v_theft_fire,
+            v_theft_full,
+            v_road_none,
+            v_road_basic,
+            v_road_plus,
+            v_road_premium,
+            v_rental_none,
+            v_rental_3d,
+            v_rental_7d,
+            v_rental_15d,
         ]
         db.add_all(all_values)
         db.commit()
-        print(f"[5/7] Valori creati: {len(all_values)} values con SKU modifiers")
+        print(f"[5/9] Values created: {len(all_values)} values with SKU modifiers")
 
         # ============================================================
-        # 6. RULES (15 regole incluse cascading chains)
+        # 6. RULES (19 rules: 6/6 types, 7/7 operators, 2 cascading chains)
         # ============================================================
 
-        # --- VALIDATION: Maggiorenne ---
+        # --- VALIDATION: Must be 18+ ---
         today = date.today()
-        maggiore_eta = today.replace(year=today.year - 18)
+        min_adult_date = today.replace(year=today.year - 18)
 
-        r_minorenne = Rule(
+        r_age_check = Rule(
             entity_version_id=version.id,
-            target_field_id=f_nascita.id,
+            target_field_id=f_dob.id,
             rule_type=RuleType.VALIDATION.value,
-            description="Blocca minorenni",
-            error_message="Il contraente deve essere maggiorenne.",
-            conditions={"criteria": [
-                {"field_id": f_nascita.id, "operator": "GREATER_THAN", "value": str(maggiore_eta)}
-            ]}
+            description="Policyholder must be at least 18 years old",
+            error_message="The policyholder must be at least 18 years old.",
+            conditions={"criteria": [{"field_id": f_dob.id, "operator": "GREATER_THAN", "value": str(min_adult_date)}]},
         )
 
-        # --- VALIDATION: Valore minimo veicolo ---
-        r_valore_minimo = Rule(
+        # --- VALIDATION: Minimum vehicle value ---
+        r_min_value = Rule(
             entity_version_id=version.id,
-            target_field_id=f_valore.id,
+            target_field_id=f_vehicle_value.id,
             rule_type=RuleType.VALIDATION.value,
-            description="Valore minimo veicolo",
-            error_message="Il valore del veicolo deve essere almeno 1000€.",
-            conditions={"criteria": [
-                {"field_id": f_valore.id, "operator": "LESS_THAN", "value": 1000}
-            ]}
+            description="Minimum vehicle value is $1,000",
+            error_message="Vehicle value must be at least $1,000.",
+            conditions={"criteria": [{"field_id": f_vehicle_value.id, "operator": "LESS_THAN", "value": 1000}]},
         )
 
-        # --- VALIDATION: Valore massimo per studenti ---
-        r_valore_max_studenti = Rule(
+        # --- VALIDATION: Max value for students ---
+        r_student_max_value = Rule(
             entity_version_id=version.id,
-            target_field_id=f_valore.id,
+            target_field_id=f_vehicle_value.id,
             rule_type=RuleType.VALIDATION.value,
-            description="Studenti: valore max 30k",
-            error_message="Per studenti il valore max assicurabile è 30.000€.",
-            conditions={"criteria": [
-                {"field_id": f_professione.id, "operator": "EQUALS", "value": "STUDENTE"},
-                {"field_id": f_valore.id, "operator": "GREATER_THAN", "value": 30000}
-            ]}
+            description="Students: max insurable value is $30,000",
+            error_message="Students cannot insure vehicles worth more than $30,000.",
+            conditions={
+                "criteria": [
+                    {"field_id": f_occupation.id, "operator": "EQUALS", "value": "STUDENT"},
+                    {"field_id": f_vehicle_value.id, "operator": "GREATER_THAN", "value": 30000},
+                ]
+            },
         )
 
-        # --- MANDATORY: Satellitare obbligatorio per veicoli > 50k ---
-        r_mand_satellitare = Rule(
+        # --- MANDATORY: Satellite tracker required for vehicles > 50k ---
+        r_mand_tracker = Rule(
             entity_version_id=version.id,
-            target_field_id=f_satellitare.id,
+            target_field_id=f_satellite_tracker.id,
             rule_type=RuleType.MANDATORY.value,
-            description="Satellitare obbligatorio per veicoli di lusso",
-            conditions={"criteria": [
-                {"field_id": f_valore.id, "operator": "GREATER_THAN", "value": 50000}
-            ]}
+            description="Satellite tracker required for luxury vehicles",
+            conditions={"criteria": [{"field_id": f_vehicle_value.id, "operator": "GREATER_THAN", "value": 50000}]},
         )
 
-        # --- EDITABILITY: Satellitare readonly con VIP (incluso nel pacchetto) ---
-        r_readonly_sat_vip = Rule(
+        # --- EDITABILITY: Satellite tracker readonly with VIP (included in package) ---
+        r_readonly_tracker_vip = Rule(
             entity_version_id=version.id,
-            target_field_id=f_satellitare.id,
+            target_field_id=f_satellite_tracker.id,
             rule_type=RuleType.EDITABILITY.value,
-            description="Satellitare incluso nel pacchetto Premium",
-            conditions={"criteria": [
-                {"field_id": f_massimale.id, "operator": "NOT_EQUALS", "value": "VIP"}
-            ]}
+            description="Satellite tracker included in Premium package",
+            conditions={"criteria": [{"field_id": f_liability_limit.id, "operator": "NOT_EQUALS", "value": "VIP"}]},
         )
 
         # ============================================================
-        # CASCADING CHAIN 1: Camion → Tipo Trasporto → Certificazione ADR
+        # CALCULATION: Premium Tier (engine-derived value)
+        # ============================================================
+        # The premium_tier field is always readonly. The engine evaluates
+        # CALCULATION rules in order: first passing rule wins.
+
+        r_calc_economy = Rule(
+            entity_version_id=version.id,
+            target_field_id=f_premium_tier.id,
+            rule_type=RuleType.CALCULATION.value,
+            description="ECONOMY tier for vehicles up to $15k",
+            set_value="ECONOMY",
+            conditions={
+                "criteria": [{"field_id": f_vehicle_value.id, "operator": "LESS_THAN_OR_EQUAL", "value": 15000}]
+            },
+        )
+
+        r_calc_standard = Rule(
+            entity_version_id=version.id,
+            target_field_id=f_premium_tier.id,
+            rule_type=RuleType.CALCULATION.value,
+            description="STANDARD tier for vehicles $15k-$50k",
+            set_value="STANDARD",
+            conditions={
+                "criteria": [
+                    {"field_id": f_vehicle_value.id, "operator": "GREATER_THAN", "value": 15000},
+                    {"field_id": f_vehicle_value.id, "operator": "LESS_THAN_OR_EQUAL", "value": 50000},
+                ]
+            },
+        )
+
+        r_calc_premium = Rule(
+            entity_version_id=version.id,
+            target_field_id=f_premium_tier.id,
+            rule_type=RuleType.CALCULATION.value,
+            description="PREMIUM tier for vehicles over $50k",
+            set_value="PREMIUM",
+            conditions={"criteria": [{"field_id": f_vehicle_value.id, "operator": "GREATER_THAN", "value": 50000}]},
+        )
+
+        # ============================================================
+        # EDITABILITY: Additional Notes (editable only for some occupations)
+        # ============================================================
+        # The field is readonly by default. This rule unlocks it
+        # only for employees and self-employed (IN operator).
+
+        r_edit_notes = Rule(
+            entity_version_id=version.id,
+            target_field_id=f_notes.id,
+            rule_type=RuleType.EDITABILITY.value,
+            description="Notes editable only for employees and self-employed",
+            conditions={
+                "criteria": [{"field_id": f_occupation.id, "operator": "IN", "value": ["EMPLOYEE", "SELF_EMPLOYED"]}]
+            },
+        )
+
+        # ============================================================
+        # CASCADING CHAIN 1: Truck → Cargo Type → ADR Certification
         # ============================================================
 
-        # STEP 1: Mostra "Tipo Trasporto" solo se veicolo = CAMION
-        r_show_tipo_trasporto = Rule(
+        # STEP 1: Show "Cargo Type" only if vehicle = TRUCK
+        r_show_cargo_type = Rule(
             entity_version_id=version.id,
-            target_field_id=f_tipo_trasporto.id,
+            target_field_id=f_cargo_type.id,
             rule_type=RuleType.VISIBILITY.value,
-            description="[CHAIN 1.1] Tipo trasporto visibile solo per Camion",
-            conditions={"criteria": [
-                {"field_id": f_tipo.id, "operator": "EQUALS", "value": "CAMION"}
-            ]}
+            description="[CHAIN 1.1] Cargo type visible only for Trucks",
+            conditions={"criteria": [{"field_id": f_vehicle_type.id, "operator": "EQUALS", "value": "TRUCK"}]},
         )
 
-        # STEP 1b: Tipo Trasporto diventa required per CAMION
-        r_mand_tipo_trasporto = Rule(
+        # STEP 1b: Cargo Type becomes required for TRUCK
+        r_mand_cargo_type = Rule(
             entity_version_id=version.id,
-            target_field_id=f_tipo_trasporto.id,
+            target_field_id=f_cargo_type.id,
             rule_type=RuleType.MANDATORY.value,
-            description="[CHAIN 1.1b] Tipo trasporto obbligatorio per Camion",
-            conditions={"criteria": [
-                {"field_id": f_tipo.id, "operator": "EQUALS", "value": "CAMION"}
-            ]}
+            description="[CHAIN 1.1b] Cargo type required for Trucks",
+            conditions={"criteria": [{"field_id": f_vehicle_type.id, "operator": "EQUALS", "value": "TRUCK"}]},
         )
 
-        # STEP 2: Mostra "Certificazione ADR" solo se trasporto = PERICOLOSO
-        # Questa regola dipende dal campo precedente (tipo_trasporto) che è già stato processato
+        # STEP 2: Show "ADR Certification" only if cargo = HAZARDOUS
+        # This rule depends on the previous field (cargo_type) already processed
         r_show_adr = Rule(
             entity_version_id=version.id,
-            target_field_id=f_certificazione_adr.id,
+            target_field_id=f_adr_certification.id,
             rule_type=RuleType.VISIBILITY.value,
-            description="[CHAIN 1.2] ADR visibile solo per merci pericolose",
-            conditions={"criteria": [
-                {"field_id": f_tipo_trasporto.id, "operator": "EQUALS", "value": "PERICOLOSO"}
-            ]}
+            description="[CHAIN 1.2] ADR visible only for hazardous goods",
+            conditions={"criteria": [{"field_id": f_cargo_type.id, "operator": "EQUALS", "value": "HAZARDOUS"}]},
         )
 
-        # STEP 2b: Certificazione ADR obbligatoria per merci pericolose
+        # STEP 2b: ADR Certification required for hazardous goods
         r_mand_adr = Rule(
             entity_version_id=version.id,
-            target_field_id=f_certificazione_adr.id,
+            target_field_id=f_adr_certification.id,
             rule_type=RuleType.MANDATORY.value,
-            description="[CHAIN 1.2b] ADR obbligatorio per merci pericolose",
-            conditions={"criteria": [
-                {"field_id": f_tipo_trasporto.id, "operator": "EQUALS", "value": "PERICOLOSO"}
-            ]}
+            description="[CHAIN 1.2b] ADR required for hazardous goods",
+            conditions={"criteria": [{"field_id": f_cargo_type.id, "operator": "EQUALS", "value": "HAZARDOUS"}]},
         )
 
         # ============================================================
-        # CASCADING CHAIN 2: Assistenza Premium → Auto Sostitutiva
+        # CASCADING CHAIN 2: Premium Assistance → Rental Car
         # ============================================================
 
-        # Mostra "Auto Sostitutiva" solo se assistenza = PREMIUM
-        r_show_auto_sost = Rule(
+        # Show "Rental Car" only if assistance = PREMIUM
+        r_show_rental = Rule(
             entity_version_id=version.id,
-            target_field_id=f_auto_sostitutiva.id,
+            target_field_id=f_rental_car.id,
             rule_type=RuleType.VISIBILITY.value,
-            description="[CHAIN 2.1] Auto sostitutiva solo con assistenza Premium",
-            conditions={"criteria": [
-                {"field_id": f_assistenza.id, "operator": "EQUALS", "value": "PREMIUM"}
-            ]}
+            description="[CHAIN 2.1] Rental car only with Premium assistance",
+            conditions={"criteria": [{"field_id": f_roadside.id, "operator": "EQUALS", "value": "PREMIUM"}]},
         )
 
         # ============================================================
         # AVAILABILITY RULES
         # ============================================================
 
-        # No Massimale Minimo per Camion (veicoli commerciali)
-        r_no_minimo_camion = Rule(
+        # No minimum liability limit for Trucks (commercial vehicles)
+        r_no_min_limit_truck = Rule(
             entity_version_id=version.id,
-            target_field_id=f_massimale.id,
-            target_value_id=v_mass_base.id,
+            target_field_id=f_liability_limit.id,
+            target_value_id=v_limit_min.id,
             rule_type=RuleType.AVAILABILITY.value,
-            description="No massimale minimo per camion",
-            conditions={"criteria": [
-                {"field_id": f_tipo.id, "operator": "NOT_EQUALS", "value": "CAMION"}
-            ]}
+            description="No minimum liability limit for trucks",
+            conditions={"criteria": [{"field_id": f_vehicle_type.id, "operator": "NOT_EQUALS", "value": "TRUCK"}]},
         )
 
-        # No Furto per Moto (statisticamente sfavorevole)
-        r_no_furto_moto = Rule(
+        # No full theft coverage for Motorcycles (statistically unfavorable)
+        r_no_theft_motorcycle = Rule(
             entity_version_id=version.id,
-            target_field_id=f_furto.id,
-            target_value_id=v_furto_full.id,
+            target_field_id=f_theft_coverage.id,
+            target_value_id=v_theft_full.id,
             rule_type=RuleType.AVAILABILITY.value,
-            description="Copertura furto completa non disponibile per moto",
-            conditions={"criteria": [
-                {"field_id": f_tipo.id, "operator": "NOT_EQUALS", "value": "MOTO"}
-            ]}
+            description="Full theft coverage not available for motorcycles",
+            conditions={"criteria": [{"field_id": f_vehicle_type.id, "operator": "NOT_EQUALS", "value": "MOTORCYCLE"}]},
         )
 
-        # No Infortuni per Moto
-        r_hide_infortuni_moto = Rule(
+        # No injury coverage for Motorcycles
+        r_hide_injury_motorcycle = Rule(
             entity_version_id=version.id,
-            target_field_id=f_infortuni.id,
+            target_field_id=f_injury_coverage.id,
             rule_type=RuleType.VISIBILITY.value,
-            description="No copertura infortuni per Moto",
-            conditions={"criteria": [
-                {"field_id": f_tipo.id, "operator": "NOT_EQUALS", "value": "MOTO"}
-            ]}
+            description="No injury coverage for Motorcycles",
+            conditions={"criteria": [{"field_id": f_vehicle_type.id, "operator": "NOT_EQUALS", "value": "MOTORCYCLE"}]},
         )
 
-        # Auto sostitutiva 15g solo per veicoli > 40k
-        r_auto_sost_15g_luxury = Rule(
+        # Full injury coverage only for Cars and Vans (IN operator)
+        r_injury_full_car_van = Rule(
             entity_version_id=version.id,
-            target_field_id=f_auto_sostitutiva.id,
-            target_value_id=v_auto_sost_15g.id,
+            target_field_id=f_injury_coverage.id,
+            target_value_id=v_injury_full.id,
             rule_type=RuleType.AVAILABILITY.value,
-            description="Auto sostitutiva 15g solo per veicoli di lusso",
-            conditions={"criteria": [
-                {"field_id": f_valore.id, "operator": "GREATER_THAN_OR_EQUAL", "value": 40000}
-            ]}
+            description="Full injury coverage only for cars and vans",
+            conditions={"criteria": [{"field_id": f_vehicle_type.id, "operator": "IN", "value": ["CAR", "VAN"]}]},
+        )
+
+        # Rental car 15 days only for vehicles >= 40k
+        r_rental_15d_luxury = Rule(
+            entity_version_id=version.id,
+            target_field_id=f_rental_car.id,
+            target_value_id=v_rental_15d.id,
+            rule_type=RuleType.AVAILABILITY.value,
+            description="15-day rental car only for luxury vehicles",
+            conditions={
+                "criteria": [{"field_id": f_vehicle_value.id, "operator": "GREATER_THAN_OR_EQUAL", "value": 40000}]
+            },
         )
 
         all_rules = [
             # Validation
-            r_minorenne, r_valore_minimo, r_valore_max_studenti,
+            r_age_check,
+            r_min_value,
+            r_student_max_value,
+            # Calculation (premium tier derived from vehicle value)
+            r_calc_economy,
+            r_calc_standard,
+            r_calc_premium,
             # Mandatory & Editability
-            r_mand_satellitare, r_readonly_sat_vip,
-            # Cascading Chain 1: Camion → Trasporto → ADR
-            r_show_tipo_trasporto, r_mand_tipo_trasporto,
-            r_show_adr, r_mand_adr,
-            # Cascading Chain 2: Assistenza → Auto Sostitutiva
-            r_show_auto_sost,
+            r_mand_tracker,
+            r_readonly_tracker_vip,
+            r_edit_notes,
+            # Cascading Chain 1: Truck → Cargo → ADR
+            r_show_cargo_type,
+            r_mand_cargo_type,
+            r_show_adr,
+            r_mand_adr,
+            # Cascading Chain 2: Assistance → Rental Car
+            r_show_rental,
             # Availability
-            r_no_minimo_camion, r_no_furto_moto, r_hide_infortuni_moto,
-            r_auto_sost_15g_luxury
+            r_no_min_limit_truck,
+            r_no_theft_motorcycle,
+            r_hide_injury_motorcycle,
+            r_injury_full_car_van,
+            r_rental_15d_luxury,
         ]
         db.add_all(all_rules)
         db.commit()
-        print(f"[6/7] Regole create: {len(all_rules)} rules (incluse 2 cascading chains)")
+        print(f"[6/9] Rules created: {len(all_rules)} rules (6/6 types + 2 cascading chains)")
 
         # ============================================================
-        # RIEPILOGO
+        # 7. USERS (3 demo users, one per role)
+        # ============================================================
+        # Same demo password for all: "password123"
+        demo_password_hash = get_password_hash("password123")
+
+        user_admin = User(
+            email="admin@demo.com", hashed_password=demo_password_hash, role=UserRole.ADMIN.value, is_active=True
+        )
+        user_author = User(
+            email="author@demo.com", hashed_password=demo_password_hash, role=UserRole.AUTHOR.value, is_active=True
+        )
+        user_demo = User(
+            email="user@demo.com", hashed_password=demo_password_hash, role=UserRole.USER.value, is_active=True
+        )
+
+        all_users = [user_admin, user_author, user_demo]
+        db.add_all(all_users)
+        db.commit()
+        print(f"[7/9] Users created: {len(all_users)} users (admin, author, user) — password: password123")
+
+        # ============================================================
+        # 8. CONFIGURATIONS (sample quotes)
+        # ============================================================
+
+        # Config 1: FINALIZED — Complete retiree car quote (closed)
+        config_finalized = Configuration(
+            entity_version_id=version.id,
+            user_id=user_demo.id,
+            name="Retiree Car Quote — Complete",
+            status=ConfigurationStatus.FINALIZED.value,
+            is_complete=True,
+            generated_sku="POL-AUTO-P-A-PR-50M-INF2-FI-AS3-R7",
+            data=[
+                {"field_id": f_name.id, "value": "John Smith"},
+                {"field_id": f_dob.id, "value": "1958-03-15"},
+                {"field_id": f_occupation.id, "value": "RETIRED"},
+                {"field_id": f_vehicle_type.id, "value": "CAR"},
+                {"field_id": f_vehicle_value.id, "value": 45000},
+                {"field_id": f_satellite_tracker.id, "value": True},
+                {"field_id": f_liability_limit.id, "value": "VIP"},
+                {"field_id": f_injury_coverage.id, "value": "FULL"},
+                {"field_id": f_theft_coverage.id, "value": "FULL"},
+                {"field_id": f_roadside.id, "value": "PREMIUM"},
+                {"field_id": f_rental_car.id, "value": "7D"},
+            ],
+        )
+
+        # Config 2: DRAFT — Truck quote in progress (incomplete)
+        config_draft = Configuration(
+            entity_version_id=version.id,
+            user_id=user_demo.id,
+            name="Truck Quote — In Progress",
+            status=ConfigurationStatus.DRAFT.value,
+            is_complete=False,
+            generated_sku="POL-AUTO-C-TN-PR-25M",
+            data=[
+                {"field_id": f_name.id, "value": "Express Logistics LLC"},
+                {"field_id": f_dob.id, "value": "1975-11-20"},
+                {"field_id": f_occupation.id, "value": "SELF_EMPLOYED"},
+                {"field_id": f_vehicle_type.id, "value": "TRUCK"},
+                {"field_id": f_vehicle_value.id, "value": 35000},
+                {"field_id": f_cargo_type.id, "value": "STANDARD"},
+                {"field_id": f_liability_limit.id, "value": "HIGH"},
+            ],
+        )
+
+        # Config 3: DRAFT — Student motorcycle quote (partial)
+        config_draft_moto = Configuration(
+            entity_version_id=version.id,
+            user_id=user_demo.id,
+            name="Student Motorcycle Quote",
+            status=ConfigurationStatus.DRAFT.value,
+            is_complete=False,
+            generated_sku=None,
+            data=[
+                {"field_id": f_name.id, "value": "Alex Johnson"},
+                {"field_id": f_dob.id, "value": "2002-06-10"},
+                {"field_id": f_occupation.id, "value": "STUDENT"},
+                {"field_id": f_vehicle_type.id, "value": "MOTORCYCLE"},
+                {"field_id": f_vehicle_value.id, "value": 5000},
+            ],
+        )
+
+        all_configs = [config_finalized, config_draft, config_draft_moto]
+        db.add_all(all_configs)
+        db.commit()
+        print(f"[8/9] Configurations created: {len(all_configs)} (1 FINALIZED + 2 DRAFT)")
+
+        # ============================================================
+        # SUMMARY
         # ============================================================
         print("\n" + "=" * 70)
-        print("[7/7] SEED COMPLETATO CON SUCCESSO")
+        print("[9/9] SEED COMPLETED SUCCESSFULLY")
         print("=" * 70)
         print(f"""
 SUMMARY:
@@ -516,46 +750,85 @@ SUMMARY:
   Fields:         {len(all_fields)}
   Values:         {len(all_values)}
   Rules:          {len(all_rules)}
+  Users:          {len(all_users)}
+  Configurations: {len(all_configs)}
+
+DEMO USERS (password: password123):
+  admin@demo.com   — ADMIN  (full access)
+  author@demo.com  — AUTHOR (create/edit entities and rules)
+  user@demo.com    — USER   (create/edit configurations)
+
+DEMO CONFIGURATIONS (user: user@demo.com):
+  1. "{config_finalized.name}" [FINALIZED, complete]
+     SKU: {config_finalized.generated_sku}
+  2. "{config_draft.name}" [DRAFT, incomplete]
+     SKU: {config_draft.generated_sku}
+  3. "{config_draft_moto.name}" [DRAFT, partial]
+     No SKU (missing fields)
+
+FEATURE COVERAGE:
+  Rule types:     6/6 (VISIBILITY, CALCULATION, AVAILABILITY, EDITABILITY, MANDATORY, VALIDATION)
+  Operators:      7/7 (EQUALS, NOT_EQUALS, GT, GTE, LT, LTE, IN)
+  Field types:    4/4 (string, number, boolean, date)
+  SKU features:   sku_base + sku_modifier (Values) + sku_modifier_when_filled (Field)
+  Field defaults: default_value on free-value field (additional_notes)
+
+CALCULATION (engine-derived value):
+  ┌─────────────────────────────────────────────────────┐
+  │ Vehicle Value → Estimated Premium Tier              │
+  │   <= $15,000     → ECONOMY  (readonly, auto-set)    │
+  │   $15,001-50,000 → STANDARD (readonly, auto-set)    │
+  │   > $50,000      → PREMIUM  (readonly, auto-set)    │
+  │   SKU: appends "PR" when the field has a value      │
+  └─────────────────────────────────────────────────────┘
 
 CASCADING CHAINS:
 
-  Chain 1: Camion → Tipo Trasporto → Certificazione ADR
+  Chain 1: Truck → Cargo Type → ADR Certification
   ┌─────────────────────────────────────────────────────┐
-  │ Tipo Veicolo = CAMION                               │
+  │ Vehicle Type = TRUCK                                │
   │         ↓ (visibility + mandatory)                  │
-  │ Tipo Trasporto [NORMALE | REFRIGERATO | PERICOLOSO] │
-  │         ↓ (visibility + mandatory) se PERICOLOSO    │
-  │ Certificazione ADR [BASE | CISTERNE | ESPLOSIVI]    │
+  │ Cargo Type [STANDARD | REFRIGERATED | HAZARDOUS]    │
+  │         ↓ (visibility + mandatory) if HAZARDOUS     │
+  │ ADR Certification [BASIC | TANKS | EXPLOSIVES]      │
   └─────────────────────────────────────────────────────┘
 
-  Chain 2: Assistenza Premium → Auto Sostitutiva
+  Chain 2: Premium Assistance → Rental Car
   ┌─────────────────────────────────────────────────────┐
-  │ Assistenza Stradale = PREMIUM                       │
+  │ Roadside Assistance = PREMIUM                       │
   │         ↓ (visibility)                              │
-  │ Auto Sostitutiva [3G | 7G | 15G]                    │
-  │         ↓ (availability) 15G solo se valore >= 40k  │
+  │ Rental Car [3D | 7D | 15D]                          │
+  │         ↓ (availability) 15D only if value >= $40k  │
   └─────────────────────────────────────────────────────┘
 
-ESEMPI SKU:
+EDITABILITY + IN OPERATOR:
+  ┌─────────────────────────────────────────────────────┐
+  │ Additional Notes (readonly by default)              │
+  │   Occupation IN [EMPLOYEE, SELF_EMPLOYED] → editable│
+  │   Retired/Student → stays readonly                  │
+  └─────────────────────────────────────────────────────┘
 
-  1. Auto base (dipendente, minimo, niente extra):
-     → POL-AUTO-A-6M
+SKU EXAMPLES:
 
-  2. Auto completa (pensionato, premium, infortuni, furto, assistenza):
-     → POL-AUTO-P-A-50M-INF2-FI-AS3-R7
+  1. Basic car (employee, value $10k, minimum, no extras):
+     → POL-AUTO-A-PR-6M
 
-  3. Camion merci pericolose (ADR cisterne, elevato):
-     → POL-AUTO-C-TN-25M  (merci normali)
-     → POL-AUTO-C-TP-ADR2-25M  (pericolose con ADR cisterne)
+  2. Full car (retired, value $45k, premium, injury, theft, assistance):
+     → POL-AUTO-P-A-PR-50M-INF2-FI-AS3-R7
 
-  4. Moto standard (no infortuni, no furto full):
-     → POL-AUTO-M-10M
+  3. Truck with hazardous goods (ADR tanks, high limit):
+     → POL-AUTO-C-TN-PR-25M  (standard goods)
+     → POL-AUTO-C-TP-ADR2-PR-25M  (hazardous with ADR tanks)
+
+  4. Motorcycle (no injury, no full theft):
+     → POL-AUTO-M-PR-10M
 """)
         print("=" * 70)
 
     except Exception as e:
-        print(f"\nERRORE: {e}")
+        print(f"\nERROR: {e}")
         import traceback
+
         traceback.print_exc()
         db.rollback()
     finally:

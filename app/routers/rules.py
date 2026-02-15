@@ -1,23 +1,21 @@
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import (
-    require_admin_or_author,
+    db_transaction,
     fetch_version_by_id,
-    validate_version_is_draft,
+    get_editable_rule,
+    get_rule_or_404,
+    require_admin_or_author,
     validate_field_belongs_to_version,
     validate_value_belongs_to_field,
-    get_rule_or_404,
-    get_editable_rule,
-    db_transaction
+    validate_version_is_draft,
 )
-from app.models.domain import Rule, Field, Value, User, RuleType
+from app.models.domain import Field, Rule, RuleType, User, Value
 from app.schemas import RuleCreate, RuleRead, RuleUpdate
-
 
 # ============================================================
 # LOGGING SETUP
@@ -30,23 +28,21 @@ logger = logging.getLogger(__name__)
 # ROUTER SETUP
 # ============================================================
 
-router = APIRouter(
-    prefix="/rules",
-    tags=["Rules"]
-)
+router = APIRouter(prefix="/rules", tags=["Rules"])
 
 
 # ============================================================
 # ENDPOINTS
 # ============================================================
 
-@router.get("/", response_model=List[RuleRead])
+
+@router.get("/", response_model=list[RuleRead])
 def list_rules(
-    entity_version_id: Optional[int] = None,
+    entity_version_id: int | None = None,
     skip: int = Query(default=0, ge=0, description="Number of records to skip"),
     limit: int = Query(default=100, ge=0, le=100, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    current_user: User = Depends(require_admin_or_author),
 ):
     """
     Retrieve a list of Rules.
@@ -62,10 +58,7 @@ def list_rules(
     Returns:
         List[RuleRead]: List of rules
     """
-    logger.info(
-        f"Listing rules by user {current_user.id}: "
-        f"version={entity_version_id}, skip={skip}, limit={limit}"
-    )
+    logger.info(f"Listing rules by user {current_user.id}: version={entity_version_id}, skip={skip}, limit={limit}")
 
     # Cap limit to prevent abuse
     original_limit = limit
@@ -86,10 +79,7 @@ def list_rules(
 
 
 @router.get("/{rule_id}", response_model=RuleRead)
-def read_rule(
-    rule: Rule = Depends(get_rule_or_404),
-    current_user: User = Depends(require_admin_or_author)
-):
+def read_rule(rule: Rule = Depends(get_rule_or_404), current_user: User = Depends(require_admin_or_author)):
     """
     Retrieve a single Rule.
 
@@ -105,9 +95,7 @@ def read_rule(
 
 @router.post("/", response_model=RuleRead, status_code=status.HTTP_201_CREATED)
 def create_rule(
-    rule_data: RuleCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    rule_data: RuleCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_author)
 ):
     """
     Creates a new Rule in a DRAFT version.
@@ -152,7 +140,7 @@ def create_rule(
                         f"Consistency error: 'set_value' ('{rule_data.set_value}') is not among the "
                         f"defined Values for field '{target_field.name}' (ID {target_field.id}). "
                         f"Valid values: {valid_value_strings}."
-                    )
+                    ),
                 )
 
     # Create the Rule
@@ -175,7 +163,7 @@ def update_rule(
     rule_update: RuleUpdate,
     rule: Rule = Depends(get_editable_rule),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    current_user: User = Depends(require_admin_or_author),
 ):
     """
     Updates an existing Rule.
@@ -192,17 +180,18 @@ def update_rule(
     Returns:
         RuleRead: The updated rule
     """
-    logger.info(
-        f"Updating rule {rule.id} by user {current_user.id} "
-        f"(role: {current_user.role_display})"
-    )
+    logger.info(f"Updating rule {rule.id} by user {current_user.id} (role: {current_user.role_display})")
 
     # The Version must be immutable
     final_version_id = rule.entity_version_id
 
     # Determine final state of IDs (mix of new input and existing DB data)
-    final_target_field_id = rule_update.target_field_id if rule_update.target_field_id is not None else rule.target_field_id
-    final_target_value_id = rule_update.target_value_id if rule_update.target_value_id is not None else rule.target_value_id
+    final_target_field_id = (
+        rule_update.target_field_id if rule_update.target_field_id is not None else rule.target_field_id
+    )
+    final_target_value_id = (
+        rule_update.target_value_id if rule_update.target_value_id is not None else rule.target_value_id
+    )
 
     # Validate target Field consistency (if being changed)
     if rule_update.target_field_id is not None and rule_update.target_field_id != rule.target_field_id:
@@ -223,7 +212,10 @@ def update_rule(
         if final_rule_type != RuleType.VALIDATION:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Consistency error: 'error_message' is only allowed for rule_type 'validation'. Got '{final_rule_type}'."
+                detail=(
+                    f"Consistency error: 'error_message' is only allowed for rule_type"
+                    f" 'validation'. Got '{final_rule_type}'."
+                ),
             )
 
     # Validate set_value consistency
@@ -232,7 +224,10 @@ def update_rule(
         if final_rule_type != RuleType.CALCULATION:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Consistency error: 'set_value' is only allowed for rule_type 'calculation'. Got '{final_rule_type}'."
+                detail=(
+                    f"Consistency error: 'set_value' is only allowed for rule_type"
+                    f" 'calculation'. Got '{final_rule_type}'."
+                ),
             )
 
     # Validate set_value against field's defined Values (CALCULATION on non-free fields)
@@ -250,7 +245,7 @@ def update_rule(
                         f"Consistency error: 'set_value' ('{final_set_value}') is not among the "
                         f"defined Values for field '{target_field.name}' (ID {target_field.id}). "
                         f"Valid values: {valid_value_strings}."
-                    )
+                    ),
                 )
 
     # Apply updates
@@ -275,7 +270,7 @@ def update_rule(
 def delete_rule(
     rule: Rule = Depends(get_editable_rule),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    current_user: User = Depends(require_admin_or_author),
 ):
     """
     Delete a Rule.
@@ -289,10 +284,7 @@ def delete_rule(
     Returns:
         204 No Content on success
     """
-    logger.info(
-        f"Deleting rule {rule.id} by user {current_user.id} "
-        f"(role: {current_user.role_display})"
-    )
+    logger.info(f"Deleting rule {rule.id} by user {current_user.id} (role: {current_user.role_display})")
 
     # Delete rule
     with db_transaction(db, f"delete_rule {rule.id}"):

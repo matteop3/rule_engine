@@ -1,1 +1,1 @@
-from .domain import Entity, Field, Value, Rule
+from .domain import Entity, Field, Rule, Value

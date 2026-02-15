@@ -1,18 +1,18 @@
 # app/routers/auth.py
 import logging
 from datetime import timedelta
-from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
-from fastapi.security import OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.core.security import create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from app.core.config import settings
-from app.services.auth import AuthService
+from app.core.rate_limit import get_login_rate_limit, get_refresh_rate_limit, limiter
+from app.core.security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token
+from app.database import get_db
 from app.dependencies import get_auth_service
-from app.core.rate_limit import limiter, get_login_rate_limit, get_refresh_rate_limit
-
+from app.services.auth import AuthService
 
 # ============================================================
 # LOGGING SETUP
@@ -25,10 +25,7 @@ logger = logging.getLogger(__name__)
 # ROUTER SETUP
 # ============================================================
 
-router = APIRouter(
-    prefix="/auth",
-    tags=["Authentication"]
-)
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # Security scheme for refresh token endpoint
 http_bearer = HTTPBearer()
@@ -38,6 +35,7 @@ http_bearer = HTTPBearer()
 # ENDPOINTS
 # ============================================================
 
+
 @router.post("/token")
 @limiter.limit(get_login_rate_limit())
 async def login_for_access_token(
@@ -45,7 +43,7 @@ async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Session = Depends(get_db),
     auth_service: AuthService = Depends(get_auth_service),
-    user_agent: Optional[str] = Header(None)
+    user_agent: str | None = Header(None),
 ):
     """
     Standard OAuth2 endpoint to obtain the token.
@@ -62,11 +60,7 @@ async def login_for_access_token(
     logger.info(f"Login attempt for email: {form_data.username}")
 
     # Invoke auth service
-    user = auth_service.authenticate_user(
-        db=db,
-        email=form_data.username,
-        password=form_data.password
-    )
+    user = auth_service.authenticate_user(db=db, email=form_data.username, password=form_data.password)
 
     # If not found or not correct
     if not user:
@@ -79,28 +73,18 @@ async def login_for_access_token(
 
     # Generate access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        subject=user.id,
-        expires_delta=access_token_expires
-    )
+    access_token = create_access_token(subject=user.id, expires_delta=access_token_expires)
 
     # Generate refresh token
     client_ip = request.client.host if request.client else None
     refresh_token, _ = auth_service.create_user_refresh_token(
-        db=db,
-        user_id=user.id,
-        user_agent=user_agent,
-        ip_address=client_ip
+        db=db, user_id=user.id, user_agent=user_agent, ip_address=client_ip
     )
 
     logger.info(f"Successful login for user {user.id} (email: {form_data.username})")
 
     # Return both tokens
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
 @router.post("/refresh")
@@ -109,7 +93,7 @@ async def refresh_access_token(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(http_bearer)],
     db: Session = Depends(get_db),
-    auth_service: AuthService = Depends(get_auth_service)
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """
     Refresh endpoint to obtain a new access token using a valid refresh token.
@@ -144,6 +128,7 @@ async def refresh_access_token(
 
     # Get user
     from app.models.domain import User
+
     user = db.query(User).filter(User.id == db_token.user_id).first()
 
     if not user or not user.is_active:
@@ -156,10 +141,7 @@ async def refresh_access_token(
 
     # Generate new access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        subject=user.id,
-        expires_delta=access_token_expires
-    )
+    access_token = create_access_token(subject=user.id, expires_delta=access_token_expires)
 
     logger.info(f"Access token refreshed for user {user.id}")
 
@@ -168,21 +150,11 @@ async def refresh_access_token(
         # Revoke old token and create new one
         auth_service.revoke_refresh_token(db=db, token_id=db_token.id)
         new_refresh_token, _ = auth_service.create_user_refresh_token(
-            db=db,
-            user_id=user.id,
-            user_agent=db_token.user_agent,
-            ip_address=db_token.ip_address
+            db=db, user_id=user.id, user_agent=db_token.user_agent, ip_address=db_token.ip_address
         )
         logger.info(f"Refresh token rotated for user {user.id}")
 
-        return {
-            "access_token": access_token,
-            "refresh_token": new_refresh_token,
-            "token_type": "bearer"
-        }
+        return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
 
     # No rotation - return only new access token
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
+    return {"access_token": access_token, "token_type": "bearer"}

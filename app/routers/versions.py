@@ -1,22 +1,20 @@
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import (
-    validate_version_is_draft,
+    db_transaction,
     fetch_version_by_id,
-    require_admin_or_author,
     get_versioning_service,
-    db_transaction
+    require_admin_or_author,
+    validate_version_is_draft,
 )
-from app.models.domain import EntityVersion, VersionStatus, User
-from app.schemas import VersionCreate, VersionRead, VersionUpdate, VersionClone
+from app.models.domain import EntityVersion, User
+from app.schemas import VersionClone, VersionCreate, VersionRead, VersionUpdate
 from app.services.versioning import VersioningService
-
 
 # ============================================================
 # LOGGING SETUP
@@ -29,15 +27,13 @@ logger = logging.getLogger(__name__)
 # ROUTER SETUP
 # ============================================================
 
-router = APIRouter(
-    prefix="/versions",
-    tags=["Versions"]
-)
+router = APIRouter(prefix="/versions", tags=["Versions"])
 
 
 # ============================================================
 # ERROR HANDLING HELPERS
 # ============================================================
+
 
 def handle_service_error(e: ValueError, context: str = "") -> HTTPException:
     """
@@ -63,34 +59,26 @@ def handle_service_error(e: ValueError, context: str = "") -> HTTPException:
         logger.error(f"Service error: {msg}")
 
     if "not found" in msg.lower():
-        return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=msg
-        )
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
 
     if "already exists" in msg.lower() or "conflict" in msg.lower():
-        return HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=msg
-        )
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
 
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=msg
-    )
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
 
 # ============================================================
 # ENDPOINTS
 # ============================================================
 
-@router.get("/", response_model=List[VersionRead])
+
+@router.get("/", response_model=list[VersionRead])
 def read_versions(
     entity_id: int,
     skip: int = Query(default=0, ge=0, description="Number of records to skip"),
     limit: int = Query(default=100, ge=0, le=100, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    current_user: User = Depends(require_admin_or_author),
 ):
     """
     Retrieves version history for a specific Entity.
@@ -107,8 +95,7 @@ def read_versions(
         List[VersionRead]: Versions ordered by version_number descending (newest first)
     """
     logger.info(
-        f"Listing versions for entity {entity_id} by user {current_user.id} "
-        f"(role: {current_user.role_display})"
+        f"Listing versions for entity {entity_id} by user {current_user.id} (role: {current_user.role_display})"
     )
 
     # Cap limit to prevent abuse
@@ -118,11 +105,14 @@ def read_versions(
     if original_limit > 100:
         logger.warning(f"Limit capped from {original_limit} to 100")
 
-    versions = db.query(EntityVersion).filter(
-        EntityVersion.entity_id == entity_id
-    ).order_by(
-        EntityVersion.version_number.desc()
-    ).offset(skip).limit(limit).all()
+    versions = (
+        db.query(EntityVersion)
+        .filter(EntityVersion.entity_id == entity_id)
+        .order_by(EntityVersion.version_number.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
     logger.info(f"Returning {len(versions)} versions for entity {entity_id}")
 
@@ -130,11 +120,7 @@ def read_versions(
 
 
 @router.get("/{version_id}", response_model=VersionRead)
-def read_version(
-    version_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
-):
+def read_version(version_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_author)):
     """
     Retrieves a single version by ID.
 
@@ -161,7 +147,7 @@ def create_version_draft(
     version_in: VersionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
-    versioning_service: VersioningService = Depends(get_versioning_service)
+    versioning_service: VersioningService = Depends(get_versioning_service),
 ):
     """
     Creates a new DRAFT version for an Entity.
@@ -188,7 +174,7 @@ def create_version_draft(
                 user_id=current_user.id,
                 changelog=version_in.changelog,
                 sku_base=version_in.sku_base,
-                sku_delimiter=version_in.sku_delimiter
+                sku_delimiter=version_in.sku_delimiter,
             )
 
             db.flush()
@@ -202,7 +188,7 @@ def create_version_draft(
         return new_version
 
     except ValueError as e:
-        raise handle_service_error(e, "create_version_draft")
+        raise handle_service_error(e, "create_version_draft") from None
 
 
 @router.post("/{version_id}/publish", response_model=VersionRead)
@@ -210,7 +196,7 @@ def publish_version(
     version_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
-    versioning_service: VersioningService = Depends(get_versioning_service)
+    versioning_service: VersioningService = Depends(get_versioning_service),
 ):
     """
     Promotes a DRAFT version to PUBLISHED.
@@ -225,18 +211,11 @@ def publish_version(
     Returns:
         VersionRead: The published version
     """
-    logger.info(
-        f"Publishing version {version_id} by user {current_user.id} "
-        f"(role: {current_user.role_display})"
-    )
+    logger.info(f"Publishing version {version_id} by user {current_user.id} (role: {current_user.role_display})")
 
     try:
         with db_transaction(db, f"publish_version {version_id}"):
-            version = versioning_service.publish_version(
-                db=db,
-                version_id=version_id,
-                user_id=current_user.id
-            )
+            version = versioning_service.publish_version(db=db, version_id=version_id, user_id=current_user.id)
 
             db.flush()
 
@@ -250,7 +229,7 @@ def publish_version(
         return version
 
     except ValueError as e:
-        raise handle_service_error(e, "publish_version")
+        raise handle_service_error(e, "publish_version") from None
 
 
 @router.post("/{version_id}/clone", response_model=VersionRead, status_code=status.HTTP_201_CREATED)
@@ -259,7 +238,7 @@ def clone_version(
     clone_in: VersionClone,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
-    versioning_service: VersioningService = Depends(get_versioning_service)
+    versioning_service: VersioningService = Depends(get_versioning_service),
 ):
     """
     Creates a new DRAFT version by deep-copying an existing version.
@@ -274,25 +253,19 @@ def clone_version(
     Returns:
         VersionRead: The newly created DRAFT version
     """
-    logger.info(
-        f"Cloning version {version_id} by user {current_user.id} "
-        f"(role: {current_user.role_display})"
-    )
+    logger.info(f"Cloning version {version_id} by user {current_user.id} (role: {current_user.role_display})")
 
     try:
         # Clean Swagger default value hack
         # NOTE: should ideally be handled in Pydantic schema
-        clean_changelog: Optional[str] = clone_in.changelog
+        clean_changelog: str | None = clone_in.changelog
         if clean_changelog and clean_changelog.strip() == "string":
             clean_changelog = None
             logger.debug("Removed Swagger default 'string' value from changelog")
 
         with db_transaction(db, f"clone_version {version_id}"):
             new_version = versioning_service.clone_version(
-                db=db,
-                source_version_id=version_id,
-                user_id=current_user.id,
-                new_changelog=clean_changelog
+                db=db, source_version_id=version_id, user_id=current_user.id, new_changelog=clean_changelog
             )
 
             db.flush()
@@ -306,7 +279,7 @@ def clone_version(
         return new_version
 
     except ValueError as e:
-        raise handle_service_error(e, "clone_version")
+        raise handle_service_error(e, "clone_version") from None
 
 
 @router.patch("/{version_id}", response_model=VersionRead)
@@ -314,7 +287,7 @@ def update_version_metadata(
     version_id: int,
     version_update: VersionUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    current_user: User = Depends(require_admin_or_author),
 ):
     """
     Updates version metadata (changelog).
@@ -353,8 +326,7 @@ def update_version_metadata(
             version.updated_by_id = current_user.id
 
             logger.info(
-                f"Version {version_id} metadata updated successfully: "
-                f"updated fields={list(update_data.keys())}"
+                f"Version {version_id} metadata updated successfully: updated fields={list(update_data.keys())}"
             )
 
         db.refresh(version)
@@ -364,15 +336,13 @@ def update_version_metadata(
         logger.error(f"Database error updating version {version_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}"
-        )
+            detail=f"Database error: {str(e)}",
+        ) from None
 
 
 @router.delete("/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_version(
-    version_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin_or_author)
+    version_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_author)
 ):
     """
     Deletes a version.
@@ -408,8 +378,7 @@ def delete_version(
             db.delete(version)
 
             logger.info(
-                f"Version {version_id} deleted successfully: "
-                f"entity_id={entity_id}, version_number={version_number}"
+                f"Version {version_id} deleted successfully: entity_id={entity_id}, version_number={version_number}"
             )
 
         return None
@@ -418,5 +387,5 @@ def delete_version(
         logger.error(f"Database error deleting version {version_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}"
-        )
+            detail=f"Database error: {str(e)}",
+        ) from None

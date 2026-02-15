@@ -1,13 +1,13 @@
 import logging
-from typing import Optional
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
 import uuid
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.core.security import get_password_hash
 from app.exceptions import DatabaseError
 from app.models.domain import User
 from app.schemas.user import UserCreate, UserUpdate
-from app.core.security import get_password_hash
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class UserService:
     """Service layer for user management operations."""
 
-    def get_by_id(self, db: Session, user_id: str) -> Optional[User]:
+    def get_by_id(self, db: Session, user_id: str) -> User | None:
         """
         Get User by its ID.
 
@@ -29,7 +29,7 @@ class UserService:
         logger.debug(f"Fetching user by id: {user_id}")
         return db.query(User).filter(User.id == user_id).first()
 
-    def get_by_email(self, db: Session, email: str) -> Optional[User]:
+    def get_by_email(self, db: Session, email: str) -> User | None:
         """
         Get User by its email.
 
@@ -67,7 +67,7 @@ class UserService:
                 role=user_in.role,
                 is_active=user_in.is_active,
                 created_by_id=creator_id,
-                updated_by_id=creator_id
+                updated_by_id=creator_id,
             )
             db.add(new_user)
             db.commit()
@@ -79,7 +79,7 @@ class UserService:
         except SQLAlchemyError as e:
             db.rollback()
             logger.error(f"Database error creating user: {str(e)}", exc_info=True)
-            raise DatabaseError("Failed to create user")
+            raise DatabaseError("Failed to create user") from None
 
     def update_user(self, db: Session, user: User, user_in: UserUpdate, updater_id: str) -> User:
         """
@@ -121,7 +121,7 @@ class UserService:
         except SQLAlchemyError as e:
             db.rollback()
             logger.error(f"Database error updating user {user.id}: {str(e)}", exc_info=True)
-            raise DatabaseError("Failed to update user")
+            raise DatabaseError("Failed to update user") from None
 
     def soft_delete_user(self, db: Session, user: User, deleter_id: str) -> None:
         """
@@ -146,11 +146,10 @@ class UserService:
             db.commit()
 
             logger.info(
-                f"User {user.id} soft-deleted successfully: "
-                f"original_email={original_email}, new_email={user.email}"
+                f"User {user.id} soft-deleted successfully: original_email={original_email}, new_email={user.email}"
             )
 
         except SQLAlchemyError as e:
             db.rollback()
             logger.error(f"Database error soft-deleting user {user.id}: {str(e)}", exc_info=True)
-            raise DatabaseError("Failed to delete user")
+            raise DatabaseError("Failed to delete user") from None

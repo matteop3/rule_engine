@@ -10,9 +10,10 @@ Tests the engine's behavior when CALCULATION rules are present, including:
 - SKU generation with calculated values
 - Completeness check with calculated fields
 """
-from app.services.rule_engine import RuleEngineService
-from app.schemas.engine import CalculationRequest, FieldInputState
+
 from app.models.domain import Rule, RuleType
+from app.schemas.engine import CalculationRequest, FieldInputState
+from app.services.rule_engine import RuleEngineService
 
 
 class TestCalculationBasic:
@@ -26,9 +27,7 @@ class TestCalculationBasic:
         # product_type = "Enterprise" → cooling_system should be forced to "Passive"
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -48,8 +47,8 @@ class TestCalculationBasic:
             entity_id=data["entity_id"],
             current_state=[
                 FieldInputState(field_id=data["fields"]["product_type"], value="Standard"),
-                FieldInputState(field_id=data["fields"]["cooling_system"], value="Active")
-            ]
+                FieldInputState(field_id=data["fields"]["cooling_system"], value="Active"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -66,9 +65,7 @@ class TestCalculationBasic:
         # product_type = "Pro" → support_tier (free) should be forced to "Premium"
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Pro")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Pro")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -86,9 +83,7 @@ class TestCalculationBasic:
         # product_type = "Enterprise" → cooling_system forced to "Passive"
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -111,9 +106,7 @@ class TestCalculationWaterfallInteractions:
         # the general pattern: hidden fields get early return before CALCULATION
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Standard")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Standard")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -134,9 +127,7 @@ class TestCalculationWaterfallInteractions:
         # For warranty: Enterprise triggers CALCULATION → readonly regardless of other rules
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -156,9 +147,7 @@ class TestCalculationWaterfallInteractions:
         # When CALCULATION fires, AVAILABILITY is skipped — only forced value shown
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -177,9 +166,7 @@ class TestCalculationWaterfallInteractions:
         # With product_type = "Pro": visible + mandatory, but no CALCULATION
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Pro")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Pro")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -197,9 +184,7 @@ class TestCalculationWaterfallInteractions:
         # So is_required should come from field default (is_required=True)
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -219,18 +204,16 @@ class TestCalculationWaterfallInteractions:
             target_field_id=data["fields"]["cooling_system"],
             rule_type=RuleType.VALIDATION.value,
             error_message="Passive cooling not allowed",
-            conditions={"criteria": [
-                {"field_id": data["fields"]["cooling_system"], "operator": "EQUALS", "value": "Passive"}
-            ]}
+            conditions={
+                "criteria": [{"field_id": data["fields"]["cooling_system"], "operator": "EQUALS", "value": "Passive"}]
+            },
         )
         db_session.add(val_rule)
         db_session.commit()
 
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -255,9 +238,9 @@ class TestCalculationMultipleRules:
             target_field_id=data["fields"]["cooling_system"],
             rule_type=RuleType.CALCULATION.value,
             set_value="Liquid",
-            conditions={"criteria": [
-                {"field_id": data["fields"]["product_type"], "operator": "EQUALS", "value": "Pro"}
-            ]}
+            conditions={
+                "criteria": [{"field_id": data["fields"]["product_type"], "operator": "EQUALS", "value": "Pro"}]
+            },
         )
         db_session.add(second_calc)
         db_session.commit()
@@ -265,9 +248,7 @@ class TestCalculationMultipleRules:
         # Product = Pro → second rule should fire
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Pro")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Pro")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -291,18 +272,16 @@ class TestCalculationRunningContext:
             entity_version_id=data["version_id"],
             target_field_id=data["fields"]["notes"],
             rule_type=RuleType.MANDATORY.value,
-            conditions={"criteria": [
-                {"field_id": data["fields"]["cooling_system"], "operator": "EQUALS", "value": "Passive"}
-            ]}
+            conditions={
+                "criteria": [{"field_id": data["fields"]["cooling_system"], "operator": "EQUALS", "value": "Passive"}]
+            },
         )
         db_session.add(ctx_rule)
         db_session.commit()
 
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -324,9 +303,7 @@ class TestCalculationSKU:
         # Enterprise → warranty = "3 Years" (sku_modifier="3Y")
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise")],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -353,8 +330,8 @@ class TestCalculationCompleteness:
             current_state=[
                 FieldInputState(field_id=data["fields"]["product_type"], value="Enterprise"),
                 FieldInputState(field_id=data["fields"]["notes"], value="some notes"),
-                FieldInputState(field_id=data["fields"]["status_display"], value="Active")
-            ]
+                FieldInputState(field_id=data["fields"]["status_display"], value="Active"),
+            ],
         )
 
         response = service.calculate_state(db_session, payload)
@@ -375,9 +352,7 @@ class TestCalculationCompleteness:
         # Without user input for required fields → incomplete
         payload = CalculationRequest(
             entity_id=data["entity_id"],
-            current_state=[
-                FieldInputState(field_id=data["fields"]["product_type"], value="Standard")
-            ]
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Standard")],
         )
 
         response = service.calculate_state(db_session, payload)

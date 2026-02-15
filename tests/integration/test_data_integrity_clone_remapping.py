@@ -8,18 +8,14 @@ Tests for referential integrity across the data model:
 - Clone ID remapping integrity
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import (
-    Entity, EntityVersion, Field, Value, Rule,
-    FieldType, RuleType, VersionStatus
-)
-
+from app.models.domain import EntityVersion, Field, FieldType, Rule, RuleType, Value, VersionStatus
 
 # ============================================================
 # FIELD → RULE DEPENDENCY TESTS
 # ============================================================
+
 
 class TestCloneIdRemapping:
     """Tests for ID remapping integrity during clone operations."""
@@ -36,7 +32,7 @@ class TestCloneIdRemapping:
             status=VersionStatus.PUBLISHED,
             changelog="Original",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -51,7 +47,7 @@ class TestCloneIdRemapping:
                 data_type=FieldType.NUMBER.value if i < 2 else FieldType.BOOLEAN.value,
                 is_free_value=True,
                 is_required=i < 2,
-                sequence=i + 1
+                sequence=i + 1,
             )
             db_session.add(f)
             fields.append(f)
@@ -66,9 +62,9 @@ class TestCloneIdRemapping:
             conditions={
                 "criteria": [
                     {"field_id": fields[0].id, "operator": "GREATER_THAN", "value": 10},
-                    {"field_id": fields[1].id, "operator": "LESS_THAN", "value": 100}
+                    {"field_id": fields[1].id, "operator": "LESS_THAN", "value": 100},
                 ]
-            }
+            },
         )
         db_session.add(rule)
         db_session.commit()
@@ -76,19 +72,12 @@ class TestCloneIdRemapping:
         original_field_ids = {f.id for f in fields}
 
         # Clone the version
-        clone_resp = client.post(
-            f"/versions/{version.id}/clone",
-            json={"changelog": "Cloned"},
-            headers=admin_headers
-        )
+        clone_resp = client.post(f"/versions/{version.id}/clone", json={"changelog": "Cloned"}, headers=admin_headers)
         assert clone_resp.status_code == 201
         new_version_id = clone_resp.json()["id"]
 
         # Get cloned fields
-        cloned_fields_resp = client.get(
-            f"/fields/?entity_version_id={new_version_id}",
-            headers=admin_headers
-        )
+        cloned_fields_resp = client.get(f"/fields/?entity_version_id={new_version_id}", headers=admin_headers)
         cloned_fields = cloned_fields_resp.json()
         cloned_field_ids = {f["id"] for f in cloned_fields}
 
@@ -96,10 +85,7 @@ class TestCloneIdRemapping:
         assert cloned_field_ids.isdisjoint(original_field_ids)
 
         # Get cloned rules
-        cloned_rules_resp = client.get(
-            f"/rules/?entity_version_id={new_version_id}",
-            headers=admin_headers
-        )
+        cloned_rules_resp = client.get(f"/rules/?entity_version_id={new_version_id}", headers=admin_headers)
         cloned_rules = cloned_rules_resp.json()
         assert len(cloned_rules) == 1
 
@@ -128,7 +114,7 @@ class TestCloneIdRemapping:
             status=VersionStatus.PUBLISHED,
             changelog="Original",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -140,7 +126,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.NUMBER.value,
             is_free_value=True,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         target_field = Field(
             entity_version_id=version.id,
@@ -149,7 +135,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.BOOLEAN.value,
             is_free_value=True,
             is_required=False,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([source_field, target_field])
         db_session.flush()
@@ -163,17 +149,13 @@ class TestCloneIdRemapping:
             target_field_id=target_field.id,
             rule_type=RuleType.VISIBILITY.value,
             description="Field-based rule",
-            conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 100}]}
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 100}]},
         )
         db_session.add(rule)
         db_session.commit()
 
         # Clone
-        clone_resp = client.post(
-            f"/versions/{version.id}/clone",
-            json={"changelog": "Cloned"},
-            headers=admin_headers
-        )
+        clone_resp = client.post(f"/versions/{version.id}/clone", json={"changelog": "Cloned"}, headers=admin_headers)
         new_version_id = clone_resp.json()["id"]
 
         # Get cloned rule
@@ -194,9 +176,7 @@ class TestCloneIdRemapping:
         assert cloned_rule["target_field_id"] == target_clone["id"]
         assert cloned_rule["target_field_id"] != original_target_id
 
-    def test_clone_remaps_target_value_id(
-        self, client: TestClient, admin_headers, db_session, test_entity, admin_user
-    ):
+    def test_clone_remaps_target_value_id(self, client: TestClient, admin_headers, db_session, test_entity, admin_user):
         """
         Integrity: Clone correctly remaps target_value_id for AVAILABILITY rules.
         """
@@ -206,7 +186,7 @@ class TestCloneIdRemapping:
             status=VersionStatus.PUBLISHED,
             changelog="Original",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -218,7 +198,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         trigger_field = Field(
             entity_version_id=version.id,
@@ -227,7 +207,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.STRING.value,
             is_free_value=True,
             is_required=True,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([dropdown_field, trigger_field])
         db_session.flush()
@@ -246,17 +226,13 @@ class TestCloneIdRemapping:
             target_value_id=target_value.id,
             rule_type=RuleType.AVAILABILITY.value,
             description="Limited availability",
-            conditions={"criteria": [{"field_id": trigger_field.id, "operator": "EQUALS", "value": "UNLOCK"}]}
+            conditions={"criteria": [{"field_id": trigger_field.id, "operator": "EQUALS", "value": "UNLOCK"}]},
         )
         db_session.add(rule)
         db_session.commit()
 
         # Clone
-        clone_resp = client.post(
-            f"/versions/{version.id}/clone",
-            json={"changelog": "Cloned"},
-            headers=admin_headers
-        )
+        clone_resp = client.post(f"/versions/{version.id}/clone", json={"changelog": "Cloned"}, headers=admin_headers)
         new_version_id = clone_resp.json()["id"]
 
         # Get cloned rule
@@ -282,7 +258,7 @@ class TestCloneIdRemapping:
             status=VersionStatus.PUBLISHED,
             changelog="Original",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -294,7 +270,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         trigger_field = Field(
             entity_version_id=version.id,
@@ -303,7 +279,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.STRING.value,
             is_free_value=True,
             is_required=True,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([dropdown_field, trigger_field])
         db_session.flush()
@@ -318,7 +294,7 @@ class TestCloneIdRemapping:
             target_value_id=target_value.id,
             rule_type=RuleType.AVAILABILITY.value,
             description="Availability rule with corrupted target_value_id",
-            conditions={"criteria": [{"field_id": trigger_field.id, "operator": "EQUALS", "value": "GO"}]}
+            conditions={"criteria": [{"field_id": trigger_field.id, "operator": "EQUALS", "value": "GO"}]},
         )
         db_session.add(rule)
         db_session.flush()
@@ -332,7 +308,7 @@ class TestCloneIdRemapping:
             status=VersionStatus.ARCHIVED,
             changelog="Other",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(other_version)
         db_session.flush()
@@ -344,7 +320,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.STRING.value,
             is_free_value=False,
             is_required=False,
-            sequence=1
+            sequence=1,
         )
         db_session.add(orphan_field)
         db_session.flush()
@@ -355,9 +331,7 @@ class TestCloneIdRemapping:
 
         # Attempt to clone: should fail because target_value_id cannot be remapped
         clone_resp = client.post(
-            f"/versions/{version.id}/clone",
-            json={"changelog": "Should fail"},
-            headers=admin_headers
+            f"/versions/{version.id}/clone", json={"changelog": "Should fail"}, headers=admin_headers
         )
 
         assert clone_resp.status_code in (400, 500), (
@@ -379,7 +353,7 @@ class TestCloneIdRemapping:
             status=VersionStatus.PUBLISHED,
             changelog="Original",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -391,7 +365,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.BOOLEAN.value,
             is_free_value=True,
             is_required=False,
-            sequence=1
+            sequence=1,
         )
         condition_field = Field(
             entity_version_id=version.id,
@@ -400,7 +374,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.NUMBER.value,
             is_free_value=True,
             is_required=True,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([target_field, condition_field])
         db_session.flush()
@@ -411,7 +385,7 @@ class TestCloneIdRemapping:
             target_field_id=target_field.id,
             rule_type=RuleType.VISIBILITY.value,
             description="Rule with corrupted condition field_id",
-            conditions={"criteria": [{"field_id": condition_field.id, "operator": "GREATER_THAN", "value": 10}]}
+            conditions={"criteria": [{"field_id": condition_field.id, "operator": "GREATER_THAN", "value": 10}]},
         )
         db_session.add(rule)
         db_session.flush()
@@ -424,7 +398,7 @@ class TestCloneIdRemapping:
             status=VersionStatus.ARCHIVED,
             changelog="Other",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(other_version)
         db_session.flush()
@@ -434,16 +408,13 @@ class TestCloneIdRemapping:
 
         # Attempt to clone: should fail because condition field_id cannot be remapped
         clone_resp = client.post(
-            f"/versions/{version.id}/clone",
-            json={"changelog": "Should fail"},
-            headers=admin_headers
+            f"/versions/{version.id}/clone", json={"changelog": "Should fail"}, headers=admin_headers
         )
 
         assert clone_resp.status_code in (400, 500), (
             f"Expected clone to fail due to unmappable condition field_id, "
             f"got {clone_resp.status_code}: {clone_resp.json()}"
         )
-
 
     def test_clone_preserves_calculation_rule_set_value(
         self, client: TestClient, admin_headers, db_session, test_entity, admin_user
@@ -458,7 +429,7 @@ class TestCloneIdRemapping:
             status=VersionStatus.PUBLISHED,
             changelog="Original with CALCULATION",
             created_by_id=admin_user.id,
-            updated_by_id=admin_user.id
+            updated_by_id=admin_user.id,
         )
         db_session.add(version)
         db_session.flush()
@@ -470,7 +441,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.STRING.value,
             is_free_value=True,
             is_required=True,
-            sequence=1
+            sequence=1,
         )
         target_field = Field(
             entity_version_id=version.id,
@@ -479,7 +450,7 @@ class TestCloneIdRemapping:
             data_type=FieldType.STRING.value,
             is_free_value=True,
             is_required=True,
-            sequence=2
+            sequence=2,
         )
         db_session.add_all([source_field, target_field])
         db_session.flush()
@@ -494,35 +465,25 @@ class TestCloneIdRemapping:
             rule_type=RuleType.CALCULATION.value,
             description="Force computed value",
             set_value="FORCED_RESULT",
-            conditions={"criteria": [
-                {"field_id": source_field.id, "operator": "EQUALS", "value": "ACTIVATE"}
-            ]}
+            conditions={"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": "ACTIVATE"}]},
         )
         db_session.add(calc_rule)
         db_session.commit()
 
         # Clone the version
         clone_resp = client.post(
-            f"/versions/{version.id}/clone",
-            json={"changelog": "Cloned with CALCULATION"},
-            headers=admin_headers
+            f"/versions/{version.id}/clone", json={"changelog": "Cloned with CALCULATION"}, headers=admin_headers
         )
         assert clone_resp.status_code == 201
         new_version_id = clone_resp.json()["id"]
 
         # Get cloned fields
-        cloned_fields = client.get(
-            f"/fields/?entity_version_id={new_version_id}",
-            headers=admin_headers
-        ).json()
+        cloned_fields = client.get(f"/fields/?entity_version_id={new_version_id}", headers=admin_headers).json()
         source_clone = next(f for f in cloned_fields if f["name"] == "trigger")
         target_clone = next(f for f in cloned_fields if f["name"] == "computed")
 
         # Get cloned rules
-        cloned_rules = client.get(
-            f"/rules/?entity_version_id={new_version_id}",
-            headers=admin_headers
-        ).json()
+        cloned_rules = client.get(f"/rules/?entity_version_id={new_version_id}", headers=admin_headers).json()
         assert len(cloned_rules) == 1
 
         cloned_rule = cloned_rules[0]
@@ -544,4 +505,3 @@ class TestCloneIdRemapping:
 # ============================================================
 # ORPHAN PREVENTION TESTS
 # ============================================================
-

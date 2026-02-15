@@ -8,13 +8,13 @@ Each test is atomic and independent.
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import Entity, EntityVersion, Field, User, UserRole, VersionStatus, FieldType
 from app.core.security import create_access_token, get_password_hash
-
+from app.models.domain import Entity, EntityVersion, Field, FieldType, User, UserRole, VersionStatus
 
 # ============================================================
 # AUTH FIXTURES (local to this module)
 # ============================================================
+
 
 @pytest.fixture(scope="function")
 def test_user_for_config(db_session):
@@ -26,7 +26,7 @@ def test_user_for_config(db_session):
         email="configuser@example.com",
         hashed_password=get_password_hash("TestPassword123!"),
         role=UserRole.USER,
-        is_active=True
+        is_active=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -48,6 +48,7 @@ def auth_headers(db_session, test_user_for_config):
 # FIXTURES
 # ============================================================
 
+
 @pytest.fixture(scope="function")
 def config_scenario(db_session):
     """
@@ -68,7 +69,7 @@ def config_scenario(db_session):
         data_type=FieldType.STRING.value,
         step=1,
         sequence=1,
-        is_free_value=True
+        is_free_value=True,
     )
     f_color = Field(
         entity_version_id=version.id,
@@ -77,32 +78,25 @@ def config_scenario(db_session):
         data_type=FieldType.STRING.value,
         step=1,
         sequence=2,
-        is_free_value=True
+        is_free_value=True,
     )
 
     db_session.add_all([f_model, f_color])
     db_session.commit()
 
-    return {
-        "entity_id": entity.id,
-        "version_id": version.id,
-        "f_model_id": f_model.id,
-        "f_color_id": f_color.id
-    }
+    return {"entity_id": entity.id, "version_id": version.id, "f_model_id": f_model.id, "f_color_id": f_color.id}
 
 
 # ============================================================
 # MALFORMED INPUT TESTS
 # ============================================================
 
+
 def test_create_configuration_missing_entity_version_id(client: TestClient, auth_headers):
     """
     Test that missing entity_version_id returns 422 validation error.
     """
-    payload = {
-        "name": "No Version",
-        "data": []
-    }
+    payload = {"name": "No Version", "data": []}
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
 
@@ -115,11 +109,7 @@ def test_create_configuration_invalid_entity_version_id_type(client: TestClient,
     """
     Test that entity_version_id with wrong type returns 422.
     """
-    payload = {
-        "entity_version_id": "not_an_integer",
-        "name": "Bad Type",
-        "data": []
-    }
+    payload = {"entity_version_id": "not_an_integer", "name": "Bad Type", "data": []}
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
 
@@ -130,11 +120,7 @@ def test_create_configuration_nonexistent_entity_version(client: TestClient, aut
     """
     Test that referencing a non-existent entity_version_id returns 404.
     """
-    payload = {
-        "entity_version_id": 999999,
-        "name": "Ghost Version",
-        "data": []
-    }
+    payload = {"entity_version_id": 999999, "name": "Ghost Version", "data": []}
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
 
@@ -149,9 +135,7 @@ def test_create_configuration_invalid_field_id(client: TestClient, auth_headers,
     payload = {
         "entity_version_id": config_scenario["version_id"],
         "name": "Invalid Field",
-        "data": [
-            {"field_id": 999999, "value": "test"}
-        ]
+        "data": [{"field_id": 999999, "value": "test"}],
     }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
@@ -170,8 +154,8 @@ def test_create_configuration_duplicate_field_ids(client: TestClient, auth_heade
         "name": "Duplicate Fields",
         "data": [
             {"field_id": config_scenario["f_model_id"], "value": "First"},
-            {"field_id": config_scenario["f_model_id"], "value": "Second"}  # Duplicate!
-        ]
+            {"field_id": config_scenario["f_model_id"], "value": "Second"},  # Duplicate!
+        ],
     }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
@@ -187,7 +171,7 @@ def test_create_configuration_invalid_data_structure(client: TestClient, auth_he
     payload = {
         "entity_version_id": config_scenario["version_id"],
         "name": "Bad Data",
-        "data": "not_a_list"  # Should be a list
+        "data": "not_a_list",  # Should be a list
     }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
@@ -204,7 +188,7 @@ def test_create_configuration_missing_field_id_in_data(client: TestClient, auth_
         "name": "Missing field_id",
         "data": [
             {"value": "orphan_value"}  # Missing field_id
-        ]
+        ],
     }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
@@ -219,9 +203,7 @@ def test_create_configuration_negative_field_id(client: TestClient, auth_headers
     payload = {
         "entity_version_id": config_scenario["version_id"],
         "name": "Negative ID",
-        "data": [
-            {"field_id": -1, "value": "test"}
-        ]
+        "data": [{"field_id": -1, "value": "test"}],
     }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
@@ -243,6 +225,7 @@ def test_create_configuration_empty_payload(client: TestClient, auth_headers):
 # NULL/NONE VALUE TESTS
 # ============================================================
 
+
 def test_create_configuration_null_value_in_field(client: TestClient, auth_headers, config_scenario):
     """
     Test that null value in a field is accepted (value: Any allows null).
@@ -250,9 +233,7 @@ def test_create_configuration_null_value_in_field(client: TestClient, auth_heade
     payload = {
         "entity_version_id": config_scenario["version_id"],
         "name": "Null Value Config",
-        "data": [
-            {"field_id": config_scenario["f_model_id"], "value": None}
-        ]
+        "data": [{"field_id": config_scenario["f_model_id"], "value": None}],
     }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
@@ -268,11 +249,7 @@ def test_create_configuration_null_name(client: TestClient, auth_headers, config
     """
     Test that null name is accepted (name: Optional[str]).
     """
-    payload = {
-        "entity_version_id": config_scenario["version_id"],
-        "name": None,
-        "data": []
-    }
+    payload = {"entity_version_id": config_scenario["version_id"], "name": None, "data": []}
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
 
@@ -285,11 +262,7 @@ def test_create_configuration_null_entity_version_id(client: TestClient, auth_he
     """
     Test that null entity_version_id returns 422 (required field).
     """
-    payload = {
-        "entity_version_id": None,
-        "name": "Null Version",
-        "data": []
-    }
+    payload = {"entity_version_id": None, "name": "Null Version", "data": []}
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
 
@@ -304,19 +277,13 @@ def test_update_configuration_with_null_values(client: TestClient, auth_headers,
     create_payload = {
         "entity_version_id": config_scenario["version_id"],
         "name": "Original",
-        "data": [
-            {"field_id": config_scenario["f_model_id"], "value": "Initial Value"}
-        ]
+        "data": [{"field_id": config_scenario["f_model_id"], "value": "Initial Value"}],
     }
     create_resp = client.post("/configurations/", json=create_payload, headers=auth_headers)
     config_id = create_resp.json()["id"]
 
     # Update with null value
-    update_payload = {
-        "data": [
-            {"field_id": config_scenario["f_model_id"], "value": None}
-        ]
-    }
+    update_payload = {"data": [{"field_id": config_scenario["f_model_id"], "value": None}]}
     response = client.patch(f"/configurations/{config_id}", json=update_payload, headers=auth_headers)
 
     assert response.status_code == 200
@@ -333,8 +300,8 @@ def test_create_configuration_mixed_null_and_valid_values(client: TestClient, au
         "name": "Mixed Values",
         "data": [
             {"field_id": config_scenario["f_model_id"], "value": "Valid String"},
-            {"field_id": config_scenario["f_color_id"], "value": None}
-        ]
+            {"field_id": config_scenario["f_color_id"], "value": None},
+        ],
     }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
