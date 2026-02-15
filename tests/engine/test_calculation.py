@@ -258,6 +258,80 @@ class TestCalculationMultipleRules:
         assert cooling.is_readonly is True
 
 
+class TestCalculationInvalidSetValue:
+    """Tests for defensive handling when set_value does not match any defined Value."""
+
+    def test_non_free_field_with_invalid_set_value_returns_none(self, db_session, setup_calculation_scenario):
+        """When set_value doesn't match any Value on a non-free field, current_value is blanked to None."""
+        data = setup_calculation_scenario
+        service = RuleEngineService()
+
+        # Bypass API validation: insert a CALCULATION rule with an invalid set_value directly in DB
+        invalid_rule = Rule(
+            entity_version_id=data["version_id"],
+            target_field_id=data["fields"]["cooling_system"],
+            rule_type=RuleType.CALCULATION.value,
+            set_value="Hydrogen",  # not among Passive/Active/Liquid
+            conditions={
+                "criteria": [{"field_id": data["fields"]["product_type"], "operator": "EQUALS", "value": "Pro"}]
+            },
+        )
+        db_session.add(invalid_rule)
+        db_session.commit()
+
+        payload = CalculationRequest(
+            entity_id=data["entity_id"],
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Pro")],
+        )
+
+        response = service.calculate_state(db_session, payload)
+        cooling = next(f for f in response.fields if f.field_id == data["fields"]["cooling_system"])
+
+        assert cooling.current_value is None
+        assert cooling.available_options == []
+        assert cooling.is_readonly is True
+
+    def test_invalid_set_value_propagates_none_to_downstream(self, db_session, setup_calculation_scenario):
+        """When set_value is invalidated, running_context carries None — downstream rules see None."""
+        data = setup_calculation_scenario
+        service = RuleEngineService()
+
+        # CALCULATION with invalid set_value on cooling_system
+        invalid_rule = Rule(
+            entity_version_id=data["version_id"],
+            target_field_id=data["fields"]["cooling_system"],
+            rule_type=RuleType.CALCULATION.value,
+            set_value="Hydrogen",
+            conditions={
+                "criteria": [{"field_id": data["fields"]["product_type"], "operator": "EQUALS", "value": "Pro"}]
+            },
+        )
+        # Downstream: notes required if cooling_system == "Hydrogen"
+        downstream_rule = Rule(
+            entity_version_id=data["version_id"],
+            target_field_id=data["fields"]["notes"],
+            rule_type=RuleType.MANDATORY.value,
+            conditions={
+                "criteria": [
+                    {"field_id": data["fields"]["cooling_system"], "operator": "EQUALS", "value": "Hydrogen"}
+                ]
+            },
+        )
+        db_session.add_all([invalid_rule, downstream_rule])
+        db_session.commit()
+
+        payload = CalculationRequest(
+            entity_id=data["entity_id"],
+            current_state=[FieldInputState(field_id=data["fields"]["product_type"], value="Pro")],
+        )
+
+        response = service.calculate_state(db_session, payload)
+        notes = next(f for f in response.fields if f.field_id == data["fields"]["notes"])
+
+        # cooling_system was invalidated to None → "Hydrogen" != None → rule does NOT fire
+        assert notes.is_required is False
+
+
 class TestCalculationRunningContext:
     """Tests for calculated values propagating through running_context."""
 

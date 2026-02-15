@@ -168,7 +168,7 @@ This creates:
 |----------|-------|---------|
 | Entity + Version | 1 | "Auto Insurance Gold" with SKU generation |
 | Fields | 15 | 4 steps, all data types (string, number, boolean, date) |
-| Values | 32 | With SKU modifiers |
+| Values | 35 | With SKU modifiers |
 | Rules | 19 | All 6 rule types, all 7 operators |
 | Users | 3 | One per role (see below) |
 | Configurations | 3 | 1 finalized + 2 drafts |

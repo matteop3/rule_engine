@@ -291,6 +291,7 @@ The CALCULATION rule type is comprehensively tested:
 | Basic Behavior | 4 | Fires/doesn't fire, free-value vs non-free field output |
 | Waterfall Interactions | 6 | Hidden field skip, EDITABILITY/AVAILABILITY skip, MANDATORY kept, VALIDATION safety net |
 | Multiple Rules | 1 | First passing CALCULATION wins |
+| Invalid set_value | 2 | Non-free field with unmatched set_value blanked to None, None propagated to downstream context |
 | Running Context | 1 | Calculated values propagate to downstream conditions |
 | SKU Integration | 1 | Calculated values feed into SKU generation |
 | Completeness | 2 | Calculated fields satisfy required-field checks |

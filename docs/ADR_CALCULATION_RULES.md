@@ -101,6 +101,14 @@ This prevents an author from setting an arbitrary value (e.g., `"380V"`) on a fi
 
 For free-value fields, `set_value` is accepted as-is (any string is valid, consistent with how free-value fields accept arbitrary user input).
 
+### Defensive validation at engine level
+
+API-layer validation is the primary safeguard, but data inconsistencies can still occur (e.g., a Value deleted after the rule was created, direct DB modifications, migrations). To prevent the frontend from receiving a dropdown field with a `current_value` that does not appear in its `available_options`, the engine applies a defensive check at evaluation time:
+
+- For non-free-value fields, if `set_value` does not match any of the field's defined Values, the engine logs a warning and blanks `current_value` to `null`
+- The `running_context` is updated **after** this check, so downstream fields see `null` (not the invalid value) in their conditions
+- The field remains `is_readonly = true` (it is still a calculated field, just with an unresolvable value)
+
 ## Rationale
 
 ### Why static value mapping only?

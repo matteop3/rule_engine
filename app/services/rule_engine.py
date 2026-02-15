@@ -265,9 +265,6 @@ class RuleEngineService:
         if calculated_value is not None:
             logger.debug(f"Field {field.name} is calculated: value={calculated_value}")
 
-            # Update context with calculated value
-            running_context[field.id] = calculated_value
-
             # Build available_options: single entry for non-free, empty for free
             calc_options: list[ValueOption] = []
             if not field.is_free_value:
@@ -276,6 +273,15 @@ class RuleEngineService:
                     if v.value == calculated_value:
                         calc_options = [ValueOption(id=v.id, value=v.value, label=v.label, is_default=v.is_default)]
                         break
+                if not calc_options:
+                    logger.warning(
+                        f"Calculated value '{calculated_value}' for field '{field.name}' "
+                        f"does not match any defined Value"
+                    )
+                    calculated_value = None
+
+            # Update context with calculated value (None if invalidated above)
+            running_context[field.id] = calculated_value
 
             # Skip EDITABILITY and AVAILABILITY, jump to MANDATORY
             is_required = self._evaluate_mandatory(field, all_rules, running_context, type_map)

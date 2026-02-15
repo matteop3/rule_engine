@@ -168,9 +168,8 @@ def seed_db():
             name="policy_premium_tier",
             label="Estimated Premium Tier",
             data_type=FieldType.STRING.value,
-            is_free_value=True,
+            is_free_value=False,
             is_readonly=True,  # Always readonly: value is calculated by the engine
-            sku_modifier_when_filled="PR",  # Appends "PR" to SKU when the field has a value
             step=3,
             sequence=5,
         )
@@ -351,6 +350,17 @@ def seed_db():
         v_rental_7d = Value(field_id=f_rental_car.id, label="7 days", value="7D", sku_modifier="R7")
         v_rental_15d = Value(field_id=f_rental_car.id, label="15 days", value="15D", sku_modifier="R15")
 
+        # --- Premium Tier (calculated by engine) ---
+        v_tier_economy = Value(
+            field_id=f_premium_tier.id, label="Economy", value="ECONOMY", sku_modifier="EC"
+        )
+        v_tier_standard = Value(
+            field_id=f_premium_tier.id, label="Standard", value="STANDARD", sku_modifier="ST"
+        )
+        v_tier_premium = Value(
+            field_id=f_premium_tier.id, label="Premium", value="PREMIUM", sku_modifier="PR"
+        )
+
         all_values = [
             v_occ_employee,
             v_occ_self,
@@ -384,6 +394,9 @@ def seed_db():
             v_rental_3d,
             v_rental_7d,
             v_rental_15d,
+            v_tier_economy,
+            v_tier_standard,
+            v_tier_premium,
         ]
         db.add_all(all_values)
         db.commit()
@@ -677,7 +690,7 @@ def seed_db():
             name="Retiree Car Quote — Complete",
             status=ConfigurationStatus.FINALIZED.value,
             is_complete=True,
-            generated_sku="POL-AUTO-P-A-PR-50M-INF2-FI-AS3-R7",
+            generated_sku="POL-AUTO-P-A-ST-50M-INF2-FI-AS3-R7",
             data=[
                 {"field_id": f_name.id, "value": "John Smith"},
                 {"field_id": f_dob.id, "value": "1958-03-15"},
@@ -700,7 +713,7 @@ def seed_db():
             name="Truck Quote — In Progress",
             status=ConfigurationStatus.DRAFT.value,
             is_complete=False,
-            generated_sku="POL-AUTO-C-TN-PR-25M",
+            generated_sku="POL-AUTO-C-TN-ST-25M",
             data=[
                 {"field_id": f_name.id, "value": "Express Logistics LLC"},
                 {"field_id": f_dob.id, "value": "1975-11-20"},
@@ -770,16 +783,16 @@ FEATURE COVERAGE:
   Rule types:     6/6 (VISIBILITY, CALCULATION, AVAILABILITY, EDITABILITY, MANDATORY, VALIDATION)
   Operators:      7/7 (EQUALS, NOT_EQUALS, GT, GTE, LT, LTE, IN)
   Field types:    4/4 (string, number, boolean, date)
-  SKU features:   sku_base + sku_modifier (Values) + sku_modifier_when_filled (Field)
+  SKU features:   sku_base + sku_modifier (Values)
   Field defaults: default_value on free-value field (additional_notes)
 
-CALCULATION (engine-derived value):
+CALCULATION (engine-derived dropdown):
   ┌─────────────────────────────────────────────────────┐
-  │ Vehicle Value → Estimated Premium Tier              │
-  │   <= $15,000     → ECONOMY  (readonly, auto-set)    │
-  │   $15,001-50,000 → STANDARD (readonly, auto-set)    │
-  │   > $50,000      → PREMIUM  (readonly, auto-set)    │
-  │   SKU: appends "PR" when the field has a value      │
+  │ Vehicle Value → Estimated Premium Tier (dropdown)   │
+  │   <= $15,000     → ECONOMY  (SKU: EC)               │
+  │   $15,001-50,000 → STANDARD (SKU: ST)               │
+  │   > $50,000      → PREMIUM  (SKU: PR)               │
+  │   Non-free field: available_options = forced value   │
   └─────────────────────────────────────────────────────┘
 
 CASCADING CHAINS:
@@ -811,17 +824,17 @@ EDITABILITY + IN OPERATOR:
 SKU EXAMPLES:
 
   1. Basic car (employee, value $10k, minimum, no extras):
-     → POL-AUTO-A-PR-6M
+     → POL-AUTO-A-EC-6M
 
   2. Full car (retired, value $45k, premium, injury, theft, assistance):
-     → POL-AUTO-P-A-PR-50M-INF2-FI-AS3-R7
+     → POL-AUTO-P-A-ST-50M-INF2-FI-AS3-R7
 
   3. Truck with hazardous goods (ADR tanks, high limit):
-     → POL-AUTO-C-TN-PR-25M  (standard goods)
-     → POL-AUTO-C-TP-ADR2-PR-25M  (hazardous with ADR tanks)
+     → POL-AUTO-C-TN-ST-25M  (standard goods)
+     → POL-AUTO-C-TP-ADR2-ST-25M  (hazardous with ADR tanks)
 
   4. Motorcycle (no injury, no full theft):
-     → POL-AUTO-M-PR-10M
+     → POL-AUTO-M-EC-10M
 """)
         print("=" * 70)
 
