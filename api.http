@@ -1,0 +1,318 @@
+### ==========================================================
+### Rule Engine API — VS Code REST Client (.http)
+### Extension: humao.rest-client
+### ==========================================================
+###
+### Usage:
+###   1. Start the server: make up (or docker compose up -d)
+###   2. Load demo data: make seed (or python seed_data.py)
+###   3. Click "Send Request" above any request below
+###
+### Demo credentials (password: password123):
+###   - admin@demo.com  (ADMIN)
+###   - author@demo.com (AUTHOR)
+###   - user@demo.com   (USER)
+### ==========================================================
+
+@baseUrl = http://localhost:8000
+
+
+### ==========================================================
+### AUTHENTICATION
+### ==========================================================
+
+### Login as admin
+# @name loginAdmin
+POST {{baseUrl}}/auth/token
+Content-Type: application/x-www-form-urlencoded
+
+username=admin@demo.com&password=password123
+
+###
+
+@adminToken = {{loginAdmin.response.body.access_token}}
+
+### Login as author
+# @name loginAuthor
+POST {{baseUrl}}/auth/token
+Content-Type: application/x-www-form-urlencoded
+
+username=author@demo.com&password=password123
+
+###
+
+@authorToken = {{loginAuthor.response.body.access_token}}
+
+### Login as user
+# @name loginUser
+POST {{baseUrl}}/auth/token
+Content-Type: application/x-www-form-urlencoded
+
+username=user@demo.com&password=password123
+
+###
+
+@userToken = {{loginUser.response.body.access_token}}
+
+### Refresh token
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": "{{loginAdmin.response.body.refresh_token}}"
+}
+
+
+### ==========================================================
+### ENTITIES
+### ==========================================================
+
+### List all entities
+GET {{baseUrl}}/entities
+Authorization: Bearer {{adminToken}}
+
+### Get entity by ID
+GET {{baseUrl}}/entities/1
+Authorization: Bearer {{adminToken}}
+
+### Create entity
+POST {{baseUrl}}/entities
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Home Insurance Standard",
+  "description": "Home insurance product configurator"
+}
+
+
+### ==========================================================
+### VERSIONS
+### ==========================================================
+
+### List versions for entity
+GET {{baseUrl}}/versions?entity_id=1
+Authorization: Bearer {{adminToken}}
+
+### Create draft version
+POST {{baseUrl}}/versions
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "entity_id": 1,
+  "changelog": "New draft for testing"
+}
+
+### Publish version (replace {id} with actual version ID)
+POST {{baseUrl}}/versions/2/publish
+Authorization: Bearer {{adminToken}}
+
+### Clone version (replace {id} with actual version ID)
+POST {{baseUrl}}/versions/1/clone
+Authorization: Bearer {{adminToken}}
+
+
+### ==========================================================
+### FIELDS
+### ==========================================================
+
+### List fields for version
+GET {{baseUrl}}/fields?entity_version_id=1
+Authorization: Bearer {{adminToken}}
+
+### Get field by ID
+GET {{baseUrl}}/fields/1
+Authorization: Bearer {{adminToken}}
+
+### Create field (requires DRAFT version)
+POST {{baseUrl}}/fields
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "entity_version_id": 1,
+  "name": "test_field",
+  "label": "Test Field",
+  "data_type": "STRING",
+  "is_free_value": true,
+  "step": 1,
+  "sequence": 99
+}
+
+
+### ==========================================================
+### VALUES
+### ==========================================================
+
+### List values for a field
+GET {{baseUrl}}/values?field_id=3
+Authorization: Bearer {{adminToken}}
+
+### Create value (requires DRAFT version)
+POST {{baseUrl}}/values
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "field_id": 3,
+  "code": "FREELANCER",
+  "label": "Freelancer",
+  "sku_modifier": "FRL"
+}
+
+
+### ==========================================================
+### RULES
+### ==========================================================
+
+### List rules for version
+GET {{baseUrl}}/rules?entity_version_id=1
+Authorization: Bearer {{adminToken}}
+
+### Get rule by ID
+GET {{baseUrl}}/rules/1
+Authorization: Bearer {{adminToken}}
+
+
+### ==========================================================
+### ENGINE (stateless — no auth required)
+### ==========================================================
+
+### Calculate — Employee with a CAR worth $25,000
+POST {{baseUrl}}/engine/calculate
+Content-Type: application/json
+
+{
+  "entity_id": 1,
+  "current_state": [
+    {"field_id": 1, "value": "John Doe"},
+    {"field_id": 2, "value": "1990-01-15"},
+    {"field_id": 3, "value": "EMPLOYEE"},
+    {"field_id": 4, "value": "CAR"},
+    {"field_id": 5, "value": 25000},
+    {"field_id": 6, "value": true},
+    {"field_id": 10, "value": "STANDARD_500K"},
+    {"field_id": 11, "value": "INJURY_FULL"},
+    {"field_id": 12, "value": "THEFT_FULL"},
+    {"field_id": 13, "value": "ASSIST_PREMIUM"},
+    {"field_id": 14, "value": "RENTAL_YES"}
+  ]
+}
+
+### Calculate — Retired with a TRUCK and hazardous cargo
+POST {{baseUrl}}/engine/calculate
+Content-Type: application/json
+
+{
+  "entity_id": 1,
+  "current_state": [
+    {"field_id": 1, "value": "Jane Smith"},
+    {"field_id": 2, "value": "1965-03-20"},
+    {"field_id": 3, "value": "RETIRED"},
+    {"field_id": 4, "value": "TRUCK"},
+    {"field_id": 5, "value": 80000},
+    {"field_id": 7, "value": "HAZARDOUS"},
+    {"field_id": 8, "value": "ADR_CLASS_3"},
+    {"field_id": 10, "value": "PREMIUM_1M"}
+  ]
+}
+
+### Calculate — Student with a MOTORCYCLE (minimal)
+POST {{baseUrl}}/engine/calculate
+Content-Type: application/json
+
+{
+  "entity_id": 1,
+  "current_state": [
+    {"field_id": 1, "value": "Alex Johnson"},
+    {"field_id": 2, "value": "2002-07-10"},
+    {"field_id": 3, "value": "STUDENT"},
+    {"field_id": 4, "value": "MOTORCYCLE"},
+    {"field_id": 5, "value": 5000}
+  ]
+}
+
+
+### ==========================================================
+### CONFIGURATIONS
+### ==========================================================
+
+### List my configurations
+GET {{baseUrl}}/configurations
+Authorization: Bearer {{userToken}}
+
+### Create configuration
+POST {{baseUrl}}/configurations
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "entity_id": 1,
+  "name": "My New Quote",
+  "data": {
+    "current_state": [
+      {"field_id": 1, "value": "Test User"},
+      {"field_id": 3, "value": "EMPLOYEE"},
+      {"field_id": 4, "value": "CAR"},
+      {"field_id": 5, "value": 30000}
+    ]
+  }
+}
+
+### Get configuration by ID (replace {id})
+GET {{baseUrl}}/configurations/1
+Authorization: Bearer {{userToken}}
+
+### Update configuration inputs (replace {id}, DRAFT only)
+PATCH {{baseUrl}}/configurations/1
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "data": {
+    "current_state": [
+      {"field_id": 1, "value": "Test User"},
+      {"field_id": 3, "value": "SELF_EMPLOYED"},
+      {"field_id": 4, "value": "VAN"},
+      {"field_id": 5, "value": 45000}
+    ]
+  }
+}
+
+### Calculate configuration state (replace {id})
+GET {{baseUrl}}/configurations/1/calculate
+Authorization: Bearer {{userToken}}
+
+### Finalize configuration (replace {id}, DRAFT only)
+POST {{baseUrl}}/configurations/1/finalize
+Authorization: Bearer {{userToken}}
+
+### Clone configuration (replace {id})
+POST {{baseUrl}}/configurations/1/clone
+Authorization: Bearer {{userToken}}
+
+
+### ==========================================================
+### USERS (admin only)
+### ==========================================================
+
+### List all users
+GET {{baseUrl}}/users
+Authorization: Bearer {{adminToken}}
+
+### Get user by ID
+GET {{baseUrl}}/users/1
+Authorization: Bearer {{adminToken}}
+
+### Create user
+POST {{baseUrl}}/users
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "email": "newuser@demo.com",
+  "password": "SecureP@ss123",
+  "full_name": "New User",
+  "role": "USER"
+}

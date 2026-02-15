@@ -144,10 +144,13 @@ cd rule-engine
 cp .env.example .env
 
 # Start services
-docker compose up --build
+make build          # or: docker compose up --build -d
 
 # API available at http://localhost:8000
 # Interactive docs at http://localhost:8000/docs
+
+# See all available commands
+make help
 ```
 
 ### Load Demo Data
@@ -541,6 +544,8 @@ rule_engine/
 
 ## Documentation
 
+- [OpenAPI Specification](openapi.json) - Full API spec (importable in Postman, Insomnia, etc.)
+- [API Examples](api.http) - Ready-to-use API calls for VS Code REST Client
 - [Testing Guide](docs/TESTING.md) - Test organization and running instructions
 - [Security Features](docs/SECURITY_FEATURES.md) - Authentication and rate limiting
 - [Token Rotation Demo](docs/ROTATION_DEMO.md) - Refresh token rotation examples

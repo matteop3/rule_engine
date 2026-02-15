@@ -22,6 +22,9 @@ jobs:
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://user:pass@localhost:5432/db
+      SECRET_KEY: ci-dummy-secret-key-only-for-import-validation-1234
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,13 +33,13 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt mypy
       - run: mypy app/
-    env:
-      DATABASE_URL: postgresql://user:pass@localhost:5432/db
-      SECRET_KEY: ci-dummy-secret-key-only-for-import-validation-1234
 
   test:
     name: Test & Coverage
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://user:pass@localhost:5432/db
+      SECRET_KEY: ci-dummy-secret-key-only-for-import-validation-1234
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,6 +52,3 @@ jobs:
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
-    env:
-      DATABASE_URL: postgresql://user:pass@localhost:5432/db
-      SECRET_KEY: ci-dummy-secret-key-only-for-import-validation-1234

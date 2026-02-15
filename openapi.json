@@ -1,0 +1,4367 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Rule Engine Service",
+    "description": "Generic configurable rule engine backend",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/auth/token": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Login For Access Token",
+        "description": "Standard OAuth2 endpoint to obtain the token.\n\nAuthenticates user with email/password and returns both access and refresh tokens.\n\nRate Limited: Maximum 5 attempts per 15 minutes per IP address.\n\nReturns:\n    - access_token: Short-lived JWT (30 min default)\n    - refresh_token: Long-lived token (7 days default) for obtaining new access tokens\n    - token_type: \"bearer\"",
+        "operationId": "login_for_access_token_auth_token_post",
+        "parameters": [
+          {
+            "name": "user-agent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Agent"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_login_for_access_token_auth_token_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Refresh Access Token",
+        "description": "Refresh endpoint to obtain a new access token using a valid refresh token.\n\nSend the refresh token in the Authorization header:\nAuthorization: Bearer <refresh_token>\n\nRate Limited: Maximum 10 attempts per 5 minutes per IP address.\n\nReturns:\n    - access_token: New short-lived JWT (30 min default)\n    - refresh_token: New refresh token (only if REFRESH_TOKEN_ROTATION=true)\n    - token_type: \"bearer\"\n\nToken Rotation:\n    If REFRESH_TOKEN_ROTATION=true in .env, the old refresh token is revoked\n    and a new one is returned. This provides maximum security but requires\n    the client to store the new refresh token.",
+        "operationId": "refresh_access_token_auth_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/users/": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Create User",
+        "description": "Create a new user.\nONLY ADMINS can create new users via API.",
+        "operationId": "create_user_users__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List Users",
+        "description": "List all users.\nONLY ADMINS can see the user list.",
+        "operationId": "list_users_users__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserRead"
+                  },
+                  "title": "Response List Users Users  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Read User Me",
+        "description": "Get current user profile.\nAccessible to any logged-in user.",
+        "operationId": "read_user_me_users_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/users/{user_id}": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Read User",
+        "description": "Get user by ID.\nONLY ADMINS can view other users.",
+        "operationId": "read_user_users__user_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "User ID",
+              "title": "User Id"
+            },
+            "description": "User ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update User",
+        "description": "Update user. Use this to BAN users (is_active=False) or change role.\nONLY ADMINS can update users.",
+        "operationId": "update_user_users__user_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "User ID",
+              "title": "User Id"
+            },
+            "description": "User ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Delete User",
+        "description": "Disable a user (soft delete).\nONLY ADMINS can delete users.",
+        "operationId": "delete_user_users__user_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "User ID",
+              "title": "User Id"
+            },
+            "description": "User ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entities/": {
+      "post": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Create Entity",
+        "description": "Create a new Entity into database.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create entities\n\nReturns:\n    EntityRead: The created entity",
+        "operationId": "create_entity_entities__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "List Entities",
+        "description": "Retrieve Entity list.\n\nAccess Control:\n    - Any authenticated user can list entities\n\nQuery Parameters:\n    skip: Pagination offset\n    limit: Maximum results (max 100)\n\nReturns:\n    List[EntityRead]: List of entities",
+        "operationId": "list_entities_entities__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EntityRead"
+                  },
+                  "title": "Response List Entities Entities  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entities/{entity_id}": {
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Read Entity",
+        "description": "Retrieve a single Entity by ID.\n\nAccess Control:\n    - Any authenticated user can read entities\n\nReturns:\n    EntityRead: The requested entity",
+        "operationId": "read_entity_entities__entity_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Entity ID",
+              "title": "Entity Id"
+            },
+            "description": "Entity ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Update Entity",
+        "description": "Update an existing Entity.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update entities\n\nReturns:\n    EntityRead: The updated entity",
+        "operationId": "update_entity_entities__entity_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Entity ID",
+              "title": "Entity Id"
+            },
+            "description": "Entity ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Delete Entity",
+        "description": "Delete an Entity.\n\nStrict Policy:\n    - Cannot delete if it contains Versions (Draft, Published or Archived)\n    - Must delete all versions first\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete entities\n\nReturns:\n    204 No Content on success",
+        "operationId": "delete_entity_entities__entity_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Entity ID",
+              "title": "Entity Id"
+            },
+            "description": "Entity ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/versions/": {
+      "get": {
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Read Versions",
+        "description": "Retrieves version history for a specific Entity.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view versions\n\nQuery Parameters:\n    entity_id: The Entity to retrieve versions for (required)\n    skip: Pagination offset\n    limit: Maximum results (max 100)\n\nReturns:\n    List[VersionRead]: Versions ordered by version_number descending (newest first)",
+        "operationId": "read_versions_versions__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Entity Id"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VersionRead"
+                  },
+                  "title": "Response Read Versions Versions  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Create Version Draft",
+        "description": "Creates a new DRAFT version for an Entity.\n\n- Version number is auto-calculated (incremental)\n- Enforces Single Draft Policy (only one DRAFT per Entity)\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create versions\n\nReturns:\n    VersionRead: The created DRAFT version",
+        "operationId": "create_version_draft_versions__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/versions/{version_id}": {
+      "get": {
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Read Version",
+        "description": "Retrieves a single version by ID.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view version details\n\nReturns:\n    VersionRead: The requested version",
+        "operationId": "read_version_versions__version_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Update Version Metadata",
+        "description": "Updates version metadata (changelog).\n\nRestrictions:\n    - Only DRAFT versions can be modified\n    - PUBLISHED/ARCHIVED versions are immutable (history protection)\n    - Status changes must use dedicated endpoints (/publish)\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update versions\n\nReturns:\n    VersionRead: The updated version",
+        "operationId": "update_version_metadata_versions__version_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Delete Version",
+        "description": "Deletes a version.\n\nStrict Policy:\n    - Only DRAFT versions can be deleted\n    - PUBLISHED/ARCHIVED versions are protected (history preservation)\n    - Cascade deletes all Fields, Values, Rules, and Configurations\n\nNote: Configurations on DRAFT versions are considered test data\n      and will be automatically deleted.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete versions\n\nReturns:\n    204 No Content on success",
+        "operationId": "delete_version_versions__version_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/versions/{version_id}/publish": {
+      "post": {
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Publish Version",
+        "description": "Promotes a DRAFT version to PUBLISHED.\n\n- Archives any previously PUBLISHED version (Single Published Policy)\n- Only DRAFT versions can be published\n- Existing Configurations on this version become \"production data\"\n\nAccess Control:\n    - Only ADMIN and AUTHOR can publish versions\n\nReturns:\n    VersionRead: The published version",
+        "operationId": "publish_version_versions__version_id__publish_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/versions/{version_id}/clone": {
+      "post": {
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Clone Version",
+        "description": "Creates a new DRAFT version by deep-copying an existing version.\n\n- Source version can be in any status (DRAFT, PUBLISHED, ARCHIVED)\n- Copies all Fields, Values, and Rules with ID remapping\n- Enforces Single Draft Policy (target entity must not have a DRAFT)\n\nAccess Control:\n    - Only ADMIN and AUTHOR can clone versions\n\nReturns:\n    VersionRead: The newly created DRAFT version",
+        "operationId": "clone_version_versions__version_id__clone_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionClone"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fields/": {
+      "get": {
+        "tags": [
+          "Fields"
+        ],
+        "summary": "List Fields",
+        "description": "Retrieve Fields for a specific Version.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view fields\n\nQuery Parameters:\n    entity_version_id: The version to retrieve fields for (required)\n    skip: Pagination offset\n    limit: Maximum results (max 100)\n\nReturns:\n    List[FieldRead]: Fields ordered by step and sequence",
+        "operationId": "list_fields_fields__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity_version_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Entity Version Id"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FieldRead"
+                  },
+                  "title": "Response List Fields Fields  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Fields"
+        ],
+        "summary": "Create Field",
+        "description": "Creates a new Field attached to a specific Entity Version.\n\nRestrictions:\n    - The version must be DRAFT\n    - default_value on Field is allowed ONLY for free-text fields\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create fields\n\nReturns:\n    FieldRead: The created field",
+        "operationId": "create_field_fields__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FieldCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fields/{field_id}": {
+      "get": {
+        "tags": [
+          "Fields"
+        ],
+        "summary": "Read Field",
+        "description": "Retrieve a single Field.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view field details\n\nReturns:\n    FieldRead: The requested field",
+        "operationId": "read_field_fields__field_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Field ID",
+              "title": "Field Id"
+            },
+            "description": "Field ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Fields"
+        ],
+        "summary": "Update Field",
+        "description": "Update a Field.\n\nRestrictions:\n    - The version must be DRAFT\n    - Cannot change is_free_value from False to True if field has Values\n    - Cannot set default_value when switching to non-free field\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update fields\n\nReturns:\n    FieldRead: The updated field",
+        "operationId": "update_field_fields__field_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Field ID",
+              "title": "Field Id"
+            },
+            "description": "Field ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FieldUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Fields"
+        ],
+        "summary": "Delete Field",
+        "description": "Delete a Field.\n\nStrict Policy:\n    - Cannot delete if it has Values\n    - Cannot delete if it is the target of a Rule\n    - Cannot delete if it is used as a condition inside any Rule of the same Entity\n    - The version must be DRAFT\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete fields\n\nReturns:\n    204 No Content on success",
+        "operationId": "delete_field_fields__field_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Field ID",
+              "title": "Field Id"
+            },
+            "description": "Field ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/values/": {
+      "get": {
+        "tags": [
+          "Values"
+        ],
+        "summary": "List Values",
+        "description": "Retrieve Values for a specific Field.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view values\n\nQuery Parameters:\n    field_id: Filter by field (optional)\n    skip: Pagination offset\n    limit: Maximum results (max 100)\n\nReturns:\n    List[ValueRead]: List of values",
+        "operationId": "list_values_values__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "field_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Field Id"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ValueRead"
+                  },
+                  "title": "Response List Values Values  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Values"
+        ],
+        "summary": "Create Value",
+        "description": "Create a new Value related to a Field.\n\nRestrictions:\n    - The version must be DRAFT\n    - Parent Field must exist\n    - Cannot create values for free-value Fields\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create values\n\nReturns:\n    ValueRead: The created value",
+        "operationId": "create_value_values__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValueCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValueRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/values/{value_id}": {
+      "get": {
+        "tags": [
+          "Values"
+        ],
+        "summary": "Read Value",
+        "description": "Retrieve a single Value.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view value details\n\nReturns:\n    ValueRead: The requested value",
+        "operationId": "read_value_values__value_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "value_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Value ID",
+              "title": "Value Id"
+            },
+            "description": "Value ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValueRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Values"
+        ],
+        "summary": "Update Value",
+        "description": "Updates an existing Value.\n\nRestrictions:\n    - The version must be DRAFT\n    - Cannot move value to a different version (must belong to same version)\n    - Cannot move value to a free-value Field\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update values\n\nReturns:\n    ValueRead: The updated value",
+        "operationId": "update_value_values__value_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "value_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Value ID",
+              "title": "Value Id"
+            },
+            "description": "Value ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValueUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValueRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Values"
+        ],
+        "summary": "Delete Value",
+        "description": "Delete a Value.\n\nStrict Policy:\n    - Cannot delete if it is the explicit target of a Rule\n    - Cannot delete if it is used as a condition criteria in any Rule (deep scan)\n    - The version must be DRAFT\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete values\n\nReturns:\n    204 No Content on success",
+        "operationId": "delete_value_values__value_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "value_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Value ID",
+              "title": "Value Id"
+            },
+            "description": "Value ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rules/": {
+      "get": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "List Rules",
+        "description": "Retrieve a list of Rules.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view rules\n\nQuery Parameters:\n    entity_version_id: Filter by version (optional but recommended)\n    skip: Pagination offset\n    limit: Maximum results (max 100)\n\nReturns:\n    List[RuleRead]: List of rules",
+        "operationId": "list_rules_rules__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity_version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Version Id"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RuleRead"
+                  },
+                  "title": "Response List Rules Rules  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "Create Rule",
+        "description": "Creates a new Rule in a DRAFT version.\n\nRestrictions:\n    - The version must be DRAFT\n    - Target Field must belong to the specified Version\n    - Target Value (if specified) must belong to the Target Field\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create rules\n\nReturns:\n    RuleRead: The created rule",
+        "operationId": "create_rule_rules__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rules/{rule_id}": {
+      "get": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "Read Rule",
+        "description": "Retrieve a single Rule.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view rule details\n\nReturns:\n    RuleRead: The requested rule",
+        "operationId": "read_rule_rules__rule_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Rule ID",
+              "title": "Rule Id"
+            },
+            "description": "Rule ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "Update Rule",
+        "description": "Updates an existing Rule.\n\nRestrictions:\n    - The version must be DRAFT\n    - Cannot change entity_version_id (rules belong strictly to their creation version)\n    - New target Field must belong to the same Version\n    - New target Value must belong to the new target Field\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update rules\n\nReturns:\n    RuleRead: The updated rule",
+        "operationId": "update_rule_rules__rule_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Rule ID",
+              "title": "Rule Id"
+            },
+            "description": "Rule ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "Delete Rule",
+        "description": "Delete a Rule.\n\nRestrictions:\n    - The version must be DRAFT\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete rules\n\nReturns:\n    204 No Content on success",
+        "operationId": "delete_rule_rules__rule_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Rule ID",
+              "title": "Rule Id"
+            },
+            "description": "Rule ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/engine/calculate": {
+      "post": {
+        "tags": [
+          "Engine"
+        ],
+        "summary": "Calculate State",
+        "description": "Triggers the Rule Engine calculation.\n\nWorkflow:\n1. Resolves target version (explicit or PUBLISHED by default)\n2. Evaluates all rules in waterfall sequence\n3. Returns calculated field states with available options\n\nAccess Control:\n- USER: Can only calculate on PUBLISHED versions\n- AUTHOR/ADMIN: Can calculate on any version (including DRAFT for preview)\n\nRequest Body:\n    entity_id: The entity to calculate\n    entity_version_id (optional): Specific version to use (defaults to PUBLISHED)\n    current_state: List of field inputs (field_id + value)\n\nReturns:\n    CalculationResponse: Full field states with:\n    - available_options (filtered by rules)\n    - is_required, is_readonly, is_hidden flags\n    - validation errors\n    - is_complete flag (all required fields filled and no validation errors)\n\nRaises:\n    HTTPException(400): Invalid input data or business logic error\n    HTTPException(403): User lacks permission for requested version\n    HTTPException(404): Entity or version not found (via fetch_version_by_id)\n    HTTPException(500): Unexpected server error",
+        "operationId": "calculate_state_engine_calculate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalculationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalculationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/configurations/": {
+      "post": {
+        "tags": [
+          "Configurations"
+        ],
+        "summary": "Create Configuration",
+        "description": "Creates a new user configuration (snapshot of inputs).\n\n- Calculates and stores the is_complete flag\n- Accepts any Entity Version (Draft, Published, Archived) for ADMINs/AUTHORs\n- Regular USERs can only save PUBLISHED versions\n- Owner automatically assigned from JWT token\n\nReturns:\n    ConfigurationRead: The created configuration",
+        "operationId": "create_configuration_configurations__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Configurations"
+        ],
+        "summary": "List Configurations",
+        "description": "Lists configurations with role-based access control.\n\n- ADMIN: Can view all configurations, optionally filtered by user_id\n- AUTHOR/USER: Can only view their own configurations\n\nQuery Parameters:\n    entity_version_id: Filter by specific version\n    user_id: Filter by user (ADMIN only)\n    status: Filter by status (DRAFT or FINALIZED)\n    include_deleted: Include soft-deleted records (ADMIN only, default False)\n    skip: Pagination offset\n    limit: Maximum results (max 100)\n\nReturns:\n    List[ConfigurationRead]: Filtered configurations, newest first",
+        "operationId": "list_configurations_configurations__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity_version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Version Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "include_deleted",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Deleted"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConfigurationRead"
+                  },
+                  "title": "Response List Configurations Configurations  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configurations/{config_id}": {
+      "get": {
+        "tags": [
+          "Configurations"
+        ],
+        "summary": "Read Configuration",
+        "description": "Retrieves a single configuration by ID.\n\nAccess Control:\n    - Only owner or ADMIN can access\n\nReturns:\n    ConfigurationRead: The requested configuration",
+        "operationId": "read_configuration_configurations__config_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Configurations"
+        ],
+        "summary": "Update Configuration",
+        "description": "Updates a configuration's name or data inputs.\n\n- Recalculates is_complete if data changes\n- Cannot change the linked entity_version_id (data integrity)\n\nAccess Control:\n    - Only owner or ADMIN can update\n    - Only DRAFT configurations can be updated\n\nStatus Constraint:\n    - Returns HTTP 409 Conflict if configuration is FINALIZED\n\nReturns:\n    ConfigurationRead: The updated configuration",
+        "operationId": "update_configuration_configurations__config_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Configurations"
+        ],
+        "summary": "Delete Configuration",
+        "description": "Deletes a saved configuration.\n\nDeletion Strategy by Status:\n    - DRAFT: Hard delete (physical removal from database)\n    - FINALIZED: Soft delete (is_deleted=True) to preserve audit trail\n\nAccess Control:\n    - DRAFT: Owner or ADMIN can delete\n    - FINALIZED: Only ADMIN can soft-delete\n\nReturns:\n    204 No Content on success",
+        "operationId": "delete_configuration_configurations__config_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configurations/{config_id}/calculate": {
+      "get": {
+        "tags": [
+          "Configurations"
+        ],
+        "summary": "Load And Calculate Configuration",
+        "description": "Loads a saved configuration and recalculates its state.\n\nWorkflow:\n    1. Retrieves saved inputs from database\n    2. Invokes Rule Engine using the linked version\n    3. Returns full calculated state\n\nAccess Control:\n    - Only owner or ADMIN can access\n\nReturns:\n    CalculationResponse: Full field states with validation",
+        "operationId": "load_and_calculate_configuration_configurations__config_id__calculate_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalculationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configurations/{config_id}/clone": {
+      "post": {
+        "tags": [
+          "Configurations"
+        ],
+        "summary": "Clone Configuration",
+        "description": "Creates an exact copy of an existing configuration.\n\nNon-Destructive Operation:\n    - The source configuration remains unchanged\n    - A new configuration is created with a fresh UUID\n    - The clone always starts in DRAFT status (regardless of source status)\n\nCloned Data:\n    - input data (payload JSON)\n    - entity_version_id reference\n    - name (with \" (Copy)\" suffix)\n\nUse Cases:\n    - Reopen work on a FINALIZED configuration without altering the original\n    - Create variations of an existing configuration\n    - Duplicate a configuration for another purpose\n\nAccess Control:\n    - Only owner or ADMIN can clone\n\nReturns:\n    ConfigurationCloneResponse: The newly created configuration with source_id",
+        "operationId": "clone_configuration_configurations__config_id__clone_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationCloneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configurations/{config_id}/upgrade": {
+      "post": {
+        "tags": [
+          "Configurations"
+        ],
+        "summary": "Upgrade Configuration",
+        "description": "Upgrades a configuration to the latest PUBLISHED version.\n\nDestructive In-Place Operation:\n    - Updates entity_version_id to the latest PUBLISHED version\n    - Preserves the existing input data (user selections)\n    - Recalculates is_complete with the new version's rules\n\nStatus Constraint:\n    - Only DRAFT configurations can be upgraded\n    - Returns HTTP 409 Conflict if configuration is FINALIZED\n\nUse Cases:\n    - Update a saved draft to use newer product rules\n    - Migrate configurations when new versions are published\n\nAccess Control:\n    - Only owner or ADMIN can upgrade\n\nReturns:\n    ConfigurationRead: The updated configuration\n\nRaises:\n    404: If no PUBLISHED version exists for the entity\n    409: If configuration is FINALIZED",
+        "operationId": "upgrade_configuration_configurations__config_id__upgrade_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configurations/{config_id}/finalize": {
+      "post": {
+        "tags": [
+          "Configurations"
+        ],
+        "summary": "Finalize Configuration",
+        "description": "Finalizes a configuration, making it immutable.\n\nUnidirectional State Transition:\n    - Transitions status from DRAFT to FINALIZED\n    - Once finalized, the configuration becomes read-only\n    - Cannot be undone (use clone to create a new editable copy)\n\nCompleteness Requirement:\n    - Only configurations with is_complete=True can be finalized\n    - Ensures all required fields are filled before locking\n\nImmutability Guarantees:\n    - Input data cannot be modified\n    - Version reference cannot be changed\n    - Record cannot be hard-deleted (only soft-deleted by ADMIN)\n\nUse Cases:\n    - Lock a quote before sending to customer\n    - Freeze an order configuration before submission\n    - Create an audit-compliant snapshot\n\nAccess Control:\n    - Only owner or ADMIN can finalize\n\nReturns:\n    ConfigurationRead: The finalized configuration\n\nRaises:\n    400: If configuration is not complete (is_complete=False)\n    409: If configuration is already FINALIZED",
+        "operationId": "finalize_configuration_configurations__config_id__finalize_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Health Check",
+        "operationId": "health_check__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Check  Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_login_for_access_token_auth_token_post": {
+        "properties": {
+          "grant_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^password$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "default": ""
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "password",
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_login_for_access_token_auth_token_post"
+      },
+      "CalculationRequest": {
+        "properties": {
+          "entity_id": {
+            "type": "integer",
+            "title": "Entity Id"
+          },
+          "current_state": {
+            "items": {
+              "$ref": "#/components/schemas/FieldInputState"
+            },
+            "type": "array",
+            "title": "Current State"
+          },
+          "entity_version_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_id",
+          "current_state"
+        ],
+        "title": "CalculationRequest",
+        "description": "Request for status calculation."
+      },
+      "CalculationResponse": {
+        "properties": {
+          "entity_id": {
+            "type": "integer",
+            "title": "Entity Id"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldOutputState"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "is_complete": {
+            "type": "boolean",
+            "title": "Is Complete",
+            "default": true
+          },
+          "generated_sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated Sku"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_id",
+          "fields"
+        ],
+        "title": "CalculationResponse",
+        "description": "Complete response with the status of all fields in the entity."
+      },
+      "ConfigurationCloneResponse": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/FieldInputState"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConfigurationStatusEnum"
+          },
+          "is_complete": {
+            "type": "boolean",
+            "title": "Is Complete"
+          },
+          "generated_sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated Sku"
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "title": "Is Deleted",
+            "default": false
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "data",
+          "id",
+          "entity_version_id",
+          "status",
+          "is_complete",
+          "source_id"
+        ],
+        "title": "ConfigurationCloneResponse",
+        "description": "Response schema for clone operation.\n\nThe cloned configuration always has status=DRAFT,\nregardless of the source configuration's status."
+      },
+      "ConfigurationCreate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/FieldInputState"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "entity_version_id"
+        ],
+        "title": "ConfigurationCreate",
+        "description": "Schema for creating a new Configuration (POST).\n\nNote: status is automatically set to DRAFT on creation."
+      },
+      "ConfigurationRead": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/FieldInputState"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConfigurationStatusEnum"
+          },
+          "is_complete": {
+            "type": "boolean",
+            "title": "Is Complete"
+          },
+          "generated_sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated Sku"
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "title": "Is Deleted",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "data",
+          "id",
+          "entity_version_id",
+          "status",
+          "is_complete"
+        ],
+        "title": "ConfigurationRead",
+        "description": "Schema for reading Configuration data (GET responses).\n\nIncludes all configuration details including lifecycle status."
+      },
+      "ConfigurationStatusEnum": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "FINALIZED"
+        ],
+        "title": "ConfigurationStatusEnum",
+        "description": "Configuration lifecycle status for API schemas.\n\n- DRAFT: Work in progress, mutable configuration\n- FINALIZED: Immutable snapshot, read-only"
+      },
+      "ConfigurationUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldInputState"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "title": "ConfigurationUpdate",
+        "description": "Schema for updating a Configuration (PATCH).\n\nAllows updating name or data, but not the version linkage or status.\nStatus can only be changed via the /finalize endpoint.\n\nNote: Updates are only allowed on DRAFT configurations.\nFINALIZED configurations will return HTTP 409 Conflict."
+      },
+      "EntityCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "EntityCreate",
+        "description": "Schema for creating an Entity (POST)."
+      },
+      "EntityRead": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "name",
+          "id"
+        ],
+        "title": "EntityRead",
+        "description": "Schema for reading Entity data (GET responses)."
+      },
+      "EntityUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "EntityUpdate",
+        "description": "Schema for partially updating an Entity (PATCH). All fields optional."
+      },
+      "FieldCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Name"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "data_type": {
+            "$ref": "#/components/schemas/FieldType",
+            "default": "string"
+          },
+          "is_required": {
+            "type": "boolean",
+            "title": "Is Required",
+            "default": false
+          },
+          "is_readonly": {
+            "type": "boolean",
+            "title": "Is Readonly",
+            "default": false
+          },
+          "is_hidden": {
+            "type": "boolean",
+            "title": "Is Hidden",
+            "default": false
+          },
+          "is_free_value": {
+            "type": "boolean",
+            "title": "Is Free Value",
+            "default": false
+          },
+          "default_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Value"
+          },
+          "sku_modifier_when_filled": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Modifier When Filled",
+            "description": "SKU segment to append when this free-value field has a non-null value (e.g., 'CUSTOM')"
+          },
+          "step": {
+            "type": "integer",
+            "title": "Step",
+            "default": 0
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence",
+            "default": 0
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "entity_version_id"
+        ],
+        "title": "FieldCreate",
+        "description": "Schema for creating a new Field (POST)."
+      },
+      "FieldInputState": {
+        "properties": {
+          "field_id": {
+            "type": "integer",
+            "title": "Field Id"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_id",
+          "value"
+        ],
+        "title": "FieldInputState",
+        "description": "Represents the raw value entered by the user for a specific field."
+      },
+      "FieldOutputState": {
+        "properties": {
+          "field_id": {
+            "type": "integer",
+            "title": "Field Id"
+          },
+          "field_name": {
+            "type": "string",
+            "title": "Field Name"
+          },
+          "field_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Label"
+          },
+          "current_value": {
+            "title": "Current Value"
+          },
+          "available_options": {
+            "items": {
+              "$ref": "#/components/schemas/ValueOption"
+            },
+            "type": "array",
+            "title": "Available Options"
+          },
+          "is_required": {
+            "type": "boolean",
+            "title": "Is Required"
+          },
+          "is_readonly": {
+            "type": "boolean",
+            "title": "Is Readonly"
+          },
+          "is_hidden": {
+            "type": "boolean",
+            "title": "Is Hidden"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_id",
+          "field_name",
+          "field_label",
+          "current_value",
+          "available_options",
+          "is_required",
+          "is_readonly",
+          "is_hidden"
+        ],
+        "title": "FieldOutputState",
+        "description": "The recalculated status of a field."
+      },
+      "FieldRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Name"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "data_type": {
+            "$ref": "#/components/schemas/FieldType",
+            "default": "string"
+          },
+          "is_required": {
+            "type": "boolean",
+            "title": "Is Required",
+            "default": false
+          },
+          "is_readonly": {
+            "type": "boolean",
+            "title": "Is Readonly",
+            "default": false
+          },
+          "is_hidden": {
+            "type": "boolean",
+            "title": "Is Hidden",
+            "default": false
+          },
+          "is_free_value": {
+            "type": "boolean",
+            "title": "Is Free Value",
+            "default": false
+          },
+          "default_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Value"
+          },
+          "sku_modifier_when_filled": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Modifier When Filled",
+            "description": "SKU segment to append when this free-value field has a non-null value (e.g., 'CUSTOM')"
+          },
+          "step": {
+            "type": "integer",
+            "title": "Step",
+            "default": 0
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence",
+            "default": 0
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "entity_version_id"
+        ],
+        "title": "FieldRead",
+        "description": "Schema for reading Field data (GET responses)."
+      },
+      "FieldType": {
+        "type": "string",
+        "enum": [
+          "string",
+          "number",
+          "boolean",
+          "date"
+        ],
+        "title": "FieldType",
+        "description": "Data types for Field values.\n\nDefines the expected type of user input for a field."
+      },
+      "FieldUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Required"
+          },
+          "is_readonly": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Readonly"
+          },
+          "is_hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Hidden"
+          },
+          "is_free_value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Free Value"
+          },
+          "default_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Value"
+          },
+          "sku_modifier_when_filled": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Modifier When Filled"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence"
+          },
+          "entity_version_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Version Id"
+          }
+        },
+        "type": "object",
+        "title": "FieldUpdate",
+        "description": "Schema for partially updating a Field (PATCH).\n\nNote: entity_version_id is included for consistency, but moving fields\nbetween versions is rare and should be done with caution."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "RuleConditions": {
+        "properties": {
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/RuleCriterion"
+            },
+            "type": "array",
+            "title": "Criteria"
+          }
+        },
+        "type": "object",
+        "required": [
+          "criteria"
+        ],
+        "title": "RuleConditions"
+      },
+      "RuleCreate": {
+        "properties": {
+          "conditions": {
+            "$ref": "#/components/schemas/RuleConditions"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "rule_type": {
+            "$ref": "#/components/schemas/RuleType",
+            "default": "availability"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "set_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Value"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          },
+          "target_field_id": {
+            "type": "integer",
+            "title": "Target Field Id"
+          },
+          "target_value_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Value Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conditions",
+          "entity_version_id",
+          "target_field_id"
+        ],
+        "title": "RuleCreate",
+        "description": "Payload to create a new version."
+      },
+      "RuleCriterion": {
+        "properties": {
+          "field_id": {
+            "type": "integer",
+            "title": "Field Id"
+          },
+          "operator": {
+            "type": "string",
+            "enum": [
+              "EQUALS",
+              "NOT_EQUALS",
+              "GREATER_THAN",
+              "GREATER_THAN_OR_EQUAL",
+              "LESS_THAN",
+              "LESS_THAN_OR_EQUAL",
+              "IN"
+            ],
+            "title": "Operator"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_id",
+          "operator"
+        ],
+        "title": "RuleCriterion"
+      },
+      "RuleRead": {
+        "properties": {
+          "conditions": {
+            "$ref": "#/components/schemas/RuleConditions"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "rule_type": {
+            "$ref": "#/components/schemas/RuleType",
+            "default": "availability"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "set_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Value"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          },
+          "target_field_id": {
+            "type": "integer",
+            "title": "Target Field Id"
+          },
+          "target_value_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Value Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conditions",
+          "id",
+          "entity_version_id",
+          "target_field_id"
+        ],
+        "title": "RuleRead",
+        "description": "Output schema for API responses."
+      },
+      "RuleType": {
+        "type": "string",
+        "enum": [
+          "visibility",
+          "availability",
+          "calculation",
+          "editability",
+          "mandatory",
+          "validation"
+        ],
+        "title": "RuleType",
+        "description": "Categories of business logic rules.\n\n- VISIBILITY: Controls whether a field is shown or hidden\n- AVAILABILITY: Filters available options for multi-choice fields\n- CALCULATION: Sets a field's value and makes it implicitly readonly\n- EDITABILITY: Controls whether a field is read-only or writable\n- MANDATORY: Controls whether a field is required or optional\n- VALIDATION: Validates field content against business rules"
+      },
+      "RuleUpdate": {
+        "properties": {
+          "conditions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuleConditions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "rule_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuleType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "set_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Value"
+          },
+          "target_field_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Field Id"
+          },
+          "target_value_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Value Id"
+          }
+        },
+        "type": "object",
+        "title": "RuleUpdate",
+        "description": "Schema for updating existing rule (PATCH). All fields optional.\n\nNote: entity_version_id is not included because moving rules between versions is forbidden.\nFull consistency validation (rule_type vs target_value_id) is performed at the service layer\nwhere the existing rule data is available."
+      },
+      "UserCreate": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole",
+            "default": "user"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "Password",
+            "description": "Password must be at least 8 characters."
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "UserCreate",
+        "description": "Schema for creating a new user (POST)."
+      },
+      "UserRead": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole",
+            "default": "user"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "email",
+          "id"
+        ],
+        "title": "UserRead",
+        "description": "Schema for reading user data (GET responses)."
+      },
+      "UserRole": {
+        "type": "string",
+        "enum": [
+          "admin",
+          "author",
+          "user"
+        ],
+        "title": "UserRole",
+        "description": "Role-based access control levels.\n\n- ADMIN: Full system access (all permissions including user management)\n- AUTHOR: Product manager (manage entities, versions, rules)\n- USER: Regular user (use configurator and manage own configurations)"
+      },
+      "UserUpdate": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "UserUpdate",
+        "description": "Schema for updating user (PATCH). All fields optional."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "ValueCreate": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 255,
+            "title": "Value"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          },
+          "sku_modifier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Modifier"
+          },
+          "field_id": {
+            "type": "integer",
+            "title": "Field Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "field_id"
+        ],
+        "title": "ValueCreate",
+        "description": "Schema to create a Value (POST)."
+      },
+      "ValueOption": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "value",
+          "is_default"
+        ],
+        "title": "ValueOption",
+        "description": "An available option."
+      },
+      "ValueRead": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 255,
+            "title": "Value"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          },
+          "sku_modifier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Modifier"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "field_id": {
+            "type": "integer",
+            "title": "Field Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "id",
+          "field_id"
+        ],
+        "title": "ValueRead",
+        "description": "Schema to read a Value (GET)."
+      },
+      "ValueUpdate": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          },
+          "field_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Id"
+          },
+          "sku_modifier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Modifier"
+          }
+        },
+        "type": "object",
+        "title": "ValueUpdate",
+        "description": "Schema for updating a Value (PATCH). All fields optional."
+      },
+      "VersionClone": {
+        "properties": {
+          "changelog": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changelog"
+          }
+        },
+        "type": "object",
+        "title": "VersionClone",
+        "description": "Schema for clone operation.\nThe entity_id is derived from the source Version."
+      },
+      "VersionCreate": {
+        "properties": {
+          "changelog": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changelog"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VersionStatus",
+            "default": "DRAFT"
+          },
+          "sku_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Base"
+          },
+          "sku_delimiter": {
+            "type": "string",
+            "title": "Sku Delimiter",
+            "default": "-"
+          },
+          "entity_id": {
+            "type": "integer",
+            "title": "Entity Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_id"
+        ],
+        "title": "VersionCreate",
+        "description": "Schema for creating a new Version (POST).\n\nNote: version_number is auto-calculated by the backend.\nFor cloning, use the dedicated /clone endpoint with VersionClone schema."
+      },
+      "VersionRead": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "changelog": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changelog"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VersionStatus",
+            "default": "DRAFT"
+          },
+          "sku_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Base"
+          },
+          "sku_delimiter": {
+            "type": "string",
+            "title": "Sku Delimiter",
+            "default": "-"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "entity_id": {
+            "type": "integer",
+            "title": "Entity Id"
+          },
+          "version_number": {
+            "type": "integer",
+            "title": "Version Number"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "id",
+          "entity_id",
+          "version_number"
+        ],
+        "title": "VersionRead",
+        "description": "Schema for reading Version data (GET responses)."
+      },
+      "VersionStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "PUBLISHED",
+          "ARCHIVED"
+        ],
+        "title": "VersionStatus",
+        "description": "Lifecycle status for EntityVersion.\n\n- DRAFT: Work in progress, editable by ADMIN/AUTHOR\n- PUBLISHED: Active version, read-only, used by rule engine\n- ARCHIVED: Historical version, read-only, preserved for audit trail"
+      },
+      "VersionUpdate": {
+        "properties": {
+          "changelog": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changelog"
+          },
+          "sku_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Base"
+          },
+          "sku_delimiter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Delimiter"
+          }
+        },
+        "type": "object",
+        "title": "VersionUpdate",
+        "description": "Schema for updating version metadata (PATCH)."
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "auth/token"
+          }
+        }
+      }
+    }
+  }
+}
