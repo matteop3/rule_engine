@@ -188,9 +188,10 @@ This creates:
 curl -X POST http://localhost:8000/auth/token \
   -d "username=user@demo.com&password=password123"
 
-# Calculate state (stateless, no auth required)
+# Calculate state (stateless, auth required)
 curl -X POST http://localhost:8000/engine/calculate \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
   -d '{"entity_id": 1, "current_state": [
     {"field_id": 1, "value": "John Doe"},
     {"field_id": 2, "value": "1990-01-01"},
