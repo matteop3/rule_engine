@@ -508,6 +508,7 @@ This project focuses on core rule engine functionality. The following features a
 | GraphQL | Not implemented | REST is sufficient for this domain. GraphQL adds complexity without clear benefit for CPQ use case. |
 | Cross-field expressions | Not implemented | See [ADR: Rule Expressions](docs/ADR_RULE_EXPRESSIONS.md). Single-field conditions keep rules simple and declarative. |
 | Inference tree evaluation | Not implemented | See [ADR: Inference Tree](docs/ADR_INFERENCE_TREE.md). Waterfall model is simpler and sufficient for typical CPQ scenarios. |
+| Pagination metadata | Not implemented | List endpoints return plain arrays with a 100-record limit and `skip`/`limit` parameters, but no total count or `has_more` indicator. For fields and values this is adequate (CPQ domains typically have 10-30 fields and 5-15 values per field), while for entities, versions, configurations, and users the client must paginate blindly. If needed, pagination metadata could be added via HTTP headers (`X-Total-Count`, `X-Has-More`) to avoid breaking the response format. |
 
 ---
 

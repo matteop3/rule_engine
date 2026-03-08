@@ -681,6 +681,7 @@ def seed_db():
         config_finalized = Configuration(
             entity_version_id=version.id,
             user_id=user_demo.id,
+            created_by_id=user_demo.id,
             name="Retiree Car Quote — Complete",
             status=ConfigurationStatus.FINALIZED.value,
             is_complete=True,
@@ -704,6 +705,7 @@ def seed_db():
         config_draft = Configuration(
             entity_version_id=version.id,
             user_id=user_demo.id,
+            created_by_id=user_demo.id,
             name="Truck Quote — In Progress",
             status=ConfigurationStatus.DRAFT.value,
             is_complete=False,
@@ -723,6 +725,7 @@ def seed_db():
         config_draft_moto = Configuration(
             entity_version_id=version.id,
             user_id=user_demo.id,
+            created_by_id=user_demo.id,
             name="Student Motorcycle Quote",
             status=ConfigurationStatus.DRAFT.value,
             is_complete=False,
