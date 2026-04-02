@@ -45,6 +45,7 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+    LOG_JSON: bool = True
 
     # Caching
     CACHE_TTL_SECONDS: int = 300

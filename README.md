@@ -75,6 +75,11 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 - **Observable**: Hit/miss counters available via `cache.stats()` for monitoring effectiveness
 - **Auto-eviction**: TTL-based expiry + max size limit prevent unbounded memory growth
 
+### Observability
+- **Structured JSON logging**: All log output (application + uvicorn) in machine-parseable JSON
+- **Request correlation**: Every request gets a unique `X-Request-ID` header, propagated through all log entries
+- **Configurable format**: JSON (production) or human-readable (development) via `LOG_JSON` setting
+
 ### Example
 
 ```bash
@@ -129,6 +134,7 @@ POST /engine/calculate
 | Auth | python-jose (JWT) + bcrypt |
 | Rate Limiting | slowapi |
 | Testing | pytest + testcontainers |
+| Observability | python-json-logger + correlation IDs |
 | Infrastructure | Docker + Docker Compose |
 
 ---
@@ -237,6 +243,10 @@ ENABLE_TOKEN_ROTATION=false
 # Rate Limiting
 RATE_LIMIT_LOGIN=5/15minutes
 RATE_LIMIT_REFRESH=10/5minutes
+
+# Logging
+LOG_LEVEL=INFO
+LOG_JSON=true            # Set to false for human-readable logs in development
 
 # Caching
 CACHE_TTL_SECONDS=300    # TTL for cached PUBLISHED version data
@@ -432,6 +442,11 @@ is cached in-process as frozen dataclasses, decoupled from SQLAlchemy sessions. 
 PUBLISHED versions are cached. The cache auto-invalidates on version archival and provides
 hit/miss counters for observability.
 
+**Structured logging with request correlation**: All application and uvicorn logs share a unified
+JSON format (configurable to plain-text for development). Every request is tagged with a unique
+`X-Request-ID` (auto-generated UUID4 or client-provided), injected into log records via
+`contextvars` and echoed in the response headers for end-to-end traceability.
+
 ---
 
 ## API Overview
@@ -540,6 +555,8 @@ rule_engine/
 │   │   ├── services.py        # Service factories + transaction helper
 │   │   ├── fetchers.py        # Data retrieval helpers
 │   │   └── validators.py      # Business rule validation helpers
+│   ├── middleware/
+│   │   └── request_id.py     # Request correlation ID middleware
 │   ├── exceptions.py        # Custom exceptions
 │   ├── models/
 │   │   └── domain.py        # SQLAlchemy ORM models
@@ -552,6 +569,7 @@ rule_engine/
 │   │   └── users.py         # User management
 │   └── core/
 │       ├── cache.py         # In-memory TTL cache + cached data models
+│       ├── logging.py       # Structured logging setup
 │       ├── config.py        # Environment configuration
 │       ├── security.py      # JWT, password hashing
 │       └── rate_limit.py    # Rate limiting setup

@@ -17,9 +17,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
+from app.core.config import settings
+from app.core.logging import setup_logging
 from app.core.rate_limit import limiter
 from app.database import Base, get_db
 from app.main import app
+
+# Use plain-text logs during tests to avoid JSON noise in pytest output
+setup_logging(level=settings.LOG_LEVEL, json_output=False)
 
 # Import all fixtures from subdirectories via pytest_plugins
 # This makes all fixtures available automatically in all test files

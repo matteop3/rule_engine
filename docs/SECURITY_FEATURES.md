@@ -296,6 +296,41 @@ WARNING: Rate limit exceeded for 192.168.1.100 on endpoint /auth/token
 
 ---
 
+## 🔍 Request Tracing (X-Request-ID)
+
+### Overview
+
+Every HTTP request is assigned a unique correlation ID (`X-Request-ID`) via middleware. This ID is:
+
+- **Generated automatically** as a UUID4, or **propagated** from a client-supplied `X-Request-ID` header
+- **Injected into every log record** via a `contextvars`-based logging filter
+- **Echoed back** in the response headers for client-side correlation
+
+### Security Relevance
+
+Request correlation IDs are essential for:
+
+- **Incident investigation**: Trace all log entries related to a specific request
+- **Audit trail correlation**: Link application events to specific API calls
+- **Abuse detection**: Correlate rate-limited or suspicious requests across log aggregation systems
+- **Support workflows**: Users can report the `X-Request-ID` from a failed response for fast log lookup
+
+### Example
+
+```bash
+# Request
+curl -v http://localhost:8000/entities
+
+# Response header
+< X-Request-ID: 3f2504e0-4f89-11d3-9a0c-0305e82c3301
+
+# Corresponding log line (JSON mode)
+{"asctime": "2025-01-15T10:30:00", "levelname": "INFO", "name": "app.routers.entities",
+ "message": "Listing entities", "request_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301"}
+```
+
+---
+
 ## 🧪 Testing
 
 ### Manual Testing

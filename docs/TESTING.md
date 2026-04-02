@@ -20,6 +20,7 @@ tests/
 │   ├── __init__.py
 │   ├── test_auth.py                        # Authentication endpoints (login, token)
 │   ├── test_auth_refresh.py               # Token refresh and rate limiting
+│   ├── test_request_id.py                  # Request correlation ID middleware + logging filter
 │   ├── test_configurations_calculate.py   # Configuration calculate/engine integration
 │   ├── test_configurations_clone.py       # Configuration clone operation tests
 │   ├── test_configurations_crud.py        # Configuration CRUD operations
@@ -103,6 +104,7 @@ tests/
 - `db_session`: Clean in-memory database for each test
 - `client`: FastAPI TestClient with database override
 - `clear_engine_cache` (autouse): Clears the RuleEngineService in-memory cache after each test to prevent cross-test pollution. Global and autouse because API tests that call `calculate_state` indirectly also need a clean cache.
+- **Logging configuration**: `setup_logging(json_output=False)` is called at module level in the root `conftest.py` to use plain-text logs during tests, avoiding JSON noise in pytest output and preventing interference with pytest's log capture.
 
 ### Auth Fixtures (fixtures/auth.py)
 - `admin_user`, `admin_headers`: Admin role user and auth headers
@@ -181,12 +183,12 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
-| API           | 21    | ~290          | Endpoint CRUD and lifecycle ops  |
+| API           | 22    | ~297          | Endpoint CRUD, lifecycle, middleware |
 | Engine        | 8     | ~89           | Business logic, rules, SKU, cache |
 | Integration   | 12    | ~18           | End-to-end workflows             |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
 | Stress        | 2     | ~15           | Concurrency and edge cases       |
-| **Total**     | **44**| **~427**      |                                  |
+| **Total**     | **45**| **~434**      |                                  |
 
 ## Test Coverage
 
@@ -200,6 +202,7 @@ The test suite provides comprehensive coverage across all application layers:
 - **Fields & Values**: CRUD operations, data type validation, constraints, `sku_modifier` attribute
 - **Rules**: CRUD, type-specific logic (including CALCULATION `set_value` validation), edge cases, complex scenarios
 - **Users**: User management, role assignment, access control
+- **Middleware**: Request correlation ID generation, propagation, and logging filter injection
 
 #### DRAFT-only Policy Coverage
 The test suite comprehensively validates that Fields, Values, and Rules can only be modified in DRAFT versions:

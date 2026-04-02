@@ -1,11 +1,12 @@
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
+from app.core.logging import setup_logging
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
+from app.middleware.request_id import RequestIDMiddleware
 from app.routers import auth, configurations, entities, fields, rules, users, values, versions
 from app.routers import engine as engine_router
 
@@ -25,7 +26,7 @@ async def lifespan(app: FastAPI):
     # Database migrations are handled by Alembic via docker-entrypoint.sh
     # No create_all() needed - schema is managed through version-controlled migrations
 
-    logging.basicConfig(level=settings.LOG_LEVEL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    setup_logging(level=settings.LOG_LEVEL, json_output=settings.LOG_JSON)
 
     yield  # App is running here
 
@@ -39,6 +40,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,  # Register lifespan handler
 )
+
+# Middleware (order matters: outermost middleware runs first)
+app.add_middleware(RequestIDMiddleware)
 
 # Add rate limiting
 app.state.limiter = limiter
