@@ -6,6 +6,8 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.cache import CachedField, CachedRule, CachedValue, TTLCache, VersionData
+from app.core.config import settings
 from app.models.domain import Entity, EntityVersion, Field, FieldType, Rule, RuleType, Value, VersionStatus
 from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOutputState, ValueOption
 
@@ -18,6 +20,12 @@ class RuleEngineService:
 
     Note: This service does NOT handle database commits.
     """
+
+    def __init__(self):
+        self._cache: TTLCache[VersionData] = TTLCache(
+            ttl_seconds=settings.CACHE_TTL_SECONDS,
+            max_size=settings.CACHE_MAX_SIZE,
+        )
 
     def calculate_state(self, db: Session, request: CalculationRequest) -> CalculationResponse:
         """
@@ -32,8 +40,10 @@ class RuleEngineService:
         target_version = self._resolve_target_version(db, request)
         logger.debug(f"Resolved target version: {target_version.id}")
 
-        # Load all data for the version (with optimized queries)
-        fields_db, all_values, all_rules = self._load_version_data(db, target_version.id)
+        # Load all data for the version (with optimized queries + caching for PUBLISHED)
+        fields_db, all_values, all_rules = self._load_version_data(
+            db, target_version.id, version_status=target_version.status
+        )
         logger.debug(f"Loaded version data: {len(fields_db)} fields, {len(all_values)} values, {len(all_rules)} rules")
 
         # Build indexing structures
@@ -133,18 +143,25 @@ class RuleEngineService:
             logger.error(f"Database error while resolving version for entity {request.entity_id}: {str(e)}")
             raise
 
-    def _load_version_data(self, db: Session, version_id: int) -> tuple[list[Field], list[Value], list[Rule]]:
+    def _load_version_data(
+        self, db: Session, version_id: int, version_status: str
+    ) -> tuple[list[CachedField], list[CachedValue], list[CachedRule]]:
         """
         Loads all Fields, Values, and Rules for a given version.
 
-        Design note: Loads everything in memory per-request. This is intentional -
-        the data volume per version is small (typically <1000 rules) and the
-        simplicity outweighs caching complexity. If this becomes a bottleneck,
-        consider Redis caching with version-based invalidation.
+        PUBLISHED versions are cached as frozen dataclasses (session-independent).
+        DRAFT versions always hit the database (mutable data).
 
         Implementation: Batch loads with IN queries to avoid N+1 problem,
         then builds in-memory indexes for O(1) lookups during rule evaluation.
         """
+        cache_key = str(version_id)
+
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            logger.debug(f"Cache hit for version {version_id}")
+            return cached.fields, cached.values, cached.rules
+
         try:
             # Load fields ordered by execution sequence
             fields_db = (
@@ -154,18 +171,69 @@ class RuleEngineService:
             field_ids = [f.id for f in fields_db]
 
             # Batch load all values
-            all_values = db.query(Value).filter(Value.field_id.in_(field_ids)).all() if field_ids else []
+            all_values_db = db.query(Value).filter(Value.field_id.in_(field_ids)).all() if field_ids else []
 
             # Batch load all rules
-            all_rules = db.query(Rule).filter(Rule.entity_version_id == version_id).all()
+            all_rules_db = db.query(Rule).filter(Rule.entity_version_id == version_id).all()
 
-            return fields_db, all_values, all_rules
+            # Convert ORM instances to frozen dataclasses
+            fields = [
+                CachedField(
+                    id=f.id,
+                    entity_version_id=f.entity_version_id,
+                    name=f.name,
+                    label=f.label,
+                    data_type=f.data_type,
+                    is_required=f.is_required,
+                    is_readonly=f.is_readonly,
+                    is_hidden=f.is_hidden,
+                    is_free_value=f.is_free_value,
+                    default_value=f.default_value,
+                    sku_modifier_when_filled=f.sku_modifier_when_filled,
+                    step=f.step,
+                    sequence=f.sequence,
+                )
+                for f in fields_db
+            ]
+            values = [
+                CachedValue(
+                    id=v.id,
+                    field_id=v.field_id,
+                    value=v.value,
+                    label=v.label,
+                    is_default=v.is_default,
+                    sku_modifier=v.sku_modifier,
+                )
+                for v in all_values_db
+            ]
+            rules = [
+                CachedRule(
+                    id=r.id,
+                    entity_version_id=r.entity_version_id,
+                    target_field_id=r.target_field_id,
+                    target_value_id=r.target_value_id,
+                    rule_type=r.rule_type,
+                    conditions=r.conditions,
+                    error_message=r.error_message,
+                    set_value=r.set_value,
+                )
+                for r in all_rules_db
+            ]
+
+            version_data = VersionData(fields=fields, values=values, rules=rules)
+
+            # Only cache PUBLISHED versions (immutable)
+            if version_status == VersionStatus.PUBLISHED.value:
+                self._cache.set(cache_key, version_data)
+                logger.debug(f"Cached version {version_id} (PUBLISHED)")
+
+            return version_data.fields, version_data.values, version_data.rules
 
         except SQLAlchemyError as e:
             logger.error(f"Database error while loading version data for version {version_id}: {str(e)}")
             raise
 
-    def _build_type_map(self, fields: list[Field]) -> dict[int, str]:
+    def _build_type_map(self, fields: list[CachedField]) -> dict[int, str]:
         """Creates a mapping of field_id -> data_type string."""
         return {f.id: f.data_type for f in fields}
 
@@ -189,11 +257,11 @@ class RuleEngineService:
                 index[key].append(item)
         return index
 
-    def _build_values_index(self, values: list[Value]) -> dict[int, list[Value]]:
+    def _build_values_index(self, values: list[CachedValue]) -> dict[int, list[CachedValue]]:
         """Creates a mapping of field_id -> list of Value objects."""
         return self._build_index(values, lambda v: v.field_id)
 
-    def _build_rules_index(self, rules: list[Rule]) -> dict[int, list[Rule]]:
+    def _build_rules_index(self, rules: list[CachedRule]) -> dict[int, list[CachedRule]]:
         """
         Creates a mapping of target_value_id -> list of Rule objects.
         Only indexes rules with a target_value_id (availability rules).
@@ -223,10 +291,10 @@ class RuleEngineService:
 
     def _process_field(
         self,
-        field: Field,
-        all_rules: list[Rule],
-        values_by_field: dict[int, list[Value]],
-        rules_by_target_value: dict[int, list[Rule]],
+        field: CachedField,
+        all_rules: list[CachedRule],
+        values_by_field: dict[int, list[CachedValue]],
+        rules_by_target_value: dict[int, list[CachedRule]],
         user_input_map: dict[int, Any],
         running_context: dict[int, Any],
         type_map: dict[int, str],
@@ -364,14 +432,16 @@ class RuleEngineService:
     # RULE EVALUATION LAYERS (DRY Pattern)
     # ============================================================
 
-    def _get_rules_by_type(self, field_id: int, rule_type: RuleType, all_rules: list[Rule]) -> list[Rule]:
+    def _get_rules_by_type(self, field_id: int, rule_type: RuleType, all_rules: list[CachedRule]) -> list[CachedRule]:
         """
         Helper to filter rules by field and type.
         Eliminates repetitive list comprehensions.
         """
         return [r for r in all_rules if r.target_field_id == field_id and r.rule_type == rule_type]
 
-    def _any_rule_passes(self, rules: list[Rule], running_context: dict[int, Any], type_map: dict[int, str]) -> bool:
+    def _any_rule_passes(
+        self, rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
+    ) -> bool:
         """
         DRY helper: checks if at least one rule passes (OR logic).
 
@@ -384,8 +454,8 @@ class RuleEngineService:
 
     def _evaluate_boolean_layer(
         self,
-        field: Field,
-        all_rules: list[Rule],
+        field: CachedField,
+        all_rules: list[CachedRule],
         running_context: dict[int, Any],
         type_map: dict[int, str],
         rule_type: RuleType,
@@ -418,7 +488,7 @@ class RuleEngineService:
         return not value_when_rule_passes
 
     def _evaluate_visibility(
-        self, field: Field, all_rules: list[Rule], running_context: dict[int, Any], type_map: dict[int, str]
+        self, field: CachedField, all_rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
     ) -> bool:
         """
         Layer 1: Determines if field is visible.
@@ -435,7 +505,7 @@ class RuleEngineService:
         )
 
     def _evaluate_calculation(
-        self, field: Field, all_rules: list[Rule], running_context: dict[int, Any], type_map: dict[int, str]
+        self, field: CachedField, all_rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
     ) -> str | None:
         """
         Layer 2: Determines if a field's value is system-determined.
@@ -449,7 +519,7 @@ class RuleEngineService:
         return None
 
     def _evaluate_editability(
-        self, field: Field, all_rules: list[Rule], running_context: dict[int, Any], type_map: dict[int, str]
+        self, field: CachedField, all_rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
     ) -> bool:
         """
         Layer 2: Determines if field is readonly.
@@ -466,7 +536,7 @@ class RuleEngineService:
         )
 
     def _evaluate_mandatory(
-        self, field: Field, all_rules: list[Rule], running_context: dict[int, Any], type_map: dict[int, str]
+        self, field: CachedField, all_rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
     ) -> bool:
         """
         Layer 3: Determines if field is required.
@@ -486,9 +556,9 @@ class RuleEngineService:
 
     def _evaluate_availability(
         self,
-        field: Field,
-        values_by_field: dict[int, list[Value]],
-        rules_by_target_value: dict[int, list[Rule]],
+        field: CachedField,
+        values_by_field: dict[int, list[CachedValue]],
+        rules_by_target_value: dict[int, list[CachedRule]],
         user_input_map: dict[int, Any],
         running_context: dict[int, Any],
         type_map: dict[int, str],
@@ -514,7 +584,7 @@ class RuleEngineService:
         )
 
     def _handle_free_value_field(
-        self, field: Field, user_input_map: dict[int, Any], is_required: bool
+        self, field: CachedField, user_input_map: dict[int, Any], is_required: bool
     ) -> tuple[Any, list[ValueOption]]:
         """Handles fields with free-text input."""
         raw_input = user_input_map.get(field.id)
@@ -528,9 +598,9 @@ class RuleEngineService:
 
     def _handle_restricted_value_field(
         self,
-        field: Field,
-        values_by_field: dict[int, list[Value]],
-        rules_by_target_value: dict[int, list[Rule]],
+        field: CachedField,
+        values_by_field: dict[int, list[CachedValue]],
+        rules_by_target_value: dict[int, list[CachedRule]],
         user_input_map: dict[int, Any],
         running_context: dict[int, Any],
         type_map: dict[int, str],
@@ -539,7 +609,7 @@ class RuleEngineService:
         """Handles fields with predefined value options."""
 
         possible_values = values_by_field.get(field.id, [])
-        available_values: list[Value] = []
+        available_values: list[CachedValue] = []
 
         # Filter available values based on rules
         for val_obj in possible_values:
@@ -567,8 +637,8 @@ class RuleEngineService:
 
     def _is_value_available(
         self,
-        value: Value,
-        rules_by_target_value: dict[int, list[Rule]],
+        value: CachedValue,
+        rules_by_target_value: dict[int, list[CachedRule]],
         running_context: dict[int, Any],
         type_map: dict[int, str],
     ) -> bool:
@@ -588,7 +658,7 @@ class RuleEngineService:
 
         return False  # Value not available
 
-    def _auto_select_value(self, available_values: list[Value]) -> Any | None:
+    def _auto_select_value(self, available_values: list[CachedValue]) -> Any | None:
         """
         Auto-selects a value for required fields.
         Priority: single option > default value > None
@@ -601,8 +671,8 @@ class RuleEngineService:
 
     def _evaluate_validation(
         self,
-        field: Field,
-        all_rules: list[Rule],
+        field: CachedField,
+        all_rules: list[CachedRule],
         final_value: Any,
         running_context: dict[int, Any],
         type_map: dict[int, str],
@@ -756,7 +826,7 @@ class RuleEngineService:
 
         def parse_date(val: Any) -> date:
             """Helper to parse date values."""
-            if isinstance(val, (date, datetime)):
+            if isinstance(val, date | datetime):
                 return val if isinstance(val, date) else val.date()
             return date.fromisoformat(str(val).strip())
 
@@ -774,9 +844,9 @@ class RuleEngineService:
     def _generate_sku(
         self,
         version: EntityVersion,
-        fields: list[Field],
+        fields: list[CachedField],
         field_states: dict[int, FieldOutputState],
-        values_by_field: dict[int, list[Value]],
+        values_by_field: dict[int, list[CachedValue]],
     ) -> str | None:
         """
         Generates a Smart SKU by concatenating base + modifiers from selected values.

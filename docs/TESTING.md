@@ -43,6 +43,7 @@ tests/
 ├── engine/                      # Rule engine business logic tests
 │   ├── __init__.py
 │   ├── test_api.py              # Engine calculation endpoint
+│   ├── test_cache.py            # TTLCache unit tests + engine caching integration tests
 │   ├── test_calculation.py      # CALCULATION rule type (forced values, waterfall interactions, SKU, completeness)
 │   ├── test_dropdowns.py        # Cascading dropdown logic
 │   ├── test_logic.py            # Core engine logic (validation, mandatory, visibility, availability)
@@ -101,6 +102,7 @@ tests/
 ### Core Fixtures (conftest.py)
 - `db_session`: Clean in-memory database for each test
 - `client`: FastAPI TestClient with database override
+- `clear_engine_cache` (autouse): Clears the RuleEngineService in-memory cache after each test to prevent cross-test pollution. Global and autouse because API tests that call `calculate_state` indirectly also need a clean cache.
 
 ### Auth Fixtures (fixtures/auth.py)
 - `admin_user`, `admin_headers`: Admin role user and auth headers
@@ -180,11 +182,11 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
 | API           | 21    | ~290          | Endpoint CRUD and lifecycle ops  |
-| Engine        | 7     | ~75           | Business logic, rules, SKU gen   |
+| Engine        | 8     | ~89           | Business logic, rules, SKU, cache |
 | Integration   | 12    | ~18           | End-to-end workflows             |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
 | Stress        | 2     | ~15           | Concurrency and edge cases       |
-| **Total**     | **43**| **~413**      |                                  |
+| **Total**     | **44**| **~427**      |                                  |
 
 ## Test Coverage
 
@@ -275,8 +277,9 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **FINALIZED → Soft Deleted**: ADMIN only, USER denied (HTTP 403)
 - **Any → DRAFT**: CLONE always creates new DRAFT
 
-### Rule Engine (~48 tests)
+### Rule Engine (~62 tests)
 - **Core Logic**: Field validation, mandatory checks, visibility rules, availability logic
+- **Caching**: TTLCache unit tests (set/get, TTL expiry, eviction, invalidation, stats) + engine integration tests (PUBLISHED cached, DRAFT not cached, invalidation on publish, session independence)
 - **CALCULATION Rules**: Forced values, waterfall interactions, multiple rules, running context, SKU, completeness
 - **Operators**: All comparison operators (EQUALS, NOT_EQUALS, GREATER_THAN, GREATER_THAN_OR_EQUAL, LESS_THAN, LESS_THAN_OR_EQUAL, IN)
 - **Dropdown Logic**: Cascading dropdowns, dynamic value filtering

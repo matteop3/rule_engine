@@ -134,6 +134,15 @@ def client(db_session, test_engine):
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def clear_engine_cache():
+    """Prevent cross-test cache pollution."""
+    yield
+    from app.dependencies.services import get_rule_engine_service
+
+    get_rule_engine_service()._cache.clear()
+
+
 # ============================================================
 # FIXTURE DOCUMENTATION
 # ============================================================

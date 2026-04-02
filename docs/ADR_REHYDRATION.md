@@ -37,6 +37,7 @@ Configurations store **raw inputs only** (as a JSON array in the `data` column).
 
 **Why that's acceptable:**
 - The data volume per EntityVersion is small (typically dozens of fields, hundreds of rules at most) — recalculation is fast
+- PUBLISHED version data (fields, values, rules) is cached in-memory as frozen dataclasses, so repeated calculations for the same version avoid redundant DB queries
 - Published versions are immutable, so production configurations always produce consistent results
 - The `is_complete` flag is cached on the configuration record to avoid recalculation for list views
 

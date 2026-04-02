@@ -88,6 +88,12 @@ class VersioningService:
 
         if current_published:
             current_published.status = VersionStatus.ARCHIVED
+
+            # Invalidate cached data for the archived version
+            from app.dependencies.services import get_rule_engine_service
+
+            get_rule_engine_service()._cache.invalidate(str(current_published.id))
+
             logger.info(
                 "Previous version archived",
                 extra={"archived_version_id": current_published.id, "version_number": current_published.version_number},

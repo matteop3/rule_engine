@@ -69,6 +69,12 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 - **Visibility-aware**: Hidden fields excluded from SKU
 - **Free-value support**: Append modifier when text field is filled
 
+### Performance
+- **Version data caching**: PUBLISHED EntityVersion data cached in-memory with configurable TTL
+- **Safe by design**: Only immutable PUBLISHED versions are cached; DRAFT versions always hit the database
+- **Observable**: Hit/miss counters available via `cache.stats()` for monitoring effectiveness
+- **Auto-eviction**: TTL-based expiry + max size limit prevent unbounded memory growth
+
 ### Example
 
 ```bash
@@ -231,6 +237,10 @@ ENABLE_TOKEN_ROTATION=false
 # Rate Limiting
 RATE_LIMIT_LOGIN=5/15minutes
 RATE_LIMIT_REFRESH=10/5minutes
+
+# Caching
+CACHE_TTL_SECONDS=300    # TTL for cached PUBLISHED version data
+CACHE_MAX_SIZE=100       # Max cached versions in memory
 ```
 
 ---
@@ -417,6 +427,11 @@ flowchart TD
 
 **UUID for configurations**: Configurations use UUID primary keys for secure external sharing (URLs that can't be guessed).
 
+**In-memory caching for PUBLISHED versions**: PUBLISHED EntityVersion data (fields, values, rules)
+is cached in-process as frozen dataclasses, decoupled from SQLAlchemy sessions. Only immutable
+PUBLISHED versions are cached. The cache auto-invalidates on version archival and provides
+hit/miss counters for observability.
+
 ---
 
 ## API Overview
@@ -502,7 +517,7 @@ This project focuses on core rule engine functionality. The following features a
 
 | Feature | Status | Rationale |
 |---------|--------|-----------|
-| Redis caching | Not implemented | Premature optimization; PostgreSQL handles expected scale. Easy to add if needed. |
+| Redis caching | In-memory TTL cache | PUBLISHED version data cached in-process. Redis not needed at current scale; upgrade path documented if multi-instance is needed. |
 | API versioning (v1/v2) | Not implemented | Single version appropriate for greenfield project. Versioning adds overhead best introduced when breaking changes are needed. |
 | Internationalization | Deferred | See [ADR: i18n](docs/ADR_I18N.md). JSONB approach documented for future implementation. |
 | GraphQL | Not implemented | REST is sufficient for this domain. GraphQL adds complexity without clear benefit for CPQ use case. |
@@ -519,7 +534,12 @@ rule_engine/
 ├── app/
 │   ├── main.py              # FastAPI application entry point
 │   ├── database.py          # SQLAlchemy session management
-│   ├── dependencies.py      # Dependency injection
+│   ├── dependencies/          # Dependency injection (package)
+│   │   ├── __init__.py        # Re-exports for backward compatibility
+│   │   ├── auth.py            # Authentication & authorization deps
+│   │   ├── services.py        # Service factories + transaction helper
+│   │   ├── fetchers.py        # Data retrieval helpers
+│   │   └── validators.py      # Business rule validation helpers
 │   ├── exceptions.py        # Custom exceptions
 │   ├── models/
 │   │   └── domain.py        # SQLAlchemy ORM models
@@ -531,6 +551,7 @@ rule_engine/
 │   │   ├── auth.py          # Authentication logic
 │   │   └── users.py         # User management
 │   └── core/
+│       ├── cache.py         # In-memory TTL cache + cached data models
 │       ├── config.py        # Environment configuration
 │       ├── security.py      # JWT, password hashing
 │       └── rate_limit.py    # Rate limiting setup

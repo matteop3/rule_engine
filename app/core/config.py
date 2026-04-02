@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = "INFO"
 
+    # Caching
+    CACHE_TTL_SECONDS: int = 300
+    CACHE_MAX_SIZE: int = 100
+
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_LOGIN_ATTEMPTS: int = 5
