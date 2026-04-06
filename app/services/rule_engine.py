@@ -1106,7 +1106,7 @@ class RuleEngineService:
         bom_items: list[CachedBOMItem],
         included_set: set[int],
         resolved_quantities: dict[int, Decimal],
-    ) -> tuple[list[CachedBOMItem], dict[int, Decimal]]:
+    ) -> list[CachedBOMItem]:
         """
         Aggregates included BOM items by (part_number, parent_bom_item_id, bom_type).
 
@@ -1133,7 +1133,7 @@ class RuleEngineService:
 
         for group in groups.values():
             representative = group[0]
-            total_quantity = sum(resolved_quantities[item.id] for item in group)
+            total_quantity = Decimal(sum(resolved_quantities[item.id] for item in group))
 
             deduplicated.append(representative)
             new_included.add(representative.id)

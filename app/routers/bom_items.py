@@ -124,7 +124,7 @@ def _validate_parent_bom_item(db: Session, parent_id: int, version_id: int, excl
 
     # Circular reference check: walk up the parent chain
     if exclude_id is not None:
-        current = parent
+        current: BOMItem | None = parent
         while current is not None:
             if current.id == exclude_id:
                 raise HTTPException(

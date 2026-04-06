@@ -4,10 +4,6 @@ import threading
 import time
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Generic, TypeVar
-
-T = TypeVar("T")
-
 
 # ============================================================
 # CACHED DATA MODELS (frozen dataclasses, session-independent)
@@ -104,7 +100,7 @@ class VersionData:
 # ============================================================
 
 
-class TTLCache(Generic[T]):
+class TTLCache[T]:
     """Thread-safe in-memory cache with TTL and max size."""
 
     def __init__(self, ttl_seconds: int = 300, max_size: int = 100):
