@@ -12,12 +12,16 @@ from app.dependencies.auth import (
     require_role,
 )
 from app.dependencies.fetchers import (
+    fetch_bom_item_by_id,
+    fetch_bom_item_rule_by_id,
     fetch_entity_by_id,
     fetch_field_by_id,
     fetch_rule_by_id,
     fetch_user_by_id,
     fetch_value_by_id,
     fetch_version_by_id,
+    get_bom_item_or_404,
+    get_bom_item_rule_or_404,
     get_entity_or_404,
     get_field_or_404,
     get_rule_or_404,
@@ -33,6 +37,8 @@ from app.dependencies.services import (
     get_versioning_service,
 )
 from app.dependencies.validators import (
+    get_editable_bom_item,
+    get_editable_bom_item_rule,
     get_editable_field,
     get_editable_rule,
     get_editable_value,
@@ -62,12 +68,16 @@ __all__ = [
     "fetch_rule_by_id",
     "fetch_value_by_id",
     "fetch_version_by_id",
+    "fetch_bom_item_by_id",
+    "fetch_bom_item_rule_by_id",
     "get_user_or_404",
     "get_entity_or_404",
     "get_field_or_404",
     "get_rule_or_404",
     "get_value_or_404",
     "get_version_or_404",
+    "get_bom_item_or_404",
+    "get_bom_item_rule_or_404",
     # validators
     "validate_field_belongs_to_version",
     "validate_value_belongs_to_field",
@@ -77,4 +87,6 @@ __all__ = [
     "get_editable_field",
     "get_editable_rule",
     "get_editable_value",
+    "get_editable_bom_item",
+    "get_editable_bom_item_rule",
 ]

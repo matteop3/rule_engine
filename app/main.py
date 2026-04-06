@@ -7,7 +7,18 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
-from app.routers import auth, configurations, entities, fields, rules, users, values, versions
+from app.routers import (
+    auth,
+    bom_item_rules,
+    bom_items,
+    configurations,
+    entities,
+    fields,
+    rules,
+    users,
+    values,
+    versions,
+)
 from app.routers import engine as engine_router
 
 
@@ -56,6 +67,8 @@ app.include_router(versions.router)
 app.include_router(fields.router)
 app.include_router(values.router)
 app.include_router(rules.router)
+app.include_router(bom_items.router)
+app.include_router(bom_item_rules.router)
 app.include_router(engine_router.router)
 app.include_router(configurations.router)
 

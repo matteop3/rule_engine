@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, Path, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.domain import Entity, EntityVersion, Field, Rule, User, Value
+from app.models.domain import BOMItem, BOMItemRule, Entity, EntityVersion, Field, Rule, User, Value
 
 
 def fetch_user_by_id(db: Session, user_id: str) -> User:
@@ -171,3 +171,64 @@ def get_value_or_404(
         HTTPException(404): If value doesn't exist
     """
     return fetch_value_by_id(db, value_id)
+
+
+# ============================================================
+# BOM FETCHERS
+# ============================================================
+
+
+def fetch_bom_item_by_id(db: Session, bom_item_id: int) -> BOMItem:
+    """
+    Helper: Get a BOMItem by its ID.
+    Raises:
+        HTTPException(400): Invalid ID
+        HTTPException(404): If not found
+    """
+    if bom_item_id <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid BOM item ID")
+
+    bom_item = db.query(BOMItem).filter(BOMItem.id == bom_item_id).first()
+    if not bom_item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"BOM item {bom_item_id} not found.")
+    return bom_item
+
+
+def fetch_bom_item_rule_by_id(db: Session, bom_item_rule_id: int) -> BOMItemRule:
+    """
+    Helper: Get a BOMItemRule by its ID.
+    Raises:
+        HTTPException(400): Invalid ID
+        HTTPException(404): If not found
+    """
+    if bom_item_rule_id <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid BOM item rule ID")
+
+    bom_item_rule = db.query(BOMItemRule).filter(BOMItemRule.id == bom_item_rule_id).first()
+    if not bom_item_rule:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"BOM item rule {bom_item_rule_id} not found."
+        )
+    return bom_item_rule
+
+
+def get_bom_item_or_404(
+    bom_item_id: Annotated[int, Path(description="BOM Item ID", gt=0)], db: Session = Depends(get_db)
+) -> BOMItem:
+    """
+    Dependency: Retrieves a BOMItem by ID.
+    Raises:
+        HTTPException(404): If BOM item doesn't exist
+    """
+    return fetch_bom_item_by_id(db, bom_item_id)
+
+
+def get_bom_item_rule_or_404(
+    bom_item_rule_id: Annotated[int, Path(description="BOM Item Rule ID", gt=0)], db: Session = Depends(get_db)
+) -> BOMItemRule:
+    """
+    Dependency: Retrieves a BOMItemRule by ID.
+    Raises:
+        HTTPException(404): If BOM item rule doesn't exist
+    """
+    return fetch_bom_item_rule_by_id(db, bom_item_rule_id)

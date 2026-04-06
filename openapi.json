@@ -1862,6 +1862,581 @@
         }
       }
     },
+    "/bom-items/": {
+      "get": {
+        "tags": [
+          "BOM Items"
+        ],
+        "summary": "List Bom Items",
+        "description": "Retrieve BOM items for a specific version.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view BOM items",
+        "operationId": "list_bom_items_bom_items__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity_version_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Entity Version Id"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BOMItemRead"
+                  },
+                  "title": "Response List Bom Items Bom Items  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "BOM Items"
+        ],
+        "summary": "Create Bom Item",
+        "description": "Create a BOM item attached to a specific entity version.\n\nRestrictions:\n    - The version must be DRAFT\n    - Pricing validation by bom_type\n    - quantity must be > 0\n    - quantity_from_field_id must reference a NUMBER field in the same version\n    - parent_bom_item_id must reference an item in the same version\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create BOM items",
+        "operationId": "create_bom_item_bom_items__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BOMItemCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BOMItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bom-items/{bom_item_id}": {
+      "get": {
+        "tags": [
+          "BOM Items"
+        ],
+        "summary": "Read Bom Item",
+        "description": "Retrieve a single BOM item.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view BOM item details",
+        "operationId": "read_bom_item_bom_items__bom_item_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bom_item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "BOM Item ID",
+              "title": "Bom Item Id"
+            },
+            "description": "BOM Item ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BOMItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "BOM Items"
+        ],
+        "summary": "Update Bom Item",
+        "description": "Update a BOM item.\n\nRestrictions:\n    - The version must be DRAFT\n    - Pricing validation applies on type change\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update BOM items",
+        "operationId": "update_bom_item_bom_items__bom_item_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bom_item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "BOM Item ID",
+              "title": "Bom Item Id"
+            },
+            "description": "BOM Item ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BOMItemUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BOMItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "BOM Items"
+        ],
+        "summary": "Delete Bom Item",
+        "description": "Delete a BOM item and its children (cascade).\n\nRestrictions:\n    - The version must be DRAFT\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete BOM items",
+        "operationId": "delete_bom_item_bom_items__bom_item_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bom_item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "BOM Item ID",
+              "title": "Bom Item Id"
+            },
+            "description": "BOM Item ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bom-item-rules/": {
+      "get": {
+        "tags": [
+          "BOM Item Rules"
+        ],
+        "summary": "List Bom Item Rules",
+        "description": "Retrieve BOM item rules filtered by bom_item_id or entity_version_id.\n\nAt least one filter parameter must be provided.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view BOM item rules",
+        "operationId": "list_bom_item_rules_bom_item_rules__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bom_item_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bom Item Id"
+            }
+          },
+          {
+            "name": "entity_version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Version Id"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BOMItemRuleRead"
+                  },
+                  "title": "Response List Bom Item Rules Bom Item Rules  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "BOM Item Rules"
+        ],
+        "summary": "Create Bom Item Rule",
+        "description": "Create a BOM item rule attached to a specific BOM item.\n\nRestrictions:\n    - The version must be DRAFT\n    - bom_item_id must belong to the specified entity_version_id\n    - All field_id values in conditions.criteria must belong to the same entity_version_id\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create BOM item rules",
+        "operationId": "create_bom_item_rule_bom_item_rules__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BOMItemRuleCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BOMItemRuleRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bom-item-rules/{bom_item_rule_id}": {
+      "get": {
+        "tags": [
+          "BOM Item Rules"
+        ],
+        "summary": "Read Bom Item Rule",
+        "description": "Retrieve a single BOM item rule.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view BOM item rule details",
+        "operationId": "read_bom_item_rule_bom_item_rules__bom_item_rule_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bom_item_rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "BOM Item Rule ID",
+              "title": "Bom Item Rule Id"
+            },
+            "description": "BOM Item Rule ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BOMItemRuleRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "BOM Item Rules"
+        ],
+        "summary": "Update Bom Item Rule",
+        "description": "Update a BOM item rule.\n\nRestrictions:\n    - The version must be DRAFT\n    - Updated conditions.criteria field_id values must belong to the same version\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update BOM item rules",
+        "operationId": "update_bom_item_rule_bom_item_rules__bom_item_rule_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bom_item_rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "BOM Item Rule ID",
+              "title": "Bom Item Rule Id"
+            },
+            "description": "BOM Item Rule ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BOMItemRuleUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BOMItemRuleRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "BOM Item Rules"
+        ],
+        "summary": "Delete Bom Item Rule",
+        "description": "Delete a BOM item rule.\n\nRestrictions:\n    - The version must be DRAFT\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete BOM item rules",
+        "operationId": "delete_bom_item_rule_bom_item_rules__bom_item_rule_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bom_item_rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "BOM Item Rule ID",
+              "title": "Bom Item Rule Id"
+            },
+            "description": "BOM Item Rule ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/engine/calculate": {
       "post": {
         "tags": [
@@ -2442,6 +3017,598 @@
   },
   "components": {
     "schemas": {
+      "BOMItemCreate": {
+        "properties": {
+          "bom_type": {
+            "$ref": "#/components/schemas/BOMType"
+          },
+          "part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Part Number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Quantity",
+            "default": "1"
+          },
+          "quantity_from_field_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity From Field Id"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence",
+            "default": 0
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          },
+          "parent_bom_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Bom Item Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bom_type",
+          "part_number",
+          "entity_version_id"
+        ],
+        "title": "BOMItemCreate",
+        "description": "Schema for creating a BOM item (POST)."
+      },
+      "BOMItemRead": {
+        "properties": {
+          "bom_type": {
+            "$ref": "#/components/schemas/BOMType"
+          },
+          "part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Part Number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity",
+            "default": "1"
+          },
+          "quantity_from_field_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity From Field Id"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence",
+            "default": 0
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          },
+          "parent_bom_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Bom Item Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bom_type",
+          "part_number",
+          "id",
+          "entity_version_id"
+        ],
+        "title": "BOMItemRead",
+        "description": "Schema for reading BOM item data (GET responses)."
+      },
+      "BOMItemRuleCreate": {
+        "properties": {
+          "conditions": {
+            "$ref": "#/components/schemas/RuleConditions"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "bom_item_id": {
+            "type": "integer",
+            "title": "Bom Item Id"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conditions",
+          "bom_item_id",
+          "entity_version_id"
+        ],
+        "title": "BOMItemRuleCreate",
+        "description": "Schema for creating a BOM item rule (POST)."
+      },
+      "BOMItemRuleRead": {
+        "properties": {
+          "conditions": {
+            "$ref": "#/components/schemas/RuleConditions"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "bom_item_id": {
+            "type": "integer",
+            "title": "Bom Item Id"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conditions",
+          "id",
+          "bom_item_id",
+          "entity_version_id"
+        ],
+        "title": "BOMItemRuleRead",
+        "description": "Schema for reading BOM item rule data (GET responses)."
+      },
+      "BOMItemRuleUpdate": {
+        "properties": {
+          "conditions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuleConditions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "BOMItemRuleUpdate",
+        "description": "Schema for partially updating a BOM item rule (PATCH)."
+      },
+      "BOMItemUpdate": {
+        "properties": {
+          "parent_bom_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Bom Item Id"
+          },
+          "bom_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BOMType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "part_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "quantity_from_field_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity From Field Id"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence"
+          }
+        },
+        "type": "object",
+        "title": "BOMItemUpdate",
+        "description": "Schema for partially updating a BOM item (PATCH)."
+      },
+      "BOMLineItem": {
+        "properties": {
+          "bom_item_id": {
+            "type": "integer",
+            "title": "Bom Item Id"
+          },
+          "bom_type": {
+            "type": "string",
+            "title": "Bom Type"
+          },
+          "part_number": {
+            "type": "string",
+            "title": "Part Number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "line_total": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Total"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/BOMLineItem"
+            },
+            "type": "array",
+            "title": "Children",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "bom_item_id",
+          "bom_type",
+          "part_number",
+          "quantity"
+        ],
+        "title": "BOMLineItem",
+        "description": "A single BOM line item in the calculation output, with nested children."
+      },
+      "BOMOutput": {
+        "properties": {
+          "technical": {
+            "items": {
+              "$ref": "#/components/schemas/BOMLineItem"
+            },
+            "type": "array",
+            "title": "Technical"
+          },
+          "commercial": {
+            "items": {
+              "$ref": "#/components/schemas/BOMLineItem"
+            },
+            "type": "array",
+            "title": "Commercial"
+          },
+          "commercial_total": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commercial Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "technical",
+          "commercial"
+        ],
+        "title": "BOMOutput",
+        "description": "BOM evaluation result split by type with commercial total."
+      },
+      "BOMType": {
+        "type": "string",
+        "enum": [
+          "TECHNICAL",
+          "COMMERCIAL"
+        ],
+        "title": "BOMType",
+        "description": "Bill of Materials item type classification.\n\n- TECHNICAL: Engineering/assembly BOM \u2014 no pricing, supports hierarchy (sub-assemblies)\n- COMMERCIAL: Sales/pricing BOM \u2014 requires unit_price, always root-level (flat list)\n\nA component appearing in both lists is modeled as two separate BOM items\nwith the same part_number \u2014 one TECHNICAL and one COMMERCIAL."
+      },
       "Body_login_for_access_token_auth_token_post": {
         "properties": {
           "grant_type": {
@@ -2562,6 +3729,16 @@
               }
             ],
             "title": "Generated Sku"
+          },
+          "bom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BOMOutput"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2656,6 +3833,18 @@
               }
             ],
             "title": "Generated Sku"
+          },
+          "bom_total_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bom Total Price"
           },
           "is_deleted": {
             "type": "boolean",
@@ -2797,6 +3986,18 @@
               }
             ],
             "title": "Generated Sku"
+          },
+          "bom_total_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bom Total Price"
           },
           "is_deleted": {
             "type": "boolean",

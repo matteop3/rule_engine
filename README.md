@@ -48,7 +48,7 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 ### Version Management
 - **Lifecycle states**: DRAFT → PUBLISHED → ARCHIVED
 - **Single published version**: Publishing auto-archives the previous version
-- **Deep cloning**: Clone versions with all fields, values, and rules
+- **Deep cloning**: Clone versions with all fields, values, rules, and BOM data
 - **DRAFT-only editing**: Published/archived versions are immutable
 
 ### Configuration Lifecycle
@@ -62,6 +62,13 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 - **Refresh token rotation**: Optional security hardening
 - **Role-based access**: ADMIN, AUTHOR, USER with granular permissions
 - **Rate limiting**: Configurable limits on auth endpoints
+
+### BOM Generation
+- **Technical BOM**: Hierarchical component list with sub-assemblies (manufacturing/assembly)
+- **Commercial BOM**: Flat priced line items for quotes and invoices
+- **Conditional inclusion**: BOM items included/excluded based on field conditions (OR logic across rules)
+- **Dynamic quantities**: Resolve from numeric field values or use static defaults
+- **Line totals & aggregation**: Auto-computed `line_total` and `commercial_total` with part-number aggregation
 
 ### SKU Generation
 - **Base SKU + modifiers**: `LPT-PRO` + `-16G` + `-512S` → `LPT-PRO-16G-512S`
@@ -182,6 +189,8 @@ This creates:
 | Fields | 15 | 4 steps, all data types (string, number, boolean, date) |
 | Values | 35 | With SKU modifiers |
 | Rules | 19 | All 6 rule types, all 7 operators |
+| BOM Items | 8 | 5 TECHNICAL (incl. hierarchy) + 3 COMMERCIAL (with pricing) |
+| BOM Rules | 4 | Conditional inclusion, OR logic |
 | Users | 3 | One per role (see below) |
 | Configurations | 3 | 1 finalized + 2 drafts |
 
@@ -264,10 +273,14 @@ erDiagram
     Entity ||--o{ EntityVersion : "has versions"
     EntityVersion ||--o{ Field : "contains"
     EntityVersion ||--o{ Rule : "contains"
+    EntityVersion ||--o{ BOMItem : "contains"
     EntityVersion ||--o{ Configuration : "used by"
     Field ||--o{ Value : "has options"
     Rule }o--|| Field : "targets"
     Rule }o--o| Value : "targets (optional)"
+    BOMItem ||--o{ BOMItem : "has children"
+    BOMItem ||--o{ BOMItemRule : "has rules"
+    BOMItem }o--o| Field : "quantity from"
     User ||--o{ Configuration : "owns"
     User ||--o{ RefreshToken : "has"
 
@@ -323,6 +336,27 @@ erDiagram
         string set_value "nullable, CALCULATION only"
     }
 
+    BOMItem {
+        int id PK
+        int entity_version_id FK
+        int parent_bom_item_id FK "nullable, self-ref"
+        enum bom_type "TECHNICAL|COMMERCIAL"
+        string part_number
+        string description
+        decimal quantity
+        int quantity_from_field_id FK "nullable"
+        decimal unit_price "nullable, COMMERCIAL only"
+        int sequence
+    }
+
+    BOMItemRule {
+        int id PK
+        int bom_item_id FK
+        int entity_version_id FK
+        json conditions
+        string description
+    }
+
     Configuration {
         uuid id PK
         int entity_version_id FK
@@ -331,6 +365,7 @@ erDiagram
         enum status "DRAFT|FINALIZED"
         bool is_complete
         string generated_sku "nullable"
+        decimal bom_total_price "nullable"
         bool is_deleted
         json data
     }
@@ -422,7 +457,8 @@ flowchart TD
 
     E -->|Done| Q[Calculate is_complete]
     Q --> R[Generate SKU if configured]
-    R --> S[Return calculation result]
+    R --> BOM[Evaluate BOM: inclusion, quantities, totals]
+    BOM --> S[Return calculation result]
 
     I --> P
 ```
@@ -479,6 +515,18 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 | GET | `/rules?entity_version_id={id}` | List rules |
 | POST | `/rules` | Create rule (DRAFT only) |
 
+### BOM Items & BOM Item Rules
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/bom-items?entity_version_id={id}` | List BOM items |
+| POST | `/bom-items` | Create BOM item (DRAFT only) |
+| PATCH | `/bom-items/{id}` | Update BOM item (DRAFT only) |
+| DELETE | `/bom-items/{id}` | Delete BOM item (DRAFT only) |
+| GET | `/bom-item-rules?entity_version_id={id}` | List BOM item rules |
+| POST | `/bom-item-rules` | Create BOM item rule (DRAFT only) |
+| PATCH | `/bom-item-rules/{id}` | Update BOM item rule (DRAFT only) |
+| DELETE | `/bom-item-rules/{id}` | Delete BOM item rule (DRAFT only) |
+
 ### Configurations
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -499,7 +547,7 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 
 ## Testing
 
-The project includes 700+ tests across multiple categories:
+The project includes 900+ tests across multiple categories:
 
 | Category | Location | Description |
 |----------|----------|-------------|
@@ -595,6 +643,7 @@ rule_engine/
 - [ADR: Calculation Rules](docs/ADR_CALCULATION_RULES.md) - How CALCULATION rules derive field values
 - [ADR: Inference Tree](docs/ADR_INFERENCE_TREE.md) - Why rules use waterfall evaluation instead of a dependency graph
 - [ADR: Re-hydration](docs/ADR_REHYDRATION.md) - Why configurations store raw inputs and recalculate on read
+- [ADR: BOM Generation](docs/ADR_BOM.md) - BOM design decisions (single table, hierarchy, pricing, aggregation)
 
 ---
 

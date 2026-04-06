@@ -235,6 +235,116 @@ Content-Type: application/json
 
 
 ### ==========================================================
+### BOM ITEMS (admin/author only, DRAFT versions)
+### ==========================================================
+
+### List BOM items for a version (replace entity_version_id)
+GET {{baseUrl}}/bom-items/?entity_version_id=1
+Authorization: Bearer {{authorToken}}
+
+### Get BOM item by ID (replace {id})
+GET {{baseUrl}}/bom-items/1
+Authorization: Bearer {{authorToken}}
+
+### Create TECHNICAL BOM item (unconditional root)
+POST {{baseUrl}}/bom-items/
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "entity_version_id": 1,
+  "bom_type": "TECHNICAL",
+  "part_number": "FRAME-001",
+  "description": "Main frame assembly",
+  "category": "Structure",
+  "quantity": 1,
+  "unit_of_measure": "pcs",
+  "sequence": 10
+}
+
+### Create COMMERCIAL BOM item (with pricing)
+POST {{baseUrl}}/bom-items/
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "entity_version_id": 1,
+  "bom_type": "COMMERCIAL",
+  "part_number": "FRAME-001",
+  "description": "Frame assembly (priced)",
+  "category": "Structure",
+  "quantity": 1,
+  "unit_price": 150.00,
+  "unit_of_measure": "pcs",
+  "sequence": 10
+}
+
+### Update BOM item (replace {id}, DRAFT only)
+PATCH {{baseUrl}}/bom-items/1
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "quantity": 2,
+  "description": "Updated description"
+}
+
+### Delete BOM item (replace {id}, DRAFT only)
+DELETE {{baseUrl}}/bom-items/1
+Authorization: Bearer {{authorToken}}
+
+
+### ==========================================================
+### BOM ITEM RULES (admin/author only, DRAFT versions)
+### ==========================================================
+
+### List BOM item rules by version
+GET {{baseUrl}}/bom-item-rules/?entity_version_id=1
+Authorization: Bearer {{authorToken}}
+
+### List BOM item rules by BOM item
+GET {{baseUrl}}/bom-item-rules/?bom_item_id=1
+Authorization: Bearer {{authorToken}}
+
+### Get BOM item rule by ID (replace {id})
+GET {{baseUrl}}/bom-item-rules/1
+Authorization: Bearer {{authorToken}}
+
+### Create BOM item rule (conditional inclusion)
+POST {{baseUrl}}/bom-item-rules/
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "bom_item_id": 1,
+  "entity_version_id": 1,
+  "conditions": {
+    "criteria": [
+      {"field_id": 5, "operator": "GREATER_THAN", "value": 50000}
+    ]
+  },
+  "description": "Include for high-value vehicles"
+}
+
+### Update BOM item rule (replace {id}, DRAFT only)
+PATCH {{baseUrl}}/bom-item-rules/1
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "conditions": {
+    "criteria": [
+      {"field_id": 5, "operator": "GREATER_THAN", "value": 40000}
+    ]
+  }
+}
+
+### Delete BOM item rule (replace {id}, DRAFT only)
+DELETE {{baseUrl}}/bom-item-rules/1
+Authorization: Bearer {{authorToken}}
+
+
+### ==========================================================
 ### CONFIGURATIONS
 ### ==========================================================
 

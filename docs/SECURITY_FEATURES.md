@@ -296,6 +296,27 @@ WARNING: Rate limit exceeded for 192.168.1.100 on endpoint /auth/token
 
 ---
 
+## 🛡️ BOM Endpoint Access Control
+
+### Overview
+
+BOM Item and BOM Item Rule endpoints follow the same RBAC model as Fields, Values, and Rules:
+
+| Role | BOM Item CRUD | BOM Item Rule CRUD | Read |
+|------|--------------|-------------------|------|
+| **ADMIN** | Full access | Full access | All versions |
+| **AUTHOR** | Full access | Full access | All versions |
+| **USER** | Denied (HTTP 403) | Denied (HTTP 403) | Via engine only |
+
+### Additional Constraints
+
+- **DRAFT-only**: BOM items and rules can only be created, updated, or deleted on DRAFT versions (HTTP 409 for PUBLISHED/ARCHIVED)
+- **COMMERCIAL-is-root**: COMMERCIAL BOM items cannot have a parent (HTTP 400)
+- **Price consistency**: COMMERCIAL items with the same `part_number` in the same version must have identical `unit_price` (HTTP 409)
+- **Pricing by type**: TECHNICAL items reject `unit_price`; COMMERCIAL items require it (HTTP 400)
+
+---
+
 ## 🔍 Request Tracing (X-Request-ID)
 
 ### Overview

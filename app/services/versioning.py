@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.domain import Entity, EntityVersion, Field, Rule, Value, VersionStatus
+from app.models.domain import BOMItem, BOMItemRule, Entity, EntityVersion, Field, Rule, Value, VersionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,11 @@ class VersioningService:
         # Fetch source version with eager loading (avoid N+1)
         source_version = (
             db.query(EntityVersion)
-            .options(joinedload(EntityVersion.fields).joinedload(Field.values), joinedload(EntityVersion.rules))
+            .options(
+                joinedload(EntityVersion.fields).joinedload(Field.values),
+                joinedload(EntityVersion.rules),
+                joinedload(EntityVersion.bom_items).joinedload(BOMItem.rules),
+            )
             .filter(EntityVersion.id == source_version_id)
             .first()
         )
@@ -227,6 +231,62 @@ class VersioningService:
             )
             db.add(new_rule)
 
+        # Clone BOM Items (parents before children)
+        bom_item_map: dict[int, int] = {}
+        root_items = [bi for bi in source_version.bom_items if bi.parent_bom_item_id is None]
+        child_items = [bi for bi in source_version.bom_items if bi.parent_bom_item_id is not None]
+
+        for old_bom_item in root_items + child_items:
+            new_parent_id = None
+            if old_bom_item.parent_bom_item_id is not None:
+                new_parent_id = bom_item_map.get(old_bom_item.parent_bom_item_id)
+                if new_parent_id is None:
+                    raise ValueError(f"Missing parent BOM item for BOMItem {old_bom_item.id}.")
+
+            new_quantity_field_id = None
+            if old_bom_item.quantity_from_field_id is not None:
+                new_quantity_field_id = field_map.get(old_bom_item.quantity_from_field_id)
+                if new_quantity_field_id is None:
+                    raise ValueError(
+                        f"Missing Field {old_bom_item.quantity_from_field_id} in field_map "
+                        f"for BOMItem {old_bom_item.id} quantity_from_field_id."
+                    )
+
+            new_bom_item = BOMItem(
+                entity_version_id=new_version.id,
+                parent_bom_item_id=new_parent_id,
+                bom_type=old_bom_item.bom_type,
+                part_number=old_bom_item.part_number,
+                description=old_bom_item.description,
+                category=old_bom_item.category,
+                quantity=old_bom_item.quantity,
+                quantity_from_field_id=new_quantity_field_id,
+                unit_of_measure=old_bom_item.unit_of_measure,
+                unit_price=old_bom_item.unit_price,
+                sequence=old_bom_item.sequence,
+            )
+            db.add(new_bom_item)
+            db.flush()
+
+            bom_item_map[old_bom_item.id] = new_bom_item.id
+
+        # Clone BOM Item Rules
+        for old_bom_item in source_version.bom_items:
+            for old_bom_rule in old_bom_item.rules:
+                new_bom_item_id = bom_item_map.get(old_bom_rule.bom_item_id)
+                if new_bom_item_id is None:
+                    raise ValueError(f"Missing BOM item for BOMItemRule {old_bom_rule.id}.")
+
+                new_conditions = self._rewrite_conditions(old_bom_rule.conditions, field_map)
+
+                new_bom_rule = BOMItemRule(
+                    bom_item_id=new_bom_item_id,
+                    entity_version_id=new_version.id,
+                    conditions=new_conditions,
+                    description=old_bom_rule.description,
+                )
+                db.add(new_bom_rule)
+
         logger.info(
             "Version cloned",
             extra={
@@ -237,6 +297,8 @@ class VersioningService:
                 "fields_cloned": len(field_map),
                 "values_cloned": len(value_map),
                 "rules_cloned": len(source_version.rules),
+                "bom_items_cloned": len(bom_item_map),
+                "bom_item_rules_cloned": sum(len(bi.rules) for bi in source_version.bom_items),
                 "user_id": user_id,
             },
         )

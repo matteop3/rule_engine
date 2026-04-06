@@ -25,9 +25,10 @@ The AuditMixin provides automatic tracking of creation/update timestamps and use
 import enum
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -117,6 +118,21 @@ class RuleType(str, enum.Enum):
     EDITABILITY = "editability"
     MANDATORY = "mandatory"
     VALIDATION = "validation"
+
+
+class BOMType(str, enum.Enum):
+    """
+    Bill of Materials item type classification.
+
+    - TECHNICAL: Engineering/assembly BOM — no pricing, supports hierarchy (sub-assemblies)
+    - COMMERCIAL: Sales/pricing BOM — requires unit_price, always root-level (flat list)
+
+    A component appearing in both lists is modeled as two separate BOM items
+    with the same part_number — one TECHNICAL and one COMMERCIAL.
+    """
+
+    TECHNICAL = "TECHNICAL"
+    COMMERCIAL = "COMMERCIAL"
 
 
 # ============================================================
@@ -220,6 +236,7 @@ class EntityVersion(Base, AuditMixin):
     entity: Mapped["Entity"] = relationship(back_populates="versions")
     fields: Mapped[list["Field"]] = relationship(back_populates="entity_version", cascade="all, delete-orphan")
     rules: Mapped[list["Rule"]] = relationship(back_populates="entity_version", cascade="all, delete-orphan")
+    bom_items: Mapped[list["BOMItem"]] = relationship(back_populates="entity_version", cascade="all, delete-orphan")
     configurations: Mapped[list["Configuration"]] = relationship(
         back_populates="entity_version", cascade="all, delete-orphan"
     )
@@ -465,6 +482,10 @@ class Configuration(Base, AuditMixin):
         String(100), nullable=True, index=True, comment="Cached generated SKU from last calculation"
     )
 
+    bom_total_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 4), nullable=True, index=True, comment="Cached BOM commercial total from last calculation"
+    )
+
     # Soft delete flag
     is_deleted: Mapped[bool] = mapped_column(
         Boolean,
@@ -489,6 +510,117 @@ class Configuration(Base, AuditMixin):
 
     def __str__(self) -> str:
         return self.name or f"Configuration {self.id[:8]}"
+
+
+class BOMItem(Base):
+    """
+    BOMItem: Bill of Materials line item for an EntityVersion.
+
+    Represents a component, part, or sub-assembly in the product structure.
+    Supports hierarchical nesting via self-referential parent relationship.
+    Quantity can be static or dynamically resolved from a field value at evaluation time.
+
+    Pricing constraints by bom_type:
+        - TECHNICAL: unit_price must be null (no pricing for engineering BOM)
+        - COMMERCIAL: unit_price must be non-null (pricing required)
+
+    Relationships:
+        - entity_version: Many-to-one with EntityVersion (cascade delete from version)
+        - parent: Many-to-one self-referential (cascade delete children)
+        - children: One-to-many self-referential
+        - quantity_field: Many-to-one with Field (SET NULL on field deletion — falls back to static quantity)
+        - rules: One-to-many with BOMItemRule (cascade delete)
+    """
+
+    __tablename__ = "bom_items"
+    __table_args__ = (
+        Index("ix_bom_version", "entity_version_id"),
+        Index("ix_bom_parent", "parent_bom_item_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"), nullable=False)
+    parent_bom_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bom_items.id", ondelete="CASCADE"), nullable=True
+    )
+
+    bom_type: Mapped[BOMType] = mapped_column(String(20), nullable=False)
+    part_number: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Grouping label (e.g., 'Chassis', 'Electronics')"
+    )
+
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False, server_default="1")
+    quantity_from_field_id: Mapped[int | None] = mapped_column(
+        ForeignKey("fields.id", ondelete="SET NULL"), nullable=True
+    )
+    unit_of_measure: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="e.g., 'pcs', 'm', 'kg'")
+    unit_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 4), nullable=True, comment="Required for COMMERCIAL, rejected for TECHNICAL"
+    )
+
+    sequence: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+        comment="Ordering among siblings",
+    )
+
+    # Relationships
+    entity_version: Mapped["EntityVersion"] = relationship(back_populates="bom_items")
+    parent: Mapped["BOMItem | None"] = relationship(back_populates="children", remote_side="BOMItem.id")
+    children: Mapped[list["BOMItem"]] = relationship(back_populates="parent", cascade="all, delete-orphan")
+    quantity_field: Mapped["Field | None"] = relationship(foreign_keys=[quantity_from_field_id])
+    rules: Mapped[list["BOMItemRule"]] = relationship(back_populates="bom_item", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return (
+            f"<BOMItem id={self.id} part_number='{self.part_number}' "
+            f"type={self.bom_type} version_id={self.entity_version_id}>"
+        )
+
+    def __str__(self) -> str:
+        return f"{self.part_number}: {self.description or 'No description'}"
+
+
+class BOMItemRule(Base):
+    """
+    BOMItemRule: Conditional inclusion rule for a BOM item.
+
+    Controls whether a BOM item is included in the output based on field conditions.
+    Multiple rules on the same BOM item use OR logic (item included if any rule passes).
+    BOM items with no rules are unconditionally included.
+
+    Condition structure: {"criteria": [{"field_id": 1, "operator": "EQUALS", "value": "Red"}, ...]}
+
+    Relationships:
+        - bom_item: Many-to-one with BOMItem (cascade delete)
+        - entity_version: Many-to-one with EntityVersion
+    """
+
+    __tablename__ = "bom_item_rules"
+    __table_args__ = (
+        Index("ix_bomrule_item", "bom_item_id"),
+        Index("ix_bomrule_version", "entity_version_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    bom_item_id: Mapped[int] = mapped_column(ForeignKey("bom_items.id", ondelete="CASCADE"), nullable=False)
+    entity_version_id: Mapped[int] = mapped_column(ForeignKey("entity_versions.id"), nullable=False)
+
+    conditions: Mapped[dict] = mapped_column(JSON, nullable=False, comment="JSON condition criteria")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    bom_item: Mapped["BOMItem"] = relationship(back_populates="rules")
+    entity_version: Mapped["EntityVersion"] = relationship()
+
+    def __repr__(self) -> str:
+        return f"<BOMItemRule id={self.id} bom_item_id={self.bom_item_id} version_id={self.entity_version_id}>"
+
+    def __str__(self) -> str:
+        return self.description or f"BOMItemRule {self.id}"
 
 
 class RefreshToken(Base):

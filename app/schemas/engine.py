@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel
@@ -46,6 +47,29 @@ class FieldOutputState(BaseModel):
     error_message: str | None = None
 
 
+class BOMLineItem(BaseModel):
+    """A single BOM line item in the calculation output, with nested children."""
+
+    bom_item_id: int
+    bom_type: str
+    part_number: str
+    description: str | None = None
+    category: str | None = None
+    quantity: Decimal
+    unit_of_measure: str | None = None
+    unit_price: Decimal | None = None
+    line_total: Decimal | None = None
+    children: list["BOMLineItem"] = []
+
+
+class BOMOutput(BaseModel):
+    """BOM evaluation result split by type with commercial total."""
+
+    technical: list[BOMLineItem]
+    commercial: list[BOMLineItem]
+    commercial_total: Decimal | None = None
+
+
 class CalculationResponse(BaseModel):
     """Complete response with the status of all fields in the entity."""
 
@@ -53,3 +77,4 @@ class CalculationResponse(BaseModel):
     fields: list[FieldOutputState]
     is_complete: bool = True
     generated_sku: str | None = None
+    bom: BOMOutput | None = None

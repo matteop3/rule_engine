@@ -8,6 +8,9 @@ sys.path.append(os.getcwd())
 from app.core.security import get_password_hash
 from app.database import Base, SessionLocal, engine
 from app.models.domain import (
+    BOMItem,
+    BOMItemRule,
+    BOMType,
     Configuration,
     ConfigurationStatus,
     Entity,
@@ -34,6 +37,8 @@ def seed_db():
         # 1. Cleanup (order: FK dependencies)
         db.query(RefreshToken).delete()
         db.query(Configuration).delete()
+        db.query(BOMItemRule).delete()
+        db.query(BOMItem).delete()
         db.query(Rule).delete()
         db.query(Value).delete()
         db.query(Field).delete()
@@ -650,10 +655,182 @@ def seed_db():
         ]
         db.add_all(all_rules)
         db.commit()
-        print(f"[6/9] Rules created: {len(all_rules)} rules (6/6 types + 2 cascading chains)")
+        print(f"[6/10] Rules created: {len(all_rules)} rules (6/6 types + 2 cascading chains)")
 
         # ============================================================
-        # 7. USERS (3 demo users, one per role)
+        # 7. BOM ITEMS AND RULES
+        # ============================================================
+        # The insurance entity doubles as a demonstration of BOM generation.
+        # TECHNICAL items represent underwriting components; COMMERCIAL items
+        # represent priced line items on the quote.
+
+        # --- TECHNICAL: unconditional root item (always included) ---
+        bom_base_policy = BOMItem(
+            entity_version_id=version.id,
+            bom_type=BOMType.TECHNICAL.value,
+            part_number="POL-BASE",
+            description="Base policy document package",
+            category="Policy",
+            quantity=1,
+            unit_of_measure="pcs",
+            sequence=10,
+        )
+
+        # --- TECHNICAL: nested sub-assembly (unconditional) ---
+        bom_liability_module = BOMItem(
+            entity_version_id=version.id,
+            bom_type=BOMType.TECHNICAL.value,
+            part_number="MOD-LIABILITY",
+            description="Liability coverage module",
+            category="Coverage",
+            quantity=1,
+            unit_of_measure="pcs",
+            sequence=20,
+        )
+
+        # --- TECHNICAL: conditional child (included when vehicle value > 50k) ---
+        bom_luxury_rider = BOMItem(
+            entity_version_id=version.id,
+            bom_type=BOMType.TECHNICAL.value,
+            part_number="RIDER-LUX",
+            description="Luxury vehicle extended coverage rider",
+            category="Coverage",
+            quantity=1,
+            unit_of_measure="pcs",
+            sequence=10,
+        )
+
+        # --- TECHNICAL: conditional item with multiple rules (OR logic) ---
+        # Included when vehicle_type = TRUCK OR vehicle_value > 40000
+        bom_heavy_assessment = BOMItem(
+            entity_version_id=version.id,
+            bom_type=BOMType.TECHNICAL.value,
+            part_number="ASSESS-HEAVY",
+            description="Heavy risk assessment report",
+            category="Assessment",
+            quantity=1,
+            unit_of_measure="pcs",
+            sequence=30,
+        )
+
+        # --- TECHNICAL: dynamic quantity from field ---
+        # Quantity derived from vehicle_value (the NUMBER field), static fallback = 1
+        bom_inspection_cert = BOMItem(
+            entity_version_id=version.id,
+            bom_type=BOMType.TECHNICAL.value,
+            part_number="CERT-INSPECT",
+            description="Vehicle inspection certificate",
+            category="Certification",
+            quantity=1,
+            quantity_from_field_id=f_vehicle_value.id,
+            unit_of_measure="pcs",
+            sequence=40,
+        )
+
+        # --- COMMERCIAL: unconditional priced item (base premium) ---
+        bom_base_premium = BOMItem(
+            entity_version_id=version.id,
+            bom_type=BOMType.COMMERCIAL.value,
+            part_number="PREM-BASE",
+            description="Base annual premium",
+            category="Premium",
+            quantity=1,
+            unit_price=350,
+            unit_of_measure="yr",
+            sequence=10,
+        )
+
+        # --- COMMERCIAL: conditional priced item (theft coverage add-on) ---
+        bom_theft_addon = BOMItem(
+            entity_version_id=version.id,
+            bom_type=BOMType.COMMERCIAL.value,
+            part_number="ADDON-THEFT",
+            description="Theft & fire coverage add-on",
+            category="Add-on",
+            quantity=1,
+            unit_price=89.99,
+            unit_of_measure="yr",
+            sequence=20,
+        )
+
+        # --- COMMERCIAL: same part_number as TECHNICAL (different BOM type) ---
+        bom_base_policy_comm = BOMItem(
+            entity_version_id=version.id,
+            bom_type=BOMType.COMMERCIAL.value,
+            part_number="POL-BASE",
+            description="Policy document processing fee",
+            category="Fee",
+            quantity=1,
+            unit_price=15,
+            unit_of_measure="pcs",
+            sequence=30,
+        )
+
+        all_bom_items = [
+            bom_base_policy,
+            bom_liability_module,
+            bom_luxury_rider,
+            bom_heavy_assessment,
+            bom_inspection_cert,
+            bom_base_premium,
+            bom_theft_addon,
+            bom_base_policy_comm,
+        ]
+        db.add_all(all_bom_items)
+        db.flush()
+
+        # Set parent relationships (requires IDs from flush)
+        bom_luxury_rider.parent_bom_item_id = bom_liability_module.id
+
+        db.flush()
+
+        # --- BOM Item Rules ---
+
+        # Luxury rider: included when vehicle value > 50000
+        bomr_luxury = BOMItemRule(
+            bom_item_id=bom_luxury_rider.id,
+            entity_version_id=version.id,
+            conditions={"criteria": [{"field_id": f_vehicle_value.id, "operator": "GREATER_THAN", "value": 50000}]},
+            description="Luxury rider for high-value vehicles",
+        )
+
+        # Heavy assessment rule 1: vehicle_type = TRUCK (OR logic — any rule passing includes the item)
+        bomr_heavy_truck = BOMItemRule(
+            bom_item_id=bom_heavy_assessment.id,
+            entity_version_id=version.id,
+            conditions={"criteria": [{"field_id": f_vehicle_type.id, "operator": "EQUALS", "value": "TRUCK"}]},
+            description="Heavy assessment for trucks",
+        )
+
+        # Heavy assessment rule 2: vehicle_value > 40000 (OR with rule above)
+        bomr_heavy_value = BOMItemRule(
+            bom_item_id=bom_heavy_assessment.id,
+            entity_version_id=version.id,
+            conditions={"criteria": [{"field_id": f_vehicle_value.id, "operator": "GREATER_THAN", "value": 40000}]},
+            description="Heavy assessment for high-value vehicles",
+        )
+
+        # Theft add-on: included when theft coverage is selected (not "NO")
+        bomr_theft = BOMItemRule(
+            bom_item_id=bom_theft_addon.id,
+            entity_version_id=version.id,
+            conditions={"criteria": [{"field_id": f_theft_coverage.id, "operator": "NOT_EQUALS", "value": "NO"}]},
+            description="Theft add-on when coverage selected",
+        )
+
+        all_bom_rules = [bomr_luxury, bomr_heavy_truck, bomr_heavy_value, bomr_theft]
+        db.add_all(all_bom_rules)
+        db.commit()
+
+        print(
+            f"[7/10] BOM created: {len(all_bom_items)} items "
+            f"({sum(1 for b in all_bom_items if b.bom_type == BOMType.TECHNICAL.value)} TECHNICAL, "
+            f"{sum(1 for b in all_bom_items if b.bom_type == BOMType.COMMERCIAL.value)} COMMERCIAL), "
+            f"{len(all_bom_rules)} rules"
+        )
+
+        # ============================================================
+        # 8. USERS (3 demo users, one per role)
         # ============================================================
         # Same demo password for all: "password123"
         demo_password_hash = get_password_hash("password123")
@@ -671,7 +848,7 @@ def seed_db():
         all_users = [user_admin, user_author, user_demo]
         db.add_all(all_users)
         db.commit()
-        print(f"[7/9] Users created: {len(all_users)} users (admin, author, user) — password: password123")
+        print(f"[8/10] Users created: {len(all_users)} users (admin, author, user) — password: password123")
 
         # ============================================================
         # 8. CONFIGURATIONS (sample quotes)
@@ -742,13 +919,13 @@ def seed_db():
         all_configs = [config_finalized, config_draft, config_draft_moto]
         db.add_all(all_configs)
         db.commit()
-        print(f"[8/9] Configurations created: {len(all_configs)} (1 FINALIZED + 2 DRAFT)")
+        print(f"[9/10] Configurations created: {len(all_configs)} (1 FINALIZED + 2 DRAFT)")
 
         # ============================================================
         # SUMMARY
         # ============================================================
         print("\n" + "=" * 70)
-        print("[9/9] SEED COMPLETED SUCCESSFULLY")
+        print("[10/10] SEED COMPLETED SUCCESSFULLY")
         print("=" * 70)
         print(f"""
 SUMMARY:
@@ -760,6 +937,8 @@ SUMMARY:
   Fields:         {len(all_fields)}
   Values:         {len(all_values)}
   Rules:          {len(all_rules)}
+  BOM Items:      {len(all_bom_items)}
+  BOM Rules:      {len(all_bom_rules)}
   Users:          {len(all_users)}
   Configurations: {len(all_configs)}
 
@@ -782,6 +961,11 @@ FEATURE COVERAGE:
   Field types:    4/4 (string, number, boolean, date)
   SKU features:   sku_base + sku_modifier (Values)
   Field defaults: default_value on free-value field (additional_notes)
+  BOM types:      2/2 (TECHNICAL, COMMERCIAL)
+  BOM features:   hierarchy (nested sub-assembly), dynamic quantity,
+                  conditional inclusion, OR logic (multiple rules),
+                  same part_number in TECHNICAL + COMMERCIAL,
+                  commercial pricing with totals
 
 CALCULATION (engine-derived dropdown):
   ┌─────────────────────────────────────────────────────┐
@@ -817,6 +1001,18 @@ EDITABILITY + IN OPERATOR:
   │   Occupation IN [EMPLOYEE, SELF_EMPLOYED] → editable│
   │   Retired/Student → stays readonly                  │
   └─────────────────────────────────────────────────────┘
+
+BOM ITEMS:
+  TECHNICAL (5 items):
+    POL-BASE          Base policy document (unconditional, root)
+    MOD-LIABILITY     Liability coverage module (unconditional, root)
+      RIDER-LUX       Luxury vehicle rider (child, conditional: value > $50k)
+    ASSESS-HEAVY     Heavy risk assessment (conditional: OR logic, truck OR value > $40k)
+    CERT-INSPECT     Inspection certificate (dynamic quantity from vehicle_value field)
+  COMMERCIAL (3 items):
+    PREM-BASE        Base annual premium ($350, unconditional)
+    ADDON-THEFT      Theft coverage add-on ($89.99, conditional: theft != NO)
+    POL-BASE         Policy document fee ($15, same part_number as TECHNICAL)
 
 SKU EXAMPLES:
 

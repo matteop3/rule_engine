@@ -37,6 +37,9 @@ tests/
 │   ├── test_rules_crud.py                  # Rule CRUD operations
 │   ├── test_rules_edge_cases.py            # Rule edge cases and special scenarios
 │   ├── test_rules_types.py                 # Rule type-specific tests
+│   ├── test_bom_items.py                   # BOM item CRUD operations, validations, RBAC
+│   ├── test_bom_item_rules.py              # BOM item rule CRUD operations, validations, RBAC
+│   ├── test_engine_bom.py                  # BOM engine integration (calculate, persist bom_total_price)
 │   ├── test_users.py                       # User CRUD operations
 │   ├── test_values.py                      # Value CRUD operations
 │   └── test_versions.py                    # Version lifecycle (publish, archive, clone)
@@ -44,6 +47,10 @@ tests/
 ├── engine/                      # Rule engine business logic tests
 │   ├── __init__.py
 │   ├── test_api.py              # Engine calculation endpoint
+│   ├── test_bom_aggregation.py   # BOM line aggregation (grouping, quantity summing)
+│   ├── test_bom_evaluation.py   # BOM inclusion/exclusion, OR/AND logic, type filtering
+│   ├── test_bom_quantity.py     # BOM quantity resolution (static, field ref, fallback)
+│   ├── test_bom_tree.py         # BOM tree pruning, nesting, sequence ordering
 │   ├── test_cache.py            # TTLCache unit tests + engine caching integration tests
 │   ├── test_calculation.py      # CALCULATION rule type (forced values, waterfall interactions, SKU, completeness)
 │   ├── test_dropdowns.py        # Cascading dropdown logic
@@ -60,6 +67,8 @@ tests/
 │   ├── test_data_integrity_orphan_prevention.py # Orphan record prevention
 │   ├── test_data_integrity_unique_constraints.py # Unique constraint enforcement
 │   ├── test_data_integrity_value_dependencies.py # Value-rule dependency validation
+│   ├── test_bom_workflow.py                      # End-to-end BOM lifecycle and configuration integration
+│   ├── test_clone_bom.py                        # BOM data integrity during version clone
 │   ├── test_integration_cascade.py              # Cascade delete/update operations
 │   ├── test_integration_complex_rules.py        # Complex rule interaction scenarios
 │   ├── test_integration_cross_router.py         # Cross-router data consistency
@@ -118,6 +127,7 @@ tests/
 - **Fields:** `draft_field`, `free_field`, `field_with_values`, `field_as_rule_target`, `published_field`, `archived_field`
 - **Values:** `draft_value`, `value_in_rule_target`, `value_in_rule_condition`
 - **Rules:** `draft_rule`, `published_rule`, `archived_rule`, `rule_with_value_target`
+- **BOM Items:** `draft_bom_item`
 
 ### Engine Fixtures (fixtures/engine.py)
 - `setup_insurance_scenario`: Complex auto insurance scenario with all rule types
@@ -183,12 +193,12 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
-| API           | 22    | ~297          | Endpoint CRUD, lifecycle, middleware |
-| Engine        | 8     | ~89           | Business logic, rules, SKU, cache |
-| Integration   | 12    | ~18           | End-to-end workflows             |
+| API           | 25    | ~362          | Endpoint CRUD, lifecycle, middleware, BOM |
+| Engine        | 12    | ~124          | Business logic, rules, SKU, cache, BOM |
+| Integration   | 14    | ~26           | End-to-end workflows, BOM clone, BOM lifecycle |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
 | Stress        | 2     | ~15           | Concurrency and edge cases       |
-| **Total**     | **45**| **~434**      |                                  |
+| **Total**     | **53**| **~540**      |                                  |
 
 ## Test Coverage
 
@@ -201,6 +211,9 @@ The test suite provides comprehensive coverage across all application layers:
 - **Entities & Versions**: Lifecycle management, publishing, archiving, cloning
 - **Fields & Values**: CRUD operations, data type validation, constraints, `sku_modifier` attribute
 - **Rules**: CRUD, type-specific logic (including CALCULATION `set_value` validation), edge cases, complex scenarios
+- **BOM Items**: CRUD, DRAFT-only enforcement, RBAC, pricing/type validation, hierarchy, COMMERCIAL-is-root, price consistency
+- **BOM Item Rules**: CRUD, DRAFT-only enforcement, RBAC, ownership validation, conditions field_id validation
+- **BOM Engine Integration**: Stateless and stateful BOM calculation, `bom_total_price` persistence across create/update/upgrade/clone
 - **Users**: User management, role assignment, access control
 - **Middleware**: Request correlation ID generation, propagation, and logging filter injection
 
@@ -218,6 +231,12 @@ The test suite comprehensively validates that Fields, Values, and Rules can only
 | Value CREATE | ✅ | ✅ 409 | ✅ 409 |
 | Value UPDATE | ✅ | ✅ 409 | ✅ 409 |
 | Value DELETE | ✅ | ✅ 409 | ✅ 409 |
+| BOM Item CREATE | ✅ | ✅ 409 | ✅ 409 |
+| BOM Item UPDATE | ✅ | ✅ 409 | ✅ 409 |
+| BOM Item DELETE | ✅ | ✅ 409 | ✅ 409 |
+| BOM Item Rule CREATE | ✅ | ✅ 409 | ✅ 409 |
+| BOM Item Rule UPDATE | ✅ | ✅ 409 | ✅ 409 |
+| BOM Item Rule DELETE | ✅ | ✅ 409 | ✅ 409 |
 
 All tests validate both the HTTP status code (409 Conflict) and the error message containing "draft".
 
@@ -287,6 +306,10 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **Operators**: All comparison operators (EQUALS, NOT_EQUALS, GREATER_THAN, GREATER_THAN_OR_EQUAL, LESS_THAN, LESS_THAN_OR_EQUAL, IN)
 - **Dropdown Logic**: Cascading dropdowns, dynamic value filtering
 - **SKU Generation**: Smart SKU generation with modifiers (see below)
+- **BOM Evaluation**: Inclusion/exclusion logic, OR/AND conditions, type filtering, line totals, commercial total
+- **BOM Quantities**: Static quantity, field reference, null fallback, zero/negative exclusion, decimal support
+- **BOM Tree**: Parent-child cascade pruning, three-level nesting, sibling independence, sequence ordering
+- **BOM Aggregation**: Part-number grouping, quantity summing, type-aware keys, parent-aware keys
 - **Stress Tests**: Domino effects, complex dependencies, performance under load
 
 #### CALCULATION Rule Tests (`test_calculation.py`)
@@ -331,6 +354,7 @@ The SKU generation feature is comprehensively tested across multiple scenarios:
 - **Cascade Operations**: Delete/update propagation
 - **RBAC End-to-End**: Complete authorization flows across modules
 - **Complex Rule Interactions**: Multi-rule scenarios, interdependencies
+- **BOM Clone Remapping**: BOM item/rule ID remapping during version clone (parent, quantity_from_field, conditions)
 - **Configuration Lifecycle Flows**: Complete workflows (create → update → finalize → clone → modify), upgrade-then-finalize blocked when incompatible
 
 ### Performance & Stress (~30 tests)

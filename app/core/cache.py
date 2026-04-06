@@ -3,6 +3,7 @@
 import threading
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Generic, TypeVar
 
 T = TypeVar("T")
@@ -59,12 +60,43 @@ class CachedRule:
 
 
 @dataclass(frozen=True)
+class CachedBOMItem:
+    """Immutable snapshot of a BOMItem for cache storage."""
+
+    id: int
+    entity_version_id: int
+    parent_bom_item_id: int | None
+    bom_type: str
+    part_number: str
+    description: str | None
+    category: str | None
+    quantity: Decimal
+    quantity_from_field_id: int | None
+    unit_of_measure: str | None
+    unit_price: Decimal | None
+    sequence: int
+
+
+@dataclass(frozen=True)
+class CachedBOMItemRule:
+    """Immutable snapshot of a BOMItemRule for cache storage."""
+
+    id: int
+    bom_item_id: int
+    entity_version_id: int
+    conditions: dict
+    description: str | None
+
+
+@dataclass(frozen=True)
 class VersionData:
     """All data needed to evaluate rules for a version."""
 
     fields: list[CachedField]
     values: list[CachedValue]
     rules: list[CachedRule]
+    bom_items: list[CachedBOMItem]
+    bom_item_rules: list[CachedBOMItemRule]
 
 
 # ============================================================

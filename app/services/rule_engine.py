@@ -1,15 +1,34 @@
 import logging
 from collections.abc import Callable
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.cache import CachedField, CachedRule, CachedValue, TTLCache, VersionData
+from app.core.cache import CachedBOMItem, CachedBOMItemRule, CachedField, CachedRule, CachedValue, TTLCache, VersionData
 from app.core.config import settings
-from app.models.domain import Entity, EntityVersion, Field, FieldType, Rule, RuleType, Value, VersionStatus
-from app.schemas.engine import CalculationRequest, CalculationResponse, FieldOutputState, ValueOption
+from app.models.domain import (
+    BOMItem,
+    BOMItemRule,
+    Entity,
+    EntityVersion,
+    Field,
+    FieldType,
+    Rule,
+    RuleType,
+    Value,
+    VersionStatus,
+)
+from app.schemas.engine import (
+    BOMLineItem,
+    BOMOutput,
+    CalculationRequest,
+    CalculationResponse,
+    FieldOutputState,
+    ValueOption,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +60,7 @@ class RuleEngineService:
         logger.debug(f"Resolved target version: {target_version.id}")
 
         # Load all data for the version (with optimized queries + caching for PUBLISHED)
-        fields_db, all_values, all_rules = self._load_version_data(
+        fields_db, all_values, all_rules, all_bom_items, all_bom_item_rules = self._load_version_data(
             db, target_version.id, version_status=target_version.status
         )
         logger.debug(f"Loaded version data: {len(fields_db)} fields, {len(all_values)} values, {len(all_rules)} rules")
@@ -80,6 +99,15 @@ class RuleEngineService:
             version=target_version, fields=fields_db, field_states=field_states, values_by_field=values_by_field
         )
 
+        # Evaluate BOM
+        bom_output = self._evaluate_bom(
+            running_context=running_context,
+            bom_items=all_bom_items,
+            bom_item_rules=all_bom_item_rules,
+            type_map=type_map,
+            field_states=field_states,
+        )
+
         logger.info(
             f"State calculation completed for entity_id={request.entity_id}: "
             f"{len(output_fields)} fields processed, is_complete={is_complete}, "
@@ -87,7 +115,11 @@ class RuleEngineService:
         )
 
         return CalculationResponse(
-            entity_id=request.entity_id, fields=output_fields, is_complete=is_complete, generated_sku=generated_sku
+            entity_id=request.entity_id,
+            fields=output_fields,
+            is_complete=is_complete,
+            generated_sku=generated_sku,
+            bom=bom_output,
         )
 
     # ============================================================
@@ -145,9 +177,9 @@ class RuleEngineService:
 
     def _load_version_data(
         self, db: Session, version_id: int, version_status: str
-    ) -> tuple[list[CachedField], list[CachedValue], list[CachedRule]]:
+    ) -> tuple[list[CachedField], list[CachedValue], list[CachedRule], list[CachedBOMItem], list[CachedBOMItemRule]]:
         """
-        Loads all Fields, Values, and Rules for a given version.
+        Loads all Fields, Values, Rules, BOM Items, and BOM Item Rules for a given version.
 
         PUBLISHED versions are cached as frozen dataclasses (session-independent).
         DRAFT versions always hit the database (mutable data).
@@ -160,7 +192,7 @@ class RuleEngineService:
         cached = self._cache.get(cache_key)
         if cached is not None:
             logger.debug(f"Cache hit for version {version_id}")
-            return cached.fields, cached.values, cached.rules
+            return cached.fields, cached.values, cached.rules, cached.bom_items, cached.bom_item_rules
 
         try:
             # Load fields ordered by execution sequence
@@ -175,6 +207,14 @@ class RuleEngineService:
 
             # Batch load all rules
             all_rules_db = db.query(Rule).filter(Rule.entity_version_id == version_id).all()
+
+            # Batch load all BOM items
+            all_bom_items_db = (
+                db.query(BOMItem).filter(BOMItem.entity_version_id == version_id).order_by(BOMItem.sequence).all()
+            )
+
+            # Batch load all BOM item rules
+            all_bom_item_rules_db = db.query(BOMItemRule).filter(BOMItemRule.entity_version_id == version_id).all()
 
             # Convert ORM instances to frozen dataclasses
             fields = [
@@ -219,15 +259,54 @@ class RuleEngineService:
                 )
                 for r in all_rules_db
             ]
+            bom_items = [
+                CachedBOMItem(
+                    id=b.id,
+                    entity_version_id=b.entity_version_id,
+                    parent_bom_item_id=b.parent_bom_item_id,
+                    bom_type=b.bom_type,
+                    part_number=b.part_number,
+                    description=b.description,
+                    category=b.category,
+                    quantity=b.quantity,
+                    quantity_from_field_id=b.quantity_from_field_id,
+                    unit_of_measure=b.unit_of_measure,
+                    unit_price=b.unit_price,
+                    sequence=b.sequence,
+                )
+                for b in all_bom_items_db
+            ]
+            bom_item_rules = [
+                CachedBOMItemRule(
+                    id=br.id,
+                    bom_item_id=br.bom_item_id,
+                    entity_version_id=br.entity_version_id,
+                    conditions=br.conditions,
+                    description=br.description,
+                )
+                for br in all_bom_item_rules_db
+            ]
 
-            version_data = VersionData(fields=fields, values=values, rules=rules)
+            version_data = VersionData(
+                fields=fields,
+                values=values,
+                rules=rules,
+                bom_items=bom_items,
+                bom_item_rules=bom_item_rules,
+            )
 
             # Only cache PUBLISHED versions (immutable)
             if version_status == VersionStatus.PUBLISHED.value:
                 self._cache.set(cache_key, version_data)
                 logger.debug(f"Cached version {version_id} (PUBLISHED)")
 
-            return version_data.fields, version_data.values, version_data.rules
+            return (
+                version_data.fields,
+                version_data.values,
+                version_data.rules,
+                version_data.bom_items,
+                version_data.bom_item_rules,
+            )
 
         except SQLAlchemyError as e:
             logger.error(f"Database error while loading version data for version {version_id}: {str(e)}")
@@ -912,6 +991,233 @@ class RuleEngineService:
             generated_sku = generated_sku[: self._MAX_SKU_LENGTH]
 
         return generated_sku
+
+    # ============================================================
+    # BOM EVALUATION
+    # ============================================================
+
+    def _evaluate_bom(
+        self,
+        running_context: dict[int, Any],
+        bom_items: list[CachedBOMItem],
+        bom_item_rules: list[CachedBOMItemRule],
+        type_map: dict[int, str],
+        field_states: dict[int, FieldOutputState],
+    ) -> BOMOutput | None:
+        """
+        Evaluates BOM items after the waterfall to produce technical and commercial line items.
+
+        Algorithm:
+        1. Build rules-by-bom-item index
+        2. Evaluate inclusion for each BOM item (OR logic across rules)
+        3. Resolve quantities (static or from field)
+        4. Prune tree (excluded parent → excluded subtree)
+        5. Aggregate by (part_number, parent_bom_item_id, bom_type) — sum quantities
+        6. Build output: nested tree for TECHNICAL, flat list for COMMERCIAL
+        """
+        if not bom_items:
+            return None
+
+        # 1. Build index: bom_item_id → list of rules
+        rules_by_bom_item: dict[int, list[CachedBOMItemRule]] = self._build_index(
+            bom_item_rules, lambda r: r.bom_item_id
+        )
+
+        # 2. Evaluate inclusion (flat pass)
+        included_set: set[int] = set()
+        for item in bom_items:
+            rules = rules_by_bom_item.get(item.id, [])
+            if not rules or any(self._evaluate_rule(rule.conditions, running_context, type_map) for rule in rules):
+                included_set.add(item.id)
+
+        # 3. Resolve quantities
+        resolved_quantities: dict[int, Decimal] = {}
+        for item in bom_items:
+            if item.id not in included_set:
+                continue
+            quantity = self._resolve_bom_quantity(item, running_context, field_states)
+            if quantity is None:
+                included_set.discard(item.id)
+            else:
+                resolved_quantities[item.id] = quantity
+
+        # 4. Prune tree
+        self._prune_bom_tree(bom_items, included_set)
+
+        # 5. Aggregate by part number
+        deduplicated = self._aggregate_bom_items(bom_items, included_set, resolved_quantities)
+
+        # 6. Build output
+        return self._build_bom_output(deduplicated, included_set, resolved_quantities)
+
+    def _resolve_bom_quantity(
+        self,
+        item: CachedBOMItem,
+        running_context: dict[int, Any],
+        field_states: dict[int, FieldOutputState],
+    ) -> Decimal | None:
+        """
+        Resolves the effective quantity for a BOM item.
+
+        Returns the resolved quantity, or None if the item should be excluded
+        (field value is zero or negative).
+        """
+        if item.quantity_from_field_id is None:
+            return item.quantity
+
+        # Check if the referenced field is hidden — fall back to static quantity
+        field_state = field_states.get(item.quantity_from_field_id)
+        if field_state is not None and field_state.is_hidden:
+            return item.quantity
+
+        field_value = running_context.get(item.quantity_from_field_id)
+        if field_value is None:
+            return item.quantity
+
+        try:
+            decimal_value = Decimal(str(field_value))
+        except (InvalidOperation, ValueError, TypeError):
+            return item.quantity
+
+        if decimal_value <= 0:
+            return None  # Exclude item
+
+        return decimal_value
+
+    def _prune_bom_tree(self, bom_items: list[CachedBOMItem], included_set: set[int]) -> None:
+        """
+        Removes children whose parent has been excluded.
+
+        Iterates top-down (items are ordered by sequence). If a parent is not in
+        the included set, its children are removed as well.
+        """
+        changed = True
+        while changed:
+            changed = False
+            for item in bom_items:
+                if item.id not in included_set:
+                    continue
+                if item.parent_bom_item_id is not None and item.parent_bom_item_id not in included_set:
+                    included_set.discard(item.id)
+                    changed = True
+
+    def _aggregate_bom_items(
+        self,
+        bom_items: list[CachedBOMItem],
+        included_set: set[int],
+        resolved_quantities: dict[int, Decimal],
+    ) -> tuple[list[CachedBOMItem], dict[int, Decimal]]:
+        """
+        Aggregates included BOM items by (part_number, parent_bom_item_id, bom_type).
+
+        Items sharing the same part_number, parent context, and BOM type are
+        merged into a single representative item (the first by sequence order).
+        Quantities are summed. TECHNICAL and COMMERCIAL items with the same
+        part_number remain separate.
+
+        Returns a deduplicated item list and updated resolved_quantities map.
+        """
+        from collections import OrderedDict
+
+        # Group by (part_number, parent_bom_item_id, bom_type) preserving sequence order
+        groups: OrderedDict[tuple[str, int | None, str], list[CachedBOMItem]] = OrderedDict()
+        for item in bom_items:
+            if item.id not in included_set:
+                continue
+            key = (item.part_number, item.parent_bom_item_id, item.bom_type)
+            groups.setdefault(key, []).append(item)
+
+        new_included: set[int] = set()
+        new_quantities: dict[int, Decimal] = {}
+        deduplicated: list[CachedBOMItem] = []
+
+        for group in groups.values():
+            representative = group[0]
+            total_quantity = sum(resolved_quantities[item.id] for item in group)
+
+            deduplicated.append(representative)
+            new_included.add(representative.id)
+            new_quantities[representative.id] = total_quantity
+
+        # Update the sets in place
+        included_set.clear()
+        included_set.update(new_included)
+        resolved_quantities.clear()
+        resolved_quantities.update(new_quantities)
+
+        return deduplicated
+
+    def _build_bom_output(
+        self,
+        bom_items: list[CachedBOMItem],
+        included_set: set[int],
+        resolved_quantities: dict[int, Decimal],
+    ) -> BOMOutput:
+        """
+        Constructs the BOM output: nested tree for TECHNICAL, flat list for COMMERCIAL.
+
+        TECHNICAL items support hierarchy (parent/child relationships).
+        COMMERCIAL items are always root-level (guaranteed by CRUD validation).
+        """
+        # Build line items indexed by id
+        line_items: dict[int, BOMLineItem] = {}
+        for item in bom_items:
+            if item.id not in included_set:
+                continue
+            quantity = resolved_quantities[item.id]
+            line_total = quantity * item.unit_price if item.unit_price is not None else None
+            line_items[item.id] = BOMLineItem(
+                bom_item_id=item.id,
+                bom_type=item.bom_type,
+                part_number=item.part_number,
+                description=item.description,
+                category=item.category,
+                quantity=quantity,
+                unit_of_measure=item.unit_of_measure,
+                unit_price=item.unit_price,
+                line_total=line_total,
+                children=[],
+            )
+
+        # Build tree for TECHNICAL items (attach children to parents)
+        technical: list[BOMLineItem] = []
+        commercial: list[BOMLineItem] = []
+        for item in bom_items:
+            if item.id not in included_set:
+                continue
+            line_item = line_items[item.id]
+            if item.bom_type == "COMMERCIAL":
+                # COMMERCIAL items are always root-level (flat list)
+                commercial.append(line_item)
+            else:
+                # TECHNICAL items: build nested tree
+                if item.parent_bom_item_id is not None and item.parent_bom_item_id in line_items:
+                    line_items[item.parent_bom_item_id].children.append(line_item)
+                else:
+                    technical.append(line_item)
+
+        # Compute commercial total (flat sum — no nesting for COMMERCIAL)
+        commercial_total = self._sum_line_totals(commercial)
+
+        return BOMOutput(
+            technical=technical,
+            commercial=commercial,
+            commercial_total=commercial_total,
+        )
+
+    def _sum_line_totals(self, items: list[BOMLineItem]) -> Decimal | None:
+        """Recursively sums line_total across a list of BOMLineItems and their children."""
+        total = Decimal("0")
+        has_any = False
+        for item in items:
+            if item.line_total is not None:
+                total += item.line_total
+                has_any = True
+            child_total = self._sum_line_totals(item.children)
+            if child_total is not None:
+                total += child_total
+                has_any = True
+        return total if has_any else None
 
     # ============================================================
     # UTILITY

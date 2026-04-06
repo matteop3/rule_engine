@@ -358,6 +358,7 @@ def create_configuration(
             name=config_in.name,
             is_complete=calc_result.is_complete,
             generated_sku=calc_result.generated_sku,
+            bom_total_price=calc_result.bom.commercial_total if calc_result.bom else None,
             data=data_list,
             created_by_id=current_user.id,
             # updated_by_id intentionally NULL: record not yet modified
@@ -532,6 +533,7 @@ def update_configuration(
 
         update_data["is_complete"] = calc_result.is_complete
         update_data["generated_sku"] = calc_result.generated_sku
+        update_data["bom_total_price"] = calc_result.bom.commercial_total if calc_result.bom else None
         logger.info(f"Recalculated is_complete: {calc_result.is_complete}")
 
     # Transaction phase
@@ -697,6 +699,7 @@ def clone_configuration(config_id: str, db: Session = Depends(get_db), current_u
             status=ConfigurationStatus.DRAFT,  # Always DRAFT
             is_complete=source.is_complete,
             generated_sku=source.generated_sku,
+            bom_total_price=source.bom_total_price,
             is_deleted=False,
             data=source.data.copy() if source.data else [],
             created_by_id=current_user.id,
@@ -721,6 +724,7 @@ def clone_configuration(config_id: str, db: Session = Depends(get_db), current_u
         status=ConfigurationStatusEnum(cloned_config.status),
         is_complete=cloned_config.is_complete,
         generated_sku=cloned_config.generated_sku,
+        bom_total_price=cloned_config.bom_total_price,
         is_deleted=cloned_config.is_deleted,
         data=convert_to_field_input_states(cloned_config.data),
         created_at=cloned_config.created_at,
@@ -794,6 +798,7 @@ def upgrade_configuration(
         config.entity_version_id = latest_version.id
         config.is_complete = calc_result.is_complete
         config.generated_sku = calc_result.generated_sku
+        config.bom_total_price = calc_result.bom.commercial_total if calc_result.bom else None
         config.updated_by_id = current_user.id
 
         logger.info(

@@ -4,10 +4,22 @@ Provides common building blocks for domain model tests.
 """
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
-from app.models.domain import Entity, EntityVersion, Field, FieldType, Rule, RuleType, Value, VersionStatus
+from app.models.domain import (
+    BOMItem,
+    BOMType,
+    Entity,
+    EntityVersion,
+    Field,
+    FieldType,
+    Rule,
+    RuleType,
+    Value,
+    VersionStatus,
+)
 
 # ============================================================
 # ENTITY FIXTURES
@@ -644,3 +656,25 @@ def archived_rule(db_session, archived_version):
     db_session.refresh(rule)
 
     return {"rule": rule, "target_field": target_field, "source_field": source_field}
+
+
+# ============================================================
+# BOM ITEM FIXTURES
+# ============================================================
+
+
+@pytest.fixture(scope="function")
+def draft_bom_item(db_session, draft_version):
+    """Creates a TECHNICAL BOM item in a DRAFT version."""
+    item = BOMItem(
+        entity_version_id=draft_version.id,
+        bom_type=BOMType.TECHNICAL.value,
+        part_number="TEST-BOM-001",
+        description="Test BOM item",
+        quantity=Decimal("1"),
+        sequence=0,
+    )
+    db_session.add(item)
+    db_session.commit()
+    db_session.refresh(item)
+    return item

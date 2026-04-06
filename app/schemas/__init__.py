@@ -2,8 +2,18 @@
 # making them directly accessible from "app.schemas."
 
 from .base_schema import AuditSchemaMixin, BaseSchema
+from .bom_item import BOMItemCreate, BOMItemRead, BOMItemUpdate
+from .bom_item_rule import BOMItemRuleCreate, BOMItemRuleRead, BOMItemRuleUpdate
 from .configuration import ConfigurationCreate, ConfigurationRead, ConfigurationUpdate
-from .engine import CalculationRequest, CalculationResponse, FieldInputState, FieldOutputState, ValueOption
+from .engine import (
+    BOMLineItem,
+    BOMOutput,
+    CalculationRequest,
+    CalculationResponse,
+    FieldInputState,
+    FieldOutputState,
+    ValueOption,
+)
 from .entity import EntityBase, EntityCreate, EntityRead, EntityUpdate
 from .field import FieldBase, FieldCreate, FieldRead, FieldUpdate
 from .rule import RuleBase, RuleConditions, RuleCreate, RuleCriterion, RuleRead, RuleUpdate

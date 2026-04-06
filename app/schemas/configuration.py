@@ -1,3 +1,4 @@
+from decimal import Decimal
 from enum import Enum
 
 from .base_schema import AuditSchemaMixin, BaseSchema
@@ -45,6 +46,7 @@ class ConfigurationRead(ConfigurationBase, AuditSchemaMixin):
     status: ConfigurationStatusEnum
     is_complete: bool
     generated_sku: str | None = None
+    bom_total_price: Decimal | None = None
     is_deleted: bool = False
 
 

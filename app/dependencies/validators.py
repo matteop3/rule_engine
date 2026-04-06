@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies.fetchers import (
     fetch_version_by_id,
+    get_bom_item_or_404,
+    get_bom_item_rule_or_404,
     get_field_or_404,
     get_rule_or_404,
     get_value_or_404,
     get_version_or_404,
 )
-from app.models.domain import EntityVersion, Field, Rule, Value, VersionStatus
+from app.models.domain import BOMItem, BOMItemRule, EntityVersion, Field, Rule, Value, VersionStatus
 
 
 def validate_version_is_draft(version: EntityVersion) -> None:
@@ -193,3 +195,36 @@ def get_editable_value(value: Value = Depends(get_value_or_404), db: Session = D
     version = fetch_version_by_id(db, parent_field.entity_version_id)
     validate_version_is_draft(version)
     return value
+
+
+# ============================================================
+# BOM EDITABLE DEPENDENCIES
+# ============================================================
+
+
+def get_editable_bom_item(bom_item: BOMItem = Depends(get_bom_item_or_404), db: Session = Depends(get_db)) -> BOMItem:
+    """
+    Dependency: Retrieves a BOMItem and validates its version is DRAFT.
+
+    Raises:
+        HTTPException(404): If BOM item doesn't exist
+        HTTPException(409): If version is not DRAFT
+    """
+    version = fetch_version_by_id(db, bom_item.entity_version_id)
+    validate_version_is_draft(version)
+    return bom_item
+
+
+def get_editable_bom_item_rule(
+    bom_item_rule: BOMItemRule = Depends(get_bom_item_rule_or_404), db: Session = Depends(get_db)
+) -> BOMItemRule:
+    """
+    Dependency: Retrieves a BOMItemRule and validates its version is DRAFT.
+
+    Raises:
+        HTTPException(404): If BOM item rule doesn't exist
+        HTTPException(409): If version is not DRAFT
+    """
+    version = fetch_version_by_id(db, bom_item_rule.entity_version_id)
+    validate_version_is_draft(version)
+    return bom_item_rule
