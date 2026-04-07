@@ -547,13 +547,13 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 
 ## Testing
 
-The project includes 900+ tests across multiple categories:
+The project includes 975+ tests across multiple categories:
 
 | Category | Location | Description |
 |----------|----------|-------------|
-| API Tests | `tests/api/` | All CRUD operations, RBAC, lifecycle |
-| Engine Tests | `tests/engine/` | Rule evaluation, operators, SKU |
-| Integration | `tests/integration/` | End-to-end workflows |
+| API Tests | `tests/api/` | CRUD operations, RBAC, lifecycle, input validation |
+| Engine Tests | `tests/engine/` | Rule evaluation, operators, SKU, BOM edge cases, mutation kills |
+| Integration | `tests/integration/` | End-to-end workflows, BOM lifecycle |
 | Performance | `tests/performance/` | Benchmarks |
 | Stress | `tests/stress/` | Concurrency, race conditions |
 

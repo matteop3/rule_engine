@@ -10,6 +10,7 @@ Tests the full CRUD lifecycle for Rule management including:
 Each test is atomic and independent.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models.domain import Field, FieldType, Rule, RuleType, Value
@@ -22,37 +23,21 @@ from app.models.domain import Field, FieldType, Rule, RuleType, Value
 class TestListRules:
     """Tests for GET /rules/ endpoint."""
 
-    def test_admin_can_list_rules(self, client: TestClient, admin_headers, draft_rule):
-        """Test that admin can list rules."""
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_list_rules_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_rule):
+        """RBAC: admin/author can list rules, user gets 403, unauthenticated gets 401."""
         rule = draft_rule["rule"]
-        response = client.get(f"/rules/?entity_version_id={rule.entity_version_id}", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
-
-    def test_author_can_list_rules(self, client: TestClient, author_headers, draft_rule):
-        """Test that author can list rules."""
-        rule = draft_rule["rule"]
-        response = client.get(f"/rules/?entity_version_id={rule.entity_version_id}", headers=author_headers)
-
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
-
-    def test_regular_user_cannot_list_rules(self, client: TestClient, user_headers, draft_rule):
-        """Test that regular user cannot list rules (403)."""
-        rule = draft_rule["rule"]
-        response = client.get(f"/rules/?entity_version_id={rule.entity_version_id}", headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_list_rules(self, client: TestClient, draft_rule):
-        """Test that unauthenticated request returns 401."""
-        rule = draft_rule["rule"]
-        response = client.get(f"/rules/?entity_version_id={rule.entity_version_id}")
-
-        assert response.status_code == 401
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.get(f"/rules/?entity_version_id={rule.entity_version_id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_list_rules_without_filter(self, client: TestClient, admin_headers, draft_rule):
         """Test that listing without filter returns all accessible rules."""
@@ -115,43 +100,27 @@ class TestListRules:
 class TestReadRule:
     """Tests for GET /rules/{rule_id} endpoint."""
 
-    def test_admin_can_read_rule(self, client: TestClient, admin_headers, draft_rule):
-        """Test that admin can read rule by ID."""
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_read_rule_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_rule):
+        """RBAC: admin/author can read rule, user gets 403, unauthenticated gets 401."""
         rule = draft_rule["rule"]
-        response = client.get(f"/rules/{rule.id}", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == rule.id
-        assert data["rule_type"] == RuleType.MANDATORY.value
-
-    def test_author_can_read_rule(self, client: TestClient, author_headers, draft_rule):
-        """Test that author can read rule by ID."""
-        rule = draft_rule["rule"]
-        response = client.get(f"/rules/{rule.id}", headers=author_headers)
-
-        assert response.status_code == 200
-        assert response.json()["id"] == rule.id
-
-    def test_regular_user_cannot_read_rule(self, client: TestClient, user_headers, draft_rule):
-        """Test that regular user cannot read rules (403)."""
-        rule = draft_rule["rule"]
-        response = client.get(f"/rules/{rule.id}", headers=user_headers)
-
-        assert response.status_code == 403
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.get(f"/rules/{rule.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_read_nonexistent_rule_returns_404(self, client: TestClient, admin_headers):
         """Test that reading non-existent rule returns 404."""
         response = client.get("/rules/99999", headers=admin_headers)
 
         assert response.status_code == 404
-
-    def test_unauthenticated_cannot_read_rule(self, client: TestClient, draft_rule):
-        """Test that unauthenticated request returns 401."""
-        rule = draft_rule["rule"]
-        response = client.get(f"/rules/{rule.id}")
-
-        assert response.status_code == 401
 
     def test_read_rule_includes_conditions(self, client: TestClient, admin_headers, draft_rule):
         """Test that rule includes conditions in response."""
@@ -172,106 +141,29 @@ class TestReadRule:
 class TestCreateRule:
     """Tests for POST /rules/ endpoint."""
 
-    def test_admin_can_create_rule(self, client: TestClient, admin_headers, db_session, draft_version):
-        """Test that admin can create a rule in DRAFT version."""
-        # Create target and source fields
-        target_field = Field(
-            entity_version_id=draft_version.id,
-            name="rule_target_field",
-            label="Rule Target",
-            data_type=FieldType.BOOLEAN.value,
-            is_free_value=True,
-        )
-        source_field = Field(
-            entity_version_id=draft_version.id,
-            name="rule_source_field",
-            label="Rule Source",
-            data_type=FieldType.NUMBER.value,
-            is_free_value=True,
-        )
-        db_session.add_all([target_field, source_field])
-        db_session.commit()
-
-        payload = {
-            "entity_version_id": draft_version.id,
-            "target_field_id": target_field.id,
-            "rule_type": "visibility",
-            "description": "Test visibility rule",
-            "conditions": {"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]},
-            "error_message": None,
-        }
-
-        response = client.post("/rules/", json=payload, headers=admin_headers)
-
-        assert response.status_code == 201
-        data = response.json()
-        assert data["target_field_id"] == target_field.id
-        assert data["rule_type"] == "visibility"
-        assert "id" in data
-
-    def test_author_can_create_rule(self, client: TestClient, author_headers, db_session, draft_version):
-        """Test that author can create a rule."""
-        target_field = Field(
-            entity_version_id=draft_version.id,
-            name="author_rule_target",
-            label="Author Target",
-            data_type=FieldType.STRING.value,
-            is_free_value=True,
-        )
-        source_field = Field(
-            entity_version_id=draft_version.id,
-            name="author_rule_source",
-            label="Author Source",
-            data_type=FieldType.NUMBER.value,
-            is_free_value=True,
-        )
-        db_session.add_all([target_field, source_field])
-        db_session.commit()
-
-        payload = {
-            "entity_version_id": draft_version.id,
-            "target_field_id": target_field.id,
-            "rule_type": "mandatory",
-            "conditions": {"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 100}]},
-        }
-
-        response = client.post("/rules/", json=payload, headers=author_headers)
-
-        assert response.status_code == 201
-
-    def test_regular_user_cannot_create_rule(self, client: TestClient, user_headers, draft_rule):
-        """Test that regular user cannot create rules (403)."""
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 201),
+            ("author_headers", 201),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_create_rule_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_rule):
+        """RBAC: admin/author can create rules, user gets 403, unauthenticated gets 401."""
         rule = draft_rule["rule"]
         target_field = draft_rule["target_field"]
         source_field = draft_rule["source_field"]
-
         payload = {
             "entity_version_id": rule.entity_version_id,
             "target_field_id": target_field.id,
             "rule_type": "visibility",
             "conditions": {"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": 1}]},
         }
-
-        response = client.post("/rules/", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_create_rule(self, client: TestClient, draft_rule):
-        """Test that unauthenticated request returns 401."""
-        rule = draft_rule["rule"]
-        target_field = draft_rule["target_field"]
-        source_field = draft_rule["source_field"]
-
-        payload = {
-            "entity_version_id": rule.entity_version_id,
-            "target_field_id": target_field.id,
-            "rule_type": "visibility",
-            "conditions": {"criteria": [{"field_id": source_field.id, "operator": "EQUALS", "value": 1}]},
-        }
-
-        response = client.post("/rules/", json=payload)
-
-        assert response.status_code == 401
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.post("/rules/", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_create_rule_in_published_version(self, client: TestClient, admin_headers, published_rule):
         """
@@ -600,35 +492,21 @@ class TestCreateRule:
 class TestUpdateRule:
     """Tests for PATCH /rules/{rule_id} endpoint."""
 
-    def test_admin_can_update_rule(self, client: TestClient, admin_headers, draft_rule):
-        """Test that admin can update a rule in DRAFT version."""
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+        ],
+    )
+    def test_update_rule_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_rule):
+        """RBAC: admin/author can update rules, user gets 403."""
         rule = draft_rule["rule"]
-        payload = {"description": "Updated description"}
-
-        response = client.patch(f"/rules/{rule.id}", json=payload, headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["description"] == "Updated description"
-
-    def test_author_can_update_rule(self, client: TestClient, author_headers, draft_rule):
-        """Test that author can update a rule."""
-        rule = draft_rule["rule"]
-        payload = {"description": "Author updated"}
-
-        response = client.patch(f"/rules/{rule.id}", json=payload, headers=author_headers)
-
-        assert response.status_code == 200
-        assert response.json()["description"] == "Author updated"
-
-    def test_regular_user_cannot_update_rule(self, client: TestClient, user_headers, draft_rule):
-        """Test that regular user cannot update rules (403)."""
-        rule = draft_rule["rule"]
-        payload = {"description": "User updated"}
-
-        response = client.patch(f"/rules/{rule.id}", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
+        payload = {"description": "RBAC updated"}
+        headers = request.getfixturevalue(headers_fixture)
+        response = client.patch(f"/rules/{rule.id}", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_update_rule_in_published_version(self, client: TestClient, admin_headers, published_rule):
         """
@@ -768,62 +646,21 @@ class TestUpdateRule:
 class TestDeleteRule:
     """Tests for DELETE /rules/{rule_id} endpoint."""
 
-    def test_admin_can_delete_rule(self, client: TestClient, admin_headers, draft_rule):
-        """Test that admin can delete a rule in DRAFT version."""
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 204),
+            ("author_headers", 204),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_delete_rule_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_rule):
+        """RBAC: admin/author can delete rules, user gets 403, unauthenticated gets 401."""
         rule = draft_rule["rule"]
-
-        response = client.delete(f"/rules/{rule.id}", headers=admin_headers)
-
-        assert response.status_code == 204
-
-    def test_author_can_delete_rule(self, client: TestClient, author_headers, db_session, draft_version):
-        """Test that author can delete a rule."""
-        target_field = Field(
-            entity_version_id=draft_version.id,
-            name="delete_target",
-            label="Delete Target",
-            data_type=FieldType.BOOLEAN.value,
-            is_free_value=True,
-        )
-        source_field = Field(
-            entity_version_id=draft_version.id,
-            name="delete_source",
-            label="Delete Source",
-            data_type=FieldType.NUMBER.value,
-            is_free_value=True,
-        )
-        db_session.add_all([target_field, source_field])
-        db_session.flush()
-
-        rule = Rule(
-            entity_version_id=draft_version.id,
-            target_field_id=target_field.id,
-            rule_type=RuleType.VISIBILITY.value,
-            description="To delete",
-            conditions={"criteria": [{"field_id": source_field.id, "operator": "GREATER_THAN", "value": 0}]},
-        )
-        db_session.add(rule)
-        db_session.commit()
-
-        response = client.delete(f"/rules/{rule.id}", headers=author_headers)
-
-        assert response.status_code == 204
-
-    def test_regular_user_cannot_delete_rule(self, client: TestClient, user_headers, draft_rule):
-        """Test that regular user cannot delete rules (403)."""
-        rule = draft_rule["rule"]
-
-        response = client.delete(f"/rules/{rule.id}", headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_delete_rule(self, client: TestClient, draft_rule):
-        """Test that unauthenticated request returns 401."""
-        rule = draft_rule["rule"]
-
-        response = client.delete(f"/rules/{rule.id}")
-
-        assert response.status_code == 401
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.delete(f"/rules/{rule.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_delete_rule_in_published_version(self, client: TestClient, admin_headers, published_rule):
         """

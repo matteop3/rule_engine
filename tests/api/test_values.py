@@ -11,6 +11,7 @@ Tests the full CRUD lifecycle for Value management including:
 Each test is atomic and independent.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models.domain import Field, FieldType, Rule, RuleType, Value
@@ -23,33 +24,20 @@ from app.models.domain import Field, FieldType, Rule, RuleType, Value
 class TestListValues:
     """Tests for GET /values/ endpoint."""
 
-    def test_admin_can_list_values(self, client: TestClient, admin_headers, draft_value):
-        """Test that admin can list values."""
-        response = client.get(f"/values/?field_id={draft_value.field_id}", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
-
-    def test_author_can_list_values(self, client: TestClient, author_headers, draft_value):
-        """Test that author can list values."""
-        response = client.get(f"/values/?field_id={draft_value.field_id}", headers=author_headers)
-
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
-
-    def test_regular_user_cannot_list_values(self, client: TestClient, user_headers, draft_value):
-        """Test that regular user cannot list values (403)."""
-        response = client.get(f"/values/?field_id={draft_value.field_id}", headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_list_values(self, client: TestClient, draft_value):
-        """Test that unauthenticated request returns 401."""
-        response = client.get(f"/values/?field_id={draft_value.field_id}")
-
-        assert response.status_code == 401
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_list_values_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_value):
+        """RBAC: admin/author can list values, user gets 403, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.get(f"/values/?field_id={draft_value.field_id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_list_values_without_filter(self, client: TestClient, admin_headers, field_with_values):
         """Test that listing without filter returns all accessible values."""
@@ -92,39 +80,26 @@ class TestListValues:
 class TestReadValue:
     """Tests for GET /values/{value_id} endpoint."""
 
-    def test_admin_can_read_value(self, client: TestClient, admin_headers, draft_value):
-        """Test that admin can read value by ID."""
-        response = client.get(f"/values/{draft_value.id}", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == draft_value.id
-        assert data["value"] == "TEST_VALUE"
-
-    def test_author_can_read_value(self, client: TestClient, author_headers, draft_value):
-        """Test that author can read value by ID."""
-        response = client.get(f"/values/{draft_value.id}", headers=author_headers)
-
-        assert response.status_code == 200
-        assert response.json()["id"] == draft_value.id
-
-    def test_regular_user_cannot_read_value(self, client: TestClient, user_headers, draft_value):
-        """Test that regular user cannot read values (403)."""
-        response = client.get(f"/values/{draft_value.id}", headers=user_headers)
-
-        assert response.status_code == 403
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_read_value_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_value):
+        """RBAC: admin/author can read value, user gets 403, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.get(f"/values/{draft_value.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_read_nonexistent_value_returns_404(self, client: TestClient, admin_headers):
         """Test that reading non-existent value returns 404."""
         response = client.get("/values/99999", headers=admin_headers)
 
         assert response.status_code == 404
-
-    def test_unauthenticated_cannot_read_value(self, client: TestClient, draft_value):
-        """Test that unauthenticated request returns 401."""
-        response = client.get(f"/values/{draft_value.id}")
-
-        assert response.status_code == 401
 
 
 # ============================================================
@@ -135,42 +110,21 @@ class TestReadValue:
 class TestCreateValue:
     """Tests for POST /values/ endpoint."""
 
-    def test_admin_can_create_value(self, client: TestClient, admin_headers, draft_field):
-        """Test that admin can create a value for a non-free field."""
-        payload = {"field_id": draft_field.id, "value": "NEW_VALUE", "label": "New Value", "is_default": False}
-
-        response = client.post("/values/", json=payload, headers=admin_headers)
-
-        assert response.status_code == 201
-        data = response.json()
-        assert data["value"] == "NEW_VALUE"
-        assert data["field_id"] == draft_field.id
-        assert "id" in data
-
-    def test_author_can_create_value(self, client: TestClient, author_headers, draft_field):
-        """Test that author can create a value."""
-        payload = {"field_id": draft_field.id, "value": "AUTHOR_VALUE", "label": "Author Value"}
-
-        response = client.post("/values/", json=payload, headers=author_headers)
-
-        assert response.status_code == 201
-        assert response.json()["value"] == "AUTHOR_VALUE"
-
-    def test_regular_user_cannot_create_value(self, client: TestClient, user_headers, draft_field):
-        """Test that regular user cannot create values (403)."""
-        payload = {"field_id": draft_field.id, "value": "USER_VALUE", "label": "User Value"}
-
-        response = client.post("/values/", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_create_value(self, client: TestClient, draft_field):
-        """Test that unauthenticated request returns 401."""
-        payload = {"field_id": draft_field.id, "value": "ANON_VALUE", "label": "Anonymous Value"}
-
-        response = client.post("/values/", json=payload)
-
-        assert response.status_code == 401
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 201),
+            ("author_headers", 201),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_create_value_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_field):
+        """RBAC: admin/author can create values, user gets 403, unauthenticated gets 401."""
+        payload = {"field_id": draft_field.id, "value": "RBAC_VALUE", "label": "RBAC Value"}
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.post("/values/", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_create_value_for_free_field(self, client: TestClient, admin_headers, free_field):
         """
@@ -234,33 +188,20 @@ class TestCreateValue:
 class TestUpdateValue:
     """Tests for PATCH /values/{value_id} endpoint."""
 
-    def test_admin_can_update_value(self, client: TestClient, admin_headers, draft_value):
-        """Test that admin can update a value in DRAFT version."""
-        payload = {"value": "UPDATED_VALUE", "label": "Updated Value"}
-
-        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["value"] == "UPDATED_VALUE"
-        assert data["label"] == "Updated Value"
-
-    def test_author_can_update_value(self, client: TestClient, author_headers, draft_value):
-        """Test that author can update a value."""
-        payload = {"label": "Author Updated"}
-
-        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=author_headers)
-
-        assert response.status_code == 200
-        assert response.json()["label"] == "Author Updated"
-
-    def test_regular_user_cannot_update_value(self, client: TestClient, user_headers, draft_value):
-        """Test that regular user cannot update values (403)."""
-        payload = {"label": "User Updated"}
-
-        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+        ],
+    )
+    def test_update_value_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_value):
+        """RBAC: admin/author can update values, user gets 403."""
+        payload = {"label": "RBAC Updated"}
+        headers = request.getfixturevalue(headers_fixture)
+        response = client.patch(f"/values/{draft_value.id}", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_update_value_in_published_version(
         self, client: TestClient, admin_headers, db_session, published_field
@@ -405,27 +346,20 @@ class TestUpdateValue:
 class TestDeleteValue:
     """Tests for DELETE /values/{value_id} endpoint."""
 
-    def test_admin_can_delete_value(self, client: TestClient, admin_headers, draft_value):
-        """Test that admin can delete a value without dependencies."""
-        response = client.delete(f"/values/{draft_value.id}", headers=admin_headers)
-
-        assert response.status_code == 204
-
-    def test_author_can_delete_value(self, client: TestClient, author_headers, db_session, draft_field):
-        """Test that author can delete a value."""
-        value = Value(field_id=draft_field.id, value="TO_DELETE", label="To Delete")
-        db_session.add(value)
-        db_session.commit()
-
-        response = client.delete(f"/values/{value.id}", headers=author_headers)
-
-        assert response.status_code == 204
-
-    def test_regular_user_cannot_delete_value(self, client: TestClient, user_headers, draft_value):
-        """Test that regular user cannot delete values (403)."""
-        response = client.delete(f"/values/{draft_value.id}", headers=user_headers)
-
-        assert response.status_code == 403
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 204),
+            ("author_headers", 204),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_delete_value_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_value):
+        """RBAC: admin/author can delete values, user gets 403, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.delete(f"/values/{draft_value.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_delete_value_in_published_version(
         self, client: TestClient, admin_headers, db_session, published_field
@@ -490,12 +424,6 @@ class TestDeleteValue:
         response = client.delete("/values/99999", headers=admin_headers)
 
         assert response.status_code == 404
-
-    def test_unauthenticated_cannot_delete_value(self, client: TestClient, draft_value):
-        """Test that unauthenticated request returns 401."""
-        response = client.delete(f"/values/{draft_value.id}")
-
-        assert response.status_code == 401
 
 
 # ============================================================

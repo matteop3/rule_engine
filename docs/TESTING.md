@@ -193,18 +193,18 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
-| API           | 25    | ~362          | Endpoint CRUD, lifecycle, middleware, BOM |
-| Engine        | 12    | ~124          | Business logic, rules, SKU, cache, BOM |
-| Integration   | 14    | ~26           | End-to-end workflows, BOM clone, BOM lifecycle |
+| API           | 26    | ~663          | Endpoint CRUD, lifecycle, middleware, BOM, input validation |
+| Engine        | 14    | ~196          | Business logic, rules, SKU, cache, BOM edge cases, mutation kills |
+| Integration   | 14    | ~53           | End-to-end workflows, BOM clone, BOM lifecycle |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
-| Stress        | 2     | ~15           | Concurrency and edge cases       |
-| **Total**     | **53**| **~540**      |                                  |
+| Stress        | 3     | ~51           | Concurrency and edge cases       |
+| **Total**     | **58**| **~978**      |                                  |
 
 ## Test Coverage
 
 The test suite provides comprehensive coverage across all application layers:
 
-### API Endpoints (~260 tests)
+### API Endpoints (~663 tests)
 - **Authentication**: Login, token refresh, rate limiting, session management
 - **Configurations**: Full CRUD, rule engine integration, validation, RBAC
 - **Configuration Lifecycle** (~155 tests): Status management, clone, upgrade, finalize operations
@@ -214,6 +214,7 @@ The test suite provides comprehensive coverage across all application layers:
 - **BOM Items**: CRUD, DRAFT-only enforcement, RBAC, pricing/type validation, hierarchy, COMMERCIAL-is-root, price consistency
 - **BOM Item Rules**: CRUD, DRAFT-only enforcement, RBAC, ownership validation, conditions field_id validation
 - **BOM Engine Integration**: Stateless and stateful BOM calculation, `bom_total_price` persistence across create/update/upgrade/clone
+- **Input Validation**: Wrong types, missing fields, invalid enum values, empty/null payloads across all endpoints
 - **Users**: User management, role assignment, access control
 - **Middleware**: Request correlation ID generation, propagation, and logging filter injection
 
@@ -299,7 +300,7 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **FINALIZED → Soft Deleted**: ADMIN only, USER denied (HTTP 403)
 - **Any → DRAFT**: CLONE always creates new DRAFT
 
-### Rule Engine (~62 tests)
+### Rule Engine (~196 tests)
 - **Core Logic**: Field validation, mandatory checks, visibility rules, availability logic
 - **Caching**: TTLCache unit tests (set/get, TTL expiry, eviction, invalidation, stats) + engine integration tests (PUBLISHED cached, DRAFT not cached, invalidation on publish, session independence)
 - **CALCULATION Rules**: Forced values, waterfall interactions, multiple rules, running context, SKU, completeness
@@ -348,7 +349,7 @@ The SKU generation feature is comprehensively tested across multiple scenarios:
 - `test_free_value_field_modifier_combined_with_regular_values`: Free-value modifiers combine correctly with regular value modifiers
 - `test_free_value_field_without_modifier_config_still_ignored`: Backward compatibility - free-value fields without config are still ignored
 
-### Integration & E2E (~18 tests)
+### Integration & E2E (~53 tests)
 - **Data Integrity**: Referential integrity, orphan prevention, unique constraints
 - **Cross-Module Workflows**: Entity lifecycle, cross-router consistency
 - **Cascade Operations**: Delete/update propagation
@@ -357,7 +358,7 @@ The SKU generation feature is comprehensively tested across multiple scenarios:
 - **BOM Clone Remapping**: BOM item/rule ID remapping during version clone (parent, quantity_from_field, conditions)
 - **Configuration Lifecycle Flows**: Complete workflows (create → update → finalize → clone → modify), upgrade-then-finalize blocked when incompatible
 
-### Performance & Stress (~30 tests)
+### Performance & Stress (~66 tests)
 - **Benchmarks**: Throughput measurements, response time analysis
 - **Concurrency**: Race condition detection, parallel operation handling
 - **Version Cloning**: Large-scale cloning stress tests

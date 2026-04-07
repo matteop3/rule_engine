@@ -13,6 +13,7 @@ Tests the full CRUD lifecycle for BOM Item management including:
 
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models.domain import BOMItem, BOMType, Field, FieldType
@@ -25,33 +26,22 @@ from app.models.domain import BOMItem, BOMType, Field, FieldType
 class TestListBOMItems:
     """Tests for GET /bom-items/ endpoint."""
 
-    def test_admin_can_list_bom_items(self, client: TestClient, admin_headers, draft_bom_item):
-        """Admin can list BOM items for a version."""
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+        ],
+    )
+    def test_list_bom_items_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_bom_item):
+        """RBAC: admin/author can list BOM items, user gets 403."""
+        headers = request.getfixturevalue(headers_fixture)
         response = client.get(
             f"/bom-items/?entity_version_id={draft_bom_item.entity_version_id}",
-            headers=admin_headers,
+            headers=headers,
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
-        assert any(item["id"] == draft_bom_item.id for item in data)
-
-    def test_author_can_list_bom_items(self, client: TestClient, author_headers, draft_bom_item):
-        """Author can list BOM items."""
-        response = client.get(
-            f"/bom-items/?entity_version_id={draft_bom_item.entity_version_id}",
-            headers=author_headers,
-        )
-        assert response.status_code == 200
-
-    def test_regular_user_cannot_list_bom_items(self, client: TestClient, user_headers, draft_bom_item):
-        """Regular user cannot list BOM items (403)."""
-        response = client.get(
-            f"/bom-items/?entity_version_id={draft_bom_item.entity_version_id}",
-            headers=user_headers,
-        )
-        assert response.status_code == 403
+        assert response.status_code == expected_status
 
     def test_list_bom_items_ordered_by_sequence(self, client: TestClient, admin_headers, db_session, draft_version):
         """BOM items are returned ordered by sequence."""

@@ -10,6 +10,7 @@ Tests the full CRUD lifecycle for BOM Item Rule management including:
 
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models.domain import BOMItem, BOMItemRule, BOMType, Field, FieldType
@@ -583,12 +584,15 @@ class TestDeleteBOMItemRule:
 class TestBOMItemRuleRBAC:
     """Cross-cutting RBAC tests for BOM item rule endpoints."""
 
-    def test_admin_full_access(self, client: TestClient, admin_headers, draft_bom_item, draft_field):
-        """Admin can perform all CRUD operations."""
+    @pytest.mark.parametrize("headers_fixture", ["admin_headers", "author_headers"])
+    def test_admin_author_full_access(self, client: TestClient, headers_fixture, request, draft_bom_item, draft_field):
+        """RBAC: admin and author can perform all CRUD operations."""
+        headers = request.getfixturevalue(headers_fixture)
+
         # Create
         response = client.post(
             "/bom-item-rules/",
-            headers=admin_headers,
+            headers=headers,
             json={
                 "bom_item_id": draft_bom_item.id,
                 "entity_version_id": draft_bom_item.entity_version_id,
@@ -599,50 +603,19 @@ class TestBOMItemRuleRBAC:
         rule_id = response.json()["id"]
 
         # Read
-        response = client.get(f"/bom-item-rules/{rule_id}", headers=admin_headers)
+        response = client.get(f"/bom-item-rules/{rule_id}", headers=headers)
         assert response.status_code == 200
 
         # Update
         response = client.patch(
             f"/bom-item-rules/{rule_id}",
-            headers=admin_headers,
-            json={"description": "Admin update"},
+            headers=headers,
+            json={"description": "RBAC update"},
         )
         assert response.status_code == 200
 
         # Delete
-        response = client.delete(f"/bom-item-rules/{rule_id}", headers=admin_headers)
-        assert response.status_code == 204
-
-    def test_author_full_access(self, client: TestClient, author_headers, draft_bom_item, draft_field):
-        """Author can perform all CRUD operations."""
-        # Create
-        response = client.post(
-            "/bom-item-rules/",
-            headers=author_headers,
-            json={
-                "bom_item_id": draft_bom_item.id,
-                "entity_version_id": draft_bom_item.entity_version_id,
-                "conditions": {"criteria": [{"field_id": draft_field.id, "operator": "EQUALS", "value": "A"}]},
-            },
-        )
-        assert response.status_code == 201
-        rule_id = response.json()["id"]
-
-        # Read
-        response = client.get(f"/bom-item-rules/{rule_id}", headers=author_headers)
-        assert response.status_code == 200
-
-        # Update
-        response = client.patch(
-            f"/bom-item-rules/{rule_id}",
-            headers=author_headers,
-            json={"description": "Author update"},
-        )
-        assert response.status_code == 200
-
-        # Delete
-        response = client.delete(f"/bom-item-rules/{rule_id}", headers=author_headers)
+        response = client.delete(f"/bom-item-rules/{rule_id}", headers=headers)
         assert response.status_code == 204
 
     def test_user_denied_all_operations(

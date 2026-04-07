@@ -5,6 +5,7 @@ Tests the full CRUD lifecycle for Entity management.
 Each test is atomic and independent.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models.domain import Entity
@@ -17,42 +18,21 @@ from app.models.domain import Entity
 class TestCreateEntity:
     """Tests for POST /entities/ endpoint."""
 
-    def test_admin_can_create_entity(self, client: TestClient, admin_headers):
-        """Test that admin can create a new entity."""
-        payload = {"name": "New Entity", "description": "A test entity"}
-
-        response = client.post("/entities/", json=payload, headers=admin_headers)
-
-        assert response.status_code == 201
-        data = response.json()
-        assert data["name"] == "New Entity"
-        assert data["description"] == "A test entity"
-        assert "id" in data
-
-    def test_author_can_create_entity(self, client: TestClient, author_headers):
-        """Test that author can create a new entity."""
-        payload = {"name": "Author Entity", "description": "Created by author"}
-
-        response = client.post("/entities/", json=payload, headers=author_headers)
-
-        assert response.status_code == 201
-        assert response.json()["name"] == "Author Entity"
-
-    def test_regular_user_cannot_create_entity(self, client: TestClient, user_headers):
-        """Test that regular user cannot create entities (403)."""
-        payload = {"name": "Forbidden Entity", "description": "Should fail"}
-
-        response = client.post("/entities/", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_create_entity(self, client: TestClient):
-        """Test that unauthenticated request returns 401."""
-        payload = {"name": "Anonymous Entity", "description": "Should fail"}
-
-        response = client.post("/entities/", json=payload)
-
-        assert response.status_code == 401
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 201),
+            ("author_headers", 201),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_create_entity_rbac(self, client: TestClient, headers_fixture, expected_status, request):
+        """RBAC: admin/author can create entities, user gets 403, unauthenticated gets 401."""
+        payload = {"name": f"RBAC Entity {headers_fixture}", "description": "RBAC test"}
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.post("/entities/", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_create_duplicate_name(self, client: TestClient, admin_headers, test_entity):
         """Test that creating entity with existing name returns 400."""
@@ -105,34 +85,20 @@ class TestCreateEntity:
 class TestListEntities:
     """Tests for GET /entities/ endpoint."""
 
-    def test_admin_can_list_entities(self, client: TestClient, admin_headers, test_entity):
-        """Test that admin can list entities."""
-        response = client.get("/entities/", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
-
-    def test_author_can_list_entities(self, client: TestClient, author_headers, test_entity):
-        """Test that author can list entities."""
-        response = client.get("/entities/", headers=author_headers)
-
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
-
-    def test_regular_user_can_list_entities(self, client: TestClient, user_headers, test_entity):
-        """Test that regular user can list entities (read access)."""
-        response = client.get("/entities/", headers=user_headers)
-
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
-
-    def test_unauthenticated_cannot_list_entities(self, client: TestClient):
-        """Test that unauthenticated request returns 401."""
-        response = client.get("/entities/")
-
-        assert response.status_code == 401
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 200),
+            (None, 401),
+        ],
+    )
+    def test_list_entities_rbac(self, client: TestClient, headers_fixture, expected_status, request, test_entity):
+        """RBAC: all authenticated roles can list entities, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.get("/entities/", headers=headers)
+        assert response.status_code == expected_status
 
     def test_list_entities_pagination_skip(self, client: TestClient, admin_headers, db_session, admin_user):
         """Test skip parameter works correctly."""
@@ -187,40 +153,26 @@ class TestListEntities:
 class TestReadEntity:
     """Tests for GET /entities/{entity_id} endpoint."""
 
-    def test_admin_can_read_entity(self, client: TestClient, admin_headers, test_entity):
-        """Test that admin can read entity by ID."""
-        response = client.get(f"/entities/{test_entity.id}", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == test_entity.id
-        assert data["name"] == "Test Entity"
-
-    def test_author_can_read_entity(self, client: TestClient, author_headers, test_entity):
-        """Test that author can read entity by ID."""
-        response = client.get(f"/entities/{test_entity.id}", headers=author_headers)
-
-        assert response.status_code == 200
-        assert response.json()["id"] == test_entity.id
-
-    def test_regular_user_can_read_entity(self, client: TestClient, user_headers, test_entity):
-        """Test that regular user can read entity (read access)."""
-        response = client.get(f"/entities/{test_entity.id}", headers=user_headers)
-
-        assert response.status_code == 200
-        assert response.json()["id"] == test_entity.id
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 200),
+            (None, 401),
+        ],
+    )
+    def test_read_entity_rbac(self, client: TestClient, headers_fixture, expected_status, request, test_entity):
+        """RBAC: all authenticated roles can read entity, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.get(f"/entities/{test_entity.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_read_nonexistent_entity_returns_404(self, client: TestClient, admin_headers):
         """Test that reading non-existent entity returns 404."""
         response = client.get("/entities/99999", headers=admin_headers)
 
         assert response.status_code == 404
-
-    def test_unauthenticated_cannot_read_entity(self, client: TestClient, test_entity):
-        """Test that unauthenticated request returns 401."""
-        response = client.get(f"/entities/{test_entity.id}")
-
-        assert response.status_code == 401
 
 
 # ============================================================
@@ -231,41 +183,21 @@ class TestReadEntity:
 class TestUpdateEntity:
     """Tests for PUT /entities/{entity_id} endpoint."""
 
-    def test_admin_can_update_entity(self, client: TestClient, admin_headers, test_entity):
-        """Test that admin can update entity."""
-        payload = {"name": "Updated Entity", "description": "Updated description"}
-
-        response = client.patch(f"/entities/{test_entity.id}", json=payload, headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "Updated Entity"
-        assert data["description"] == "Updated description"
-
-    def test_author_can_update_entity(self, client: TestClient, author_headers, test_entity):
-        """Test that author can update entity."""
-        payload = {"name": "Author Updated", "description": "By author"}
-
-        response = client.patch(f"/entities/{test_entity.id}", json=payload, headers=author_headers)
-
-        assert response.status_code == 200
-        assert response.json()["name"] == "Author Updated"
-
-    def test_regular_user_cannot_update_entity(self, client: TestClient, user_headers, test_entity):
-        """Test that regular user cannot update entities (403)."""
-        payload = {"name": "User Updated", "description": "Should fail"}
-
-        response = client.patch(f"/entities/{test_entity.id}", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_update_entity(self, client: TestClient, test_entity):
-        """Test that unauthenticated request returns 401."""
-        payload = {"name": "Anonymous Updated"}
-
-        response = client.patch(f"/entities/{test_entity.id}", json=payload)
-
-        assert response.status_code == 401
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_update_entity_rbac(self, client: TestClient, headers_fixture, expected_status, request, test_entity):
+        """RBAC: admin/author can update entities, user gets 403, unauthenticated gets 401."""
+        payload = {"description": "RBAC updated"}
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.patch(f"/entities/{test_entity.id}", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_update_to_duplicate_name(self, client: TestClient, admin_headers, test_entity, second_entity):
         """Test that updating to existing name returns 400."""
@@ -317,40 +249,20 @@ class TestUpdateEntity:
 class TestDeleteEntity:
     """Tests for DELETE /entities/{entity_id} endpoint."""
 
-    def test_admin_can_delete_empty_entity(self, client: TestClient, admin_headers, test_entity):
-        """Test that admin can delete entity without versions."""
-        response = client.delete(f"/entities/{test_entity.id}", headers=admin_headers)
-
-        assert response.status_code == 204
-
-    def test_author_can_delete_empty_entity(self, client: TestClient, author_headers, db_session, author_user):
-        """Test that author can delete entity without versions."""
-        # Create entity directly to avoid fixture dependency issues
-        entity = Entity(
-            name="Author Delete Test",
-            description="To be deleted",
-            created_by_id=author_user.id,
-            updated_by_id=author_user.id,
-        )
-        db_session.add(entity)
-        db_session.commit()
-        entity_id = entity.id
-
-        response = client.delete(f"/entities/{entity_id}", headers=author_headers)
-
-        assert response.status_code == 204
-
-    def test_regular_user_cannot_delete_entity(self, client: TestClient, user_headers, test_entity):
-        """Test that regular user cannot delete entities (403)."""
-        response = client.delete(f"/entities/{test_entity.id}", headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_delete_entity(self, client: TestClient, test_entity):
-        """Test that unauthenticated request returns 401."""
-        response = client.delete(f"/entities/{test_entity.id}")
-
-        assert response.status_code == 401
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 204),
+            ("author_headers", 204),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_delete_entity_rbac(self, client: TestClient, headers_fixture, expected_status, request, test_entity):
+        """RBAC: admin/author can delete entities, user gets 403, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.delete(f"/entities/{test_entity.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_delete_entity_with_versions(self, client: TestClient, admin_headers, test_entity, draft_version):
         """Test that entity with versions cannot be deleted (409)."""

@@ -44,3 +44,8 @@ warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mutmut]
+paths_to_mutate = ["app/services/"]
+tests_dir = ["tests/engine/", "tests/integration/"]
+also_copy = ["app/", "alembic/", "venv/", ".env"]

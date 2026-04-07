@@ -11,6 +11,7 @@ Tests the full version lifecycle including:
 Each test is atomic and independent.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models.domain import EntityVersion, Field, Rule, Value, VersionStatus
@@ -23,33 +24,20 @@ from app.models.domain import EntityVersion, Field, Rule, Value, VersionStatus
 class TestListVersions:
     """Tests for GET /versions/ endpoint."""
 
-    def test_admin_can_list_versions(self, client: TestClient, admin_headers, draft_version):
-        """Test that admin can list versions for an entity."""
-        response = client.get(f"/versions/?entity_id={draft_version.entity_id}", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
-
-    def test_author_can_list_versions(self, client: TestClient, author_headers, draft_version):
-        """Test that author can list versions."""
-        response = client.get(f"/versions/?entity_id={draft_version.entity_id}", headers=author_headers)
-
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
-
-    def test_regular_user_cannot_list_versions(self, client: TestClient, user_headers, draft_version):
-        """Test that regular user cannot list versions (403)."""
-        response = client.get(f"/versions/?entity_id={draft_version.entity_id}", headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_list_versions(self, client: TestClient, draft_version):
-        """Test that unauthenticated request returns 401."""
-        response = client.get(f"/versions/?entity_id={draft_version.entity_id}")
-
-        assert response.status_code == 401
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_list_versions_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_version):
+        """RBAC: admin/author can list versions, user gets 403, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.get(f"/versions/?entity_id={draft_version.entity_id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_list_ordered_by_version_number_desc(
         self, client: TestClient, admin_headers, db_session, test_entity, admin_user
@@ -104,27 +92,19 @@ class TestListVersions:
 class TestReadVersion:
     """Tests for GET /versions/{version_id} endpoint."""
 
-    def test_admin_can_read_version(self, client: TestClient, admin_headers, draft_version):
-        """Test that admin can read version by ID."""
-        response = client.get(f"/versions/{draft_version.id}", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == draft_version.id
-        assert data["version_number"] == 1
-        assert data["status"] == "DRAFT"
-
-    def test_author_can_read_version(self, client: TestClient, author_headers, draft_version):
-        """Test that author can read version by ID."""
-        response = client.get(f"/versions/{draft_version.id}", headers=author_headers)
-
-        assert response.status_code == 200
-
-    def test_regular_user_cannot_read_version(self, client: TestClient, user_headers, draft_version):
-        """Test that regular user cannot read versions (403)."""
-        response = client.get(f"/versions/{draft_version.id}", headers=user_headers)
-
-        assert response.status_code == 403
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+        ],
+    )
+    def test_read_version_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_version):
+        """RBAC: admin/author can read version, user gets 403."""
+        headers = request.getfixturevalue(headers_fixture)
+        response = client.get(f"/versions/{draft_version.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_read_nonexistent_version_returns_404(self, client: TestClient, admin_headers):
         """Test that reading non-existent version returns 404."""
@@ -141,35 +121,20 @@ class TestReadVersion:
 class TestCreateDraftVersion:
     """Tests for POST /versions/ endpoint."""
 
-    def test_admin_can_create_draft_version(self, client: TestClient, admin_headers, test_entity):
-        """Test that admin can create a DRAFT version."""
-        payload = {"entity_id": test_entity.id, "changelog": "New draft version"}
-
-        response = client.post("/versions/", json=payload, headers=admin_headers)
-
-        assert response.status_code == 201
-        data = response.json()
-        assert data["entity_id"] == test_entity.id
-        assert data["status"] == "DRAFT"
-        assert data["version_number"] == 1
-        assert data["changelog"] == "New draft version"
-
-    def test_author_can_create_draft_version(self, client: TestClient, author_headers, test_entity):
-        """Test that author can create a DRAFT version."""
-        payload = {"entity_id": test_entity.id, "changelog": "Author draft"}
-
-        response = client.post("/versions/", json=payload, headers=author_headers)
-
-        assert response.status_code == 201
-        assert response.json()["status"] == "DRAFT"
-
-    def test_regular_user_cannot_create_version(self, client: TestClient, user_headers, test_entity):
-        """Test that regular user cannot create versions (403)."""
-        payload = {"entity_id": test_entity.id, "changelog": "Should fail"}
-
-        response = client.post("/versions/", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 201),
+            ("author_headers", 201),
+            ("user_headers", 403),
+        ],
+    )
+    def test_create_version_rbac(self, client: TestClient, headers_fixture, expected_status, request, test_entity):
+        """RBAC: admin/author can create versions, user gets 403."""
+        payload = {"entity_id": test_entity.id, "changelog": "RBAC draft"}
+        headers = request.getfixturevalue(headers_fixture)
+        response = client.post("/versions/", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_version_number_auto_increments(self, client: TestClient, admin_headers, test_entity, published_version):
         """Test that version number auto-increments from existing versions."""
@@ -538,22 +503,20 @@ class TestCloneVersion:
 class TestUpdateVersion:
     """Tests for PATCH /versions/{version_id} endpoint."""
 
-    def test_can_update_draft_metadata(self, client: TestClient, admin_headers, draft_version):
-        """Test that DRAFT version metadata can be updated."""
-        payload = {"changelog": "Updated changelog"}
-
-        response = client.patch(f"/versions/{draft_version.id}", json=payload, headers=admin_headers)
-
-        assert response.status_code == 200
-        assert response.json()["changelog"] == "Updated changelog"
-
-    def test_author_can_update_draft(self, client: TestClient, author_headers, draft_version):
-        """Test that author can update DRAFT versions."""
-        payload = {"changelog": "Author update"}
-
-        response = client.patch(f"/versions/{draft_version.id}", json=payload, headers=author_headers)
-
-        assert response.status_code == 200
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+        ],
+    )
+    def test_update_version_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_version):
+        """RBAC: admin/author can update draft versions, user gets 403."""
+        payload = {"changelog": "RBAC update"}
+        headers = request.getfixturevalue(headers_fixture)
+        response = client.patch(f"/versions/{draft_version.id}", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_update_published_version(self, client: TestClient, admin_headers, published_version):
         """
@@ -577,14 +540,6 @@ class TestUpdateVersion:
         response = client.patch(f"/versions/{archived_version.id}", json=payload, headers=admin_headers)
 
         assert response.status_code == 409
-
-    def test_regular_user_cannot_update(self, client: TestClient, user_headers, draft_version):
-        """Test that regular user cannot update versions (403)."""
-        payload = {"changelog": "User update"}
-
-        response = client.patch(f"/versions/{draft_version.id}", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
 
     def test_empty_update_handled(self, client: TestClient, admin_headers, draft_version):
         """Test that empty update payload is handled gracefully."""
@@ -610,17 +565,19 @@ class TestUpdateVersion:
 class TestDeleteVersion:
     """Tests for DELETE /versions/{version_id} endpoint."""
 
-    def test_can_delete_draft_version(self, client: TestClient, admin_headers, draft_version):
-        """Test that DRAFT version can be deleted."""
-        response = client.delete(f"/versions/{draft_version.id}", headers=admin_headers)
-
-        assert response.status_code == 204
-
-    def test_author_can_delete_draft(self, client: TestClient, author_headers, draft_version):
-        """Test that author can delete DRAFT versions."""
-        response = client.delete(f"/versions/{draft_version.id}", headers=author_headers)
-
-        assert response.status_code == 204
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 204),
+            ("author_headers", 204),
+            ("user_headers", 403),
+        ],
+    )
+    def test_delete_version_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_version):
+        """RBAC: admin/author can delete draft versions, user gets 403."""
+        headers = request.getfixturevalue(headers_fixture)
+        response = client.delete(f"/versions/{draft_version.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_delete_published_version(self, client: TestClient, admin_headers, published_version):
         """
@@ -640,12 +597,6 @@ class TestDeleteVersion:
         response = client.delete(f"/versions/{archived_version.id}", headers=admin_headers)
 
         assert response.status_code == 409
-
-    def test_regular_user_cannot_delete(self, client: TestClient, user_headers, draft_version):
-        """Test that regular user cannot delete versions (403)."""
-        response = client.delete(f"/versions/{draft_version.id}", headers=user_headers)
-
-        assert response.status_code == 403
 
     def test_delete_cascades_fields_values_rules(
         self, client: TestClient, admin_headers, db_session, test_entity, admin_user

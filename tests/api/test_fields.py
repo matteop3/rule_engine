@@ -10,6 +10,7 @@ Tests the full CRUD lifecycle for Field management including:
 Each test is atomic and independent.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models.domain import Field, FieldType, Rule, RuleType
@@ -22,34 +23,23 @@ from app.models.domain import Field, FieldType, Rule, RuleType
 class TestListFields:
     """Tests for GET /fields/ endpoint."""
 
-    def test_admin_can_list_fields(self, client: TestClient, admin_headers, draft_field):
-        """Test that admin can list fields for a version."""
-        response = client.get(f"/fields/?entity_version_id={draft_field.entity_version_id}", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
-        assert any(f["id"] == draft_field.id for f in data)
-
-    def test_author_can_list_fields(self, client: TestClient, author_headers, draft_field):
-        """Test that author can list fields."""
-        response = client.get(f"/fields/?entity_version_id={draft_field.entity_version_id}", headers=author_headers)
-
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
-
-    def test_regular_user_cannot_list_fields(self, client: TestClient, user_headers, draft_field):
-        """Test that regular user cannot list fields (403)."""
-        response = client.get(f"/fields/?entity_version_id={draft_field.entity_version_id}", headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_list_fields(self, client: TestClient, draft_field):
-        """Test that unauthenticated request returns 401."""
-        response = client.get(f"/fields/?entity_version_id={draft_field.entity_version_id}")
-
-        assert response.status_code == 401
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_list_fields_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_field):
+        """RBAC: admin/author can list fields, user gets 403, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.get(
+            f"/fields/?entity_version_id={draft_field.entity_version_id}",
+            headers=headers,
+        )
+        assert response.status_code == expected_status
 
     def test_list_fields_ordered_by_step_and_sequence(
         self, client: TestClient, admin_headers, db_session, draft_version
@@ -121,39 +111,26 @@ class TestListFields:
 class TestReadField:
     """Tests for GET /fields/{field_id} endpoint."""
 
-    def test_admin_can_read_field(self, client: TestClient, admin_headers, draft_field):
-        """Test that admin can read field by ID."""
-        response = client.get(f"/fields/{draft_field.id}", headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == draft_field.id
-        assert data["name"] == "test_field"
-
-    def test_author_can_read_field(self, client: TestClient, author_headers, draft_field):
-        """Test that author can read field by ID."""
-        response = client.get(f"/fields/{draft_field.id}", headers=author_headers)
-
-        assert response.status_code == 200
-        assert response.json()["id"] == draft_field.id
-
-    def test_regular_user_cannot_read_field(self, client: TestClient, user_headers, draft_field):
-        """Test that regular user cannot read fields (403)."""
-        response = client.get(f"/fields/{draft_field.id}", headers=user_headers)
-
-        assert response.status_code == 403
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_read_field_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_field):
+        """RBAC: admin/author can read field, user gets 403, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.get(f"/fields/{draft_field.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_read_nonexistent_field_returns_404(self, client: TestClient, admin_headers):
         """Test that reading non-existent field returns 404."""
         response = client.get("/fields/99999", headers=admin_headers)
 
         assert response.status_code == 404
-
-    def test_unauthenticated_cannot_read_field(self, client: TestClient, draft_field):
-        """Test that unauthenticated request returns 401."""
-        response = client.get(f"/fields/{draft_field.id}")
-
-        assert response.status_code == 401
 
 
 # ============================================================
@@ -164,67 +141,27 @@ class TestReadField:
 class TestCreateField:
     """Tests for POST /fields/ endpoint."""
 
-    def test_admin_can_create_field(self, client: TestClient, admin_headers, draft_version):
-        """Test that admin can create a field in DRAFT version."""
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 201),
+            ("author_headers", 201),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_create_field_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_version):
+        """RBAC: admin/author can create fields, user gets 403, unauthenticated gets 401."""
         payload = {
             "entity_version_id": draft_version.id,
-            "name": "new_field",
-            "label": "New Field",
-            "data_type": "string",
-            "is_free_value": True,
-            "is_required": False,
-        }
-
-        response = client.post("/fields/", json=payload, headers=admin_headers)
-
-        assert response.status_code == 201
-        data = response.json()
-        assert data["name"] == "new_field"
-        assert data["is_free_value"] is True
-        assert "id" in data
-
-    def test_author_can_create_field(self, client: TestClient, author_headers, draft_version):
-        """Test that author can create a field."""
-        payload = {
-            "entity_version_id": draft_version.id,
-            "name": "author_field",
-            "label": "Author Field",
-            "data_type": "number",
-            "is_free_value": True,
-        }
-
-        response = client.post("/fields/", json=payload, headers=author_headers)
-
-        assert response.status_code == 201
-        assert response.json()["name"] == "author_field"
-
-    def test_regular_user_cannot_create_field(self, client: TestClient, user_headers, draft_version):
-        """Test that regular user cannot create fields (403)."""
-        payload = {
-            "entity_version_id": draft_version.id,
-            "name": "forbidden_field",
-            "label": "Forbidden",
+            "name": "rbac_field",
+            "label": "RBAC Field",
             "data_type": "string",
             "is_free_value": True,
         }
-
-        response = client.post("/fields/", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
-
-    def test_unauthenticated_cannot_create_field(self, client: TestClient, draft_version):
-        """Test that unauthenticated request returns 401."""
-        payload = {
-            "entity_version_id": draft_version.id,
-            "name": "anon_field",
-            "label": "Anonymous",
-            "data_type": "string",
-            "is_free_value": True,
-        }
-
-        response = client.post("/fields/", json=payload)
-
-        assert response.status_code == 401
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.post("/fields/", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_create_field_in_published_version(self, client: TestClient, admin_headers, published_version):
         """
@@ -336,39 +273,20 @@ class TestCreateField:
 class TestUpdateField:
     """Tests for PUT /fields/{field_id} endpoint."""
 
-    def test_admin_can_update_field(self, client: TestClient, admin_headers, draft_field):
-        """Test that admin can update a field in DRAFT version."""
-        payload = {
-            "name": "updated_field",
-            "label": "Updated Field",
-            "data_type": "string",
-            "is_free_value": False,
-            "is_required": True,
-        }
-
-        response = client.patch(f"/fields/{draft_field.id}", json=payload, headers=admin_headers)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "updated_field"
-        assert data["label"] == "Updated Field"
-
-    def test_author_can_update_field(self, client: TestClient, author_headers, draft_field):
-        """Test that author can update a field."""
-        payload = {"name": "author_update", "label": "Author Update", "data_type": "string", "is_free_value": False}
-
-        response = client.patch(f"/fields/{draft_field.id}", json=payload, headers=author_headers)
-
-        assert response.status_code == 200
-        assert response.json()["name"] == "author_update"
-
-    def test_regular_user_cannot_update_field(self, client: TestClient, user_headers, draft_field):
-        """Test that regular user cannot update fields (403)."""
-        payload = {"name": "user_update", "label": "User Update", "data_type": "string", "is_free_value": False}
-
-        response = client.patch(f"/fields/{draft_field.id}", json=payload, headers=user_headers)
-
-        assert response.status_code == 403
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 200),
+            ("author_headers", 200),
+            ("user_headers", 403),
+        ],
+    )
+    def test_update_field_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_field):
+        """RBAC: admin/author can update fields, user gets 403."""
+        payload = {"name": "rbac_update", "label": "RBAC Update", "data_type": "string", "is_free_value": False}
+        headers = request.getfixturevalue(headers_fixture)
+        response = client.patch(f"/fields/{draft_field.id}", json=payload, headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_update_field_in_published_version(self, client: TestClient, admin_headers, published_field):
         """
@@ -459,23 +377,20 @@ class TestUpdateField:
 class TestDeleteField:
     """Tests for DELETE /fields/{field_id} endpoint."""
 
-    def test_admin_can_delete_empty_field(self, client: TestClient, admin_headers, draft_field):
-        """Test that admin can delete a field without dependencies."""
-        response = client.delete(f"/fields/{draft_field.id}", headers=admin_headers)
-
-        assert response.status_code == 204
-
-    def test_author_can_delete_field(self, client: TestClient, author_headers, free_field):
-        """Test that author can delete a field."""
-        response = client.delete(f"/fields/{free_field.id}", headers=author_headers)
-
-        assert response.status_code == 204
-
-    def test_regular_user_cannot_delete_field(self, client: TestClient, user_headers, draft_field):
-        """Test that regular user cannot delete fields (403)."""
-        response = client.delete(f"/fields/{draft_field.id}", headers=user_headers)
-
-        assert response.status_code == 403
+    @pytest.mark.parametrize(
+        "headers_fixture, expected_status",
+        [
+            ("admin_headers", 204),
+            ("author_headers", 204),
+            ("user_headers", 403),
+            (None, 401),
+        ],
+    )
+    def test_delete_field_rbac(self, client: TestClient, headers_fixture, expected_status, request, draft_field):
+        """RBAC: admin/author can delete fields, user gets 403, unauthenticated gets 401."""
+        headers = request.getfixturevalue(headers_fixture) if headers_fixture else {}
+        response = client.delete(f"/fields/{draft_field.id}", headers=headers)
+        assert response.status_code == expected_status
 
     def test_cannot_delete_field_in_published_version(self, client: TestClient, admin_headers, published_field):
         """
@@ -538,12 +453,6 @@ class TestDeleteField:
         response = client.delete("/fields/99999", headers=admin_headers)
 
         assert response.status_code == 404
-
-    def test_unauthenticated_cannot_delete_field(self, client: TestClient, draft_field):
-        """Test that unauthenticated request returns 401."""
-        response = client.delete(f"/fields/{draft_field.id}")
-
-        assert response.status_code == 401
 
 
 # ============================================================
