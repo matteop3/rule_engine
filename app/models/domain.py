@@ -11,6 +11,8 @@ Entities:
     - Rule: Business logic rules that control field behavior
     - User: System users with role-based access control
     - Configuration: User-saved configuration snapshots
+    - PriceList: Global price catalogs with temporal validity
+    - PriceListItem: Priced components within a PriceList
 
 Enums:
     - VersionStatus: Lifecycle states (DRAFT, PUBLISHED, ARCHIVED)
@@ -22,13 +24,14 @@ All models use SQLAlchemy 2.0 Mapped syntax with type hints for improved type sa
 The AuditMixin provides automatic tracking of creation/update timestamps and users.
 """
 
+import datetime as dt
 import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -494,12 +497,26 @@ class Configuration(Base, AuditMixin):
         comment="Soft delete flag for preserving audit trail of FINALIZED records",
     )
 
+    # Pricing
+    price_list_id: Mapped[int | None] = mapped_column(
+        ForeignKey("price_lists.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Price list used for this configuration",
+    )
+    price_date: Mapped[dt.date | None] = mapped_column(
+        Date, nullable=True, comment="Effective price date (set at finalization)"
+    )
+    snapshot: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True, comment="Full CalculationResponse snapshot for FINALIZED configs"
+    )
+
     # Payload: list of field inputs
     data: Mapped[list[dict[str, Any]]] = mapped_column(JSON, comment="Raw input data for re-hydration")
 
     # Relationships
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="configurations")
     owner: Mapped["User"] = relationship(back_populates="configurations", foreign_keys=[user_id])
+    price_list: Mapped["PriceList | None"] = relationship(foreign_keys=[price_list_id])
 
     def __repr__(self) -> str:
         return (
@@ -621,6 +638,73 @@ class BOMItemRule(Base):
 
     def __str__(self) -> str:
         return self.description or f"BOMItemRule {self.id}"
+
+
+class PriceList(Base, AuditMixin):
+    """
+    PriceList: Global price catalog with temporal validity.
+
+    Price lists are standalone entities decoupled from any specific Entity or EntityVersion.
+    The header defines a validity bounding box; all items must fall within this range.
+
+    Relationships:
+        - items: One-to-many with PriceListItem (cascade delete)
+    """
+
+    __tablename__ = "price_lists"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    valid_from: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[dt.date] = mapped_column(Date, nullable=False, server_default="9999-12-31")
+
+    # Relationships
+    items: Mapped[list["PriceListItem"]] = relationship(back_populates="price_list", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<PriceList id={self.id} name='{self.name}' valid={self.valid_from}..{self.valid_to}>"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class PriceListItem(Base, AuditMixin):
+    """
+    PriceListItem: A priced component within a PriceList.
+
+    Uses temporal validity (valid_from/valid_to) for versioning instead of explicit
+    version numbers. For a given (price_list_id, part_number), no two items may have
+    overlapping date ranges.
+
+    Item dates must fall within the parent PriceList's bounding box.
+
+    Relationships:
+        - price_list: Many-to-one with PriceList
+    """
+
+    __tablename__ = "price_list_items"
+    __table_args__ = (Index("ix_pli_lookup", "price_list_id", "part_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    price_list_id: Mapped[int] = mapped_column(ForeignKey("price_lists.id"), nullable=False)
+    part_number: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    valid_from: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[dt.date] = mapped_column(Date, nullable=False)
+
+    # Relationships
+    price_list: Mapped["PriceList"] = relationship(back_populates="items")
+
+    def __repr__(self) -> str:
+        return (
+            f"<PriceListItem id={self.id} part_number='{self.part_number}' "
+            f"price={self.unit_price} valid={self.valid_from}..{self.valid_to}>"
+        )
+
+    def __str__(self) -> str:
+        return f"{self.part_number}: {self.unit_price}"
 
 
 class RefreshToken(Base):

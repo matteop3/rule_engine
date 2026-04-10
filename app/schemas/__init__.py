@@ -16,6 +16,8 @@ from .engine import (
 )
 from .entity import EntityBase, EntityCreate, EntityRead, EntityUpdate
 from .field import FieldBase, FieldCreate, FieldRead, FieldUpdate
+from .price_list import PriceListCreate, PriceListRead, PriceListUpdate
+from .price_list_item import PriceListItemCreate, PriceListItemRead, PriceListItemUpdate
 from .rule import RuleBase, RuleConditions, RuleCreate, RuleCriterion, RuleRead, RuleUpdate
 from .value import ValueBase, ValueCreate, ValueRead, ValueUpdate
 from .version import VersionBase, VersionClone, VersionCreate, VersionRead, VersionUpdate

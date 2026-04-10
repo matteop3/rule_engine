@@ -14,6 +14,8 @@ from app.routers import (
     configurations,
     entities,
     fields,
+    price_list_items,
+    price_lists,
     rules,
     users,
     values,
@@ -71,6 +73,8 @@ app.include_router(bom_items.router)
 app.include_router(bom_item_rules.router)
 app.include_router(engine_router.router)
 app.include_router(configurations.router)
+app.include_router(price_lists.router)
+app.include_router(price_list_items.router)
 
 
 @app.get("/")

@@ -44,6 +44,8 @@ from app.models.domain import (
     Entity,
     EntityVersion,
     Field,
+    PriceList,
+    PriceListItem,
     RefreshToken,
     Rule,
     User,
