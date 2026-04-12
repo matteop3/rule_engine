@@ -40,6 +40,9 @@ tests/
 │   ├── test_bom_items.py                   # BOM item CRUD operations, validations, RBAC
 │   ├── test_bom_item_rules.py              # BOM item rule CRUD operations, validations, RBAC
 │   ├── test_engine_bom.py                  # BOM engine integration (calculate, persist bom_total_price)
+│   ├── test_price_lists.py                 # PriceList CRUD, RBAC, deletion protection
+│   ├── test_price_list_items.py            # PriceListItem CRUD, date defaulting, overlap/bounding box validation
+│   ├── test_configurations_snapshot.py     # FINALIZED snapshot/rehydration behavior
 │   ├── test_users.py                       # User CRUD operations
 │   ├── test_values.py                      # Value CRUD operations
 │   └── test_versions.py                    # Version lifecycle (publish, archive, clone)
@@ -56,6 +59,7 @@ tests/
 │   ├── test_dropdowns.py        # Cascading dropdown logic
 │   ├── test_logic.py            # Core engine logic (validation, mandatory, visibility, availability)
 │   ├── test_operators.py        # Operator tests (EQUALS, GREATER_THAN, IN, etc.)
+│   ├── test_price_resolution.py # Price list lookup, temporal validity, missing-price warnings
 │   ├── test_sku_generation.py   # Smart SKU generation (modifiers, visibility, free-value fields)
 │   └── test_stress.py           # Engine stress tests (domino effects, dependencies)
 │
@@ -69,6 +73,7 @@ tests/
 │   ├── test_data_integrity_value_dependencies.py # Value-rule dependency validation
 │   ├── test_bom_workflow.py                      # End-to-end BOM lifecycle and configuration integration
 │   ├── test_clone_bom.py                        # BOM data integrity during version clone
+│   ├── test_price_list_workflow.py              # End-to-end price list workflow (create → attach → calculate → finalize)
 │   ├── test_integration_cascade.py              # Cascade delete/update operations
 │   ├── test_integration_complex_rules.py        # Complex rule interaction scenarios
 │   ├── test_integration_cross_router.py         # Cross-router data consistency
@@ -193,18 +198,18 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
-| API           | 26    | ~663          | Endpoint CRUD, lifecycle, middleware, BOM, input validation |
-| Engine        | 14    | ~196          | Business logic, rules, SKU, cache, BOM edge cases, mutation kills |
-| Integration   | 14    | ~53           | End-to-end workflows, BOM clone, BOM lifecycle |
+| API           | 29    | ~644          | Endpoint CRUD, lifecycle, middleware, BOM, price lists, snapshots, input validation |
+| Engine        | 15    | ~206          | Business logic, rules, SKU, cache, BOM edge cases, price resolution, mutation kills |
+| Integration   | 15    | ~58           | End-to-end workflows, BOM clone, BOM lifecycle, price list workflow |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
-| Stress        | 3     | ~51           | Concurrency and edge cases       |
-| **Total**     | **58**| **~978**      |                                  |
+| Stress        | 3     | ~54           | Concurrency and edge cases       |
+| **Total**     | **63**| **~977**      |                                  |
 
 ## Test Coverage
 
 The test suite provides comprehensive coverage across all application layers:
 
-### API Endpoints (~663 tests)
+### API Endpoints (~644 tests)
 - **Authentication**: Login, token refresh, rate limiting, session management
 - **Configurations**: Full CRUD, rule engine integration, validation, RBAC
 - **Configuration Lifecycle** (~155 tests): Status management, clone, upgrade, finalize operations
@@ -214,6 +219,8 @@ The test suite provides comprehensive coverage across all application layers:
 - **BOM Items**: CRUD, DRAFT-only enforcement, RBAC, pricing/type validation, hierarchy, COMMERCIAL-is-root, price consistency
 - **BOM Item Rules**: CRUD, DRAFT-only enforcement, RBAC, ownership validation, conditions field_id validation
 - **BOM Engine Integration**: Stateless and stateful BOM calculation, `bom_total_price` persistence across create/update/upgrade/clone
+- **Price Lists**: PriceList and PriceListItem CRUD, RBAC (ADMIN/AUTHOR), `?valid_at=` filter, deletion protection when referenced by FINALIZED configs, header bounding box and no-overlap validation, item date defaulting from header
+- **Configuration Snapshots**: FINALIZED configurations return the stored `CalculationResponse` snapshot directly; DRAFT configurations rehydrate; snapshot immunity from subsequent price list edits
 - **Input Validation**: Wrong types, missing fields, invalid enum values, empty/null payloads across all endpoints
 - **Users**: User management, role assignment, access control
 - **Middleware**: Request correlation ID generation, propagation, and logging filter injection
@@ -300,7 +307,7 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **FINALIZED → Soft Deleted**: ADMIN only, USER denied (HTTP 403)
 - **Any → DRAFT**: CLONE always creates new DRAFT
 
-### Rule Engine (~196 tests)
+### Rule Engine (~206 tests)
 - **Core Logic**: Field validation, mandatory checks, visibility rules, availability logic
 - **Caching**: TTLCache unit tests (set/get, TTL expiry, eviction, invalidation, stats) + engine integration tests (PUBLISHED cached, DRAFT not cached, invalidation on publish, session independence)
 - **CALCULATION Rules**: Forced values, waterfall interactions, multiple rules, running context, SKU, completeness
@@ -311,6 +318,7 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **BOM Quantities**: Static quantity, field reference, null fallback, zero/negative exclusion, decimal support
 - **BOM Tree**: Parent-child cascade pruning, three-level nesting, sibling independence, sequence ordering
 - **BOM Aggregation**: Part-number grouping, quantity summing, type-aware keys, parent-aware keys
+- **Price Resolution**: Lookup by `part_number`, temporal validity filtering at `price_date`, graceful handling of missing/expired prices with differentiated warnings, partial `commercial_total` computation
 - **Stress Tests**: Domino effects, complex dependencies, performance under load
 
 #### CALCULATION Rule Tests (`test_calculation.py`)
@@ -349,7 +357,7 @@ The SKU generation feature is comprehensively tested across multiple scenarios:
 - `test_free_value_field_modifier_combined_with_regular_values`: Free-value modifiers combine correctly with regular value modifiers
 - `test_free_value_field_without_modifier_config_still_ignored`: Backward compatibility - free-value fields without config are still ignored
 
-### Integration & E2E (~53 tests)
+### Integration & E2E (~58 tests)
 - **Data Integrity**: Referential integrity, orphan prevention, unique constraints
 - **Cross-Module Workflows**: Entity lifecycle, cross-router consistency
 - **Cascade Operations**: Delete/update propagation
@@ -357,6 +365,7 @@ The SKU generation feature is comprehensively tested across multiple scenarios:
 - **Complex Rule Interactions**: Multi-rule scenarios, interdependencies
 - **BOM Clone Remapping**: BOM item/rule ID remapping during version clone (parent, quantity_from_field, conditions)
 - **Configuration Lifecycle Flows**: Complete workflows (create → update → finalize → clone → modify), upgrade-then-finalize blocked when incompatible
+- **Price List Workflow**: End-to-end scenarios — create price list, attach to configuration, calculate with warnings, finalize with snapshot, verify immunity to subsequent price list edits
 
 ### Performance & Stress (~66 tests)
 - **Benchmarks**: Throughput measurements, response time analysis

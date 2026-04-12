@@ -25,6 +25,7 @@ from app.models.domain import (
 )
 from app.schemas.engine import CalculationRequest, FieldInputState
 from app.services.rule_engine import RuleEngineService
+from tests.fixtures.price_lists import create_price_list_with_items
 
 # ============================================================
 # FIXTURES
@@ -797,17 +798,19 @@ class TestResolveBOMQuantityMutations:
             part_number="QTY-ONE",
             quantity=Decimal("5"),
             quantity_from_field_id=f_qty.id,
-            unit_price=Decimal("10.00"),
             sequence=1,
         )
         db_session.add(bom)
         db_session.commit()
+
+        pl = create_price_list_with_items(db_session, {"QTY-ONE": Decimal("10.00")}, name="Qty One PL")
 
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
             CalculationRequest(
                 entity_id=entity.id,
+                price_list_id=pl.id,
                 current_state=[FieldInputState(field_id=f_qty.id, value=1)],
             ),
         )
@@ -868,7 +871,6 @@ class TestResolveBOMQuantityMutations:
             part_number="VIS-QTY",
             quantity=Decimal("5"),
             quantity_from_field_id=f_qty.id,
-            unit_price=Decimal("10.00"),
             sequence=1,
         )
         db_session.add(bom)
@@ -941,7 +943,6 @@ class TestBuildBOMOutputMutations:
                 bom_type=BOMType.COMMERCIAL.value,
                 part_number=f"ITEM-{i:03d}",
                 quantity=Decimal("1"),
-                unit_price=Decimal("10.00"),
                 sequence=i,
             )
             items.append(bom)
@@ -1045,7 +1046,6 @@ class TestSumLineTotalsMutations:
             bom_type=BOMType.COMMERCIAL.value,
             part_number="SUM-001",
             quantity=Decimal("2"),
-            unit_price=Decimal("10.00"),
             sequence=1,
         )
         bom2 = BOMItem(
@@ -1053,7 +1053,6 @@ class TestSumLineTotalsMutations:
             bom_type=BOMType.COMMERCIAL.value,
             part_number="SUM-002",
             quantity=Decimal("3"),
-            unit_price=Decimal("20.00"),
             sequence=2,
         )
         bom3 = BOMItem(
@@ -1061,17 +1060,27 @@ class TestSumLineTotalsMutations:
             bom_type=BOMType.COMMERCIAL.value,
             part_number="SUM-003",
             quantity=Decimal("1"),
-            unit_price=Decimal("50.00"),
             sequence=3,
         )
         db_session.add_all([bom1, bom2, bom3])
         db_session.commit()
+
+        pl = create_price_list_with_items(
+            db_session,
+            {
+                "SUM-001": Decimal("10.00"),
+                "SUM-002": Decimal("20.00"),
+                "SUM-003": Decimal("50.00"),
+            },
+            name="Sum Totals PL",
+        )
 
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
             CalculationRequest(
                 entity_id=entity.id,
+                price_list_id=pl.id,
                 current_state=[],
             ),
         )

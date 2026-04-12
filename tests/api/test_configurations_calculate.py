@@ -5,11 +5,13 @@ Tests the integration with the Rule Engine for configuration calculations.
 Each test is atomic and independent.
 """
 
+import datetime as dt
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token, get_password_hash
-from app.models.domain import Entity, EntityVersion, Field, FieldType, User, UserRole, VersionStatus
+from app.models.domain import Entity, EntityVersion, Field, FieldType, PriceList, User, UserRole, VersionStatus
 
 # ============================================================
 # AUTH FIXTURES (local to this module)
@@ -84,7 +86,21 @@ def config_scenario(db_session):
     db_session.add_all([f_model, f_color])
     db_session.commit()
 
-    return {"entity_id": entity.id, "version_id": version.id, "f_model_id": f_model.id, "f_color_id": f_color.id}
+    price_list = PriceList(
+        name="Calculate Test Price List",
+        valid_from=dt.date(2020, 1, 1),
+        valid_to=dt.date(9999, 12, 31),
+    )
+    db_session.add(price_list)
+    db_session.commit()
+
+    return {
+        "entity_id": entity.id,
+        "version_id": version.id,
+        "f_model_id": f_model.id,
+        "f_color_id": f_color.id,
+        "price_list_id": price_list.id,
+    }
 
 
 # ============================================================
@@ -99,6 +115,7 @@ def test_calculate_configuration_success(client: TestClient, auth_headers, confi
     # Create config with data
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Calculate Test",
         "data": [
             {"field_id": config_scenario["f_model_id"], "value": "Porsche 911"},
@@ -139,7 +156,12 @@ def test_calculate_configuration_without_auth(client: TestClient, auth_headers, 
     Test calculate without auth returns 401.
     """
     # Create config first
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "Calc Test", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Calc Test",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=auth_headers)
     config_id = create_resp.json()["id"]
 

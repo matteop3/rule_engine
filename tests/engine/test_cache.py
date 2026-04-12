@@ -303,7 +303,6 @@ class TestBOMCachedVersionData:
         assert cached.bom_items[0].part_number == "CHASSIS-001"
         assert cached.bom_items[0].bom_type == BOMType.COMMERCIAL.value
         assert cached.bom_items[0].quantity == Decimal("1.0000")
-        assert cached.bom_items[0].unit_price == Decimal("100.0000")
 
     def test_cached_version_data_contains_bom_item_rules(self, db_session):
         """VersionData includes BOM item rules after caching."""
@@ -415,7 +414,6 @@ def _create_version_with_bom(db_session):
         part_number="CHASSIS-001",
         description="Main chassis",
         quantity=Decimal("1"),
-        unit_price=Decimal("100"),
     )
     db_session.add(bom_item)
     db_session.flush()

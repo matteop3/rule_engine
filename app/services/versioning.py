@@ -262,7 +262,6 @@ class VersioningService:
                 quantity=old_bom_item.quantity,
                 quantity_from_field_id=new_quantity_field_id,
                 unit_of_measure=old_bom_item.unit_of_measure,
-                unit_price=old_bom_item.unit_price,
                 sequence=old_bom_item.sequence,
             )
             db.add(new_bom_item)

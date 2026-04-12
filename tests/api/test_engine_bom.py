@@ -12,6 +12,7 @@ Covers:
 - bom_total_price copied on clone
 """
 
+import datetime as dt
 from decimal import Decimal
 
 import pytest
@@ -25,6 +26,8 @@ from app.models.domain import (
     EntityVersion,
     Field,
     FieldType,
+    PriceList,
+    PriceListItem,
     User,
     UserRole,
     Value,
@@ -78,6 +81,39 @@ def bom_admin_headers(bom_admin):
     """Generates valid auth headers for the BOM admin user."""
     access_token = create_access_token(subject=bom_admin.id)
     return {"Authorization": f"Bearer {access_token}"}
+
+
+@pytest.fixture(scope="function")
+def bom_price_list(db_session):
+    """Creates a price list with prices for all BOM test part numbers."""
+    price_list = PriceList(
+        name="BOM Test Price List",
+        description="Price list for BOM configuration tests",
+        valid_from=dt.date(2020, 1, 1),
+        valid_to=dt.date(9999, 12, 31),
+    )
+    db_session.add(price_list)
+    db_session.flush()
+
+    for part, price in [
+        ("BLT-004", Decimal("2.50")),
+        ("CTG-001", Decimal("30.00")),
+        ("BASE-001", Decimal("0")),
+        ("PART-V1", Decimal("5.00")),
+        ("PART-V2", Decimal("10.00")),
+    ]:
+        db_session.add(
+            PriceListItem(
+                price_list_id=price_list.id,
+                part_number=part,
+                unit_price=price,
+                valid_from=dt.date(2020, 1, 1),
+                valid_to=dt.date(9999, 12, 31),
+            )
+        )
+    db_session.commit()
+    db_session.refresh(price_list)
+    return price_list
 
 
 @pytest.fixture(scope="function")
@@ -137,7 +173,6 @@ def setup_bom_version(db_session):
         part_number="BLT-004",
         description="Bolt pack",
         quantity=Decimal("4"),
-        unit_price=Decimal("2.50"),
         sequence=2,
     )
     bom_coating = BOMItem(
@@ -146,7 +181,6 @@ def setup_bom_version(db_session):
         part_number="CTG-001",
         description="Metal coating",
         quantity=Decimal("1"),
-        unit_price=Decimal("30.00"),
         sequence=3,
     )
     db_session.add_all([bom_base, bom_bolts, bom_coating])
@@ -208,7 +242,6 @@ def setup_bom_upgrade_versions(db_session):
         part_number="PART-V1",
         description="V1 part",
         quantity=Decimal("2"),
-        unit_price=Decimal("5.00"),
         sequence=1,
     )
     db_session.add(bom_v1)
@@ -242,7 +275,6 @@ def setup_bom_upgrade_versions(db_session):
         part_number="PART-V2",
         description="V2 part",
         quantity=Decimal("5"),
-        unit_price=Decimal("10.00"),
         sequence=1,
     )
     db_session.add(bom_v2)
@@ -265,12 +297,13 @@ def setup_bom_upgrade_versions(db_session):
 class TestCalculateIncludesBOM:
     """Stateless POST /engine/calculate returns BOM output."""
 
-    def test_calculate_includes_bom(self, client, bom_auth_headers, setup_bom_version):
+    def test_calculate_includes_bom(self, client, bom_auth_headers, setup_bom_version, bom_price_list):
         """Stateless calculation returns BOM output with technical and commercial items."""
         data = setup_bom_version
         payload = {
             "entity_id": data["entity_id"],
             "entity_version_id": data["version_id"],
+            "price_list_id": bom_price_list.id,
             "current_state": [
                 {"field_id": data["fields"]["material"], "value": "METAL"},
             ],
@@ -334,6 +367,7 @@ class TestConfigurationCalculateIncludesBOM:
         bom_auth_headers,
         db_session,
         setup_bom_version,
+        bom_price_list,
     ):
         """Saved configuration recalculation includes BOM output."""
         data = setup_bom_version
@@ -342,6 +376,7 @@ class TestConfigurationCalculateIncludesBOM:
         create_payload = {
             "entity_version_id": data["version_id"],
             "name": "BOM Calc Test",
+            "price_list_id": bom_price_list.id,
             "data": [{"field_id": data["fields"]["material"], "value": "WOOD"}],
         }
         create_resp = client.post("/configurations/", json=create_payload, headers=bom_auth_headers)
@@ -371,6 +406,7 @@ class TestBOMTotalPriceCreate:
         client,
         bom_auth_headers,
         setup_bom_version,
+        bom_price_list,
     ):
         """Creating a configuration should persist bom_total_price from commercial_total."""
         data = setup_bom_version
@@ -379,6 +415,7 @@ class TestBOMTotalPriceCreate:
         payload = {
             "entity_version_id": data["version_id"],
             "name": "BOM Create Price Test",
+            "price_list_id": bom_price_list.id,
             "data": [{"field_id": data["fields"]["material"], "value": "METAL"}],
         }
 
@@ -397,6 +434,7 @@ class TestBOMTotalPriceUpdate:
         client,
         bom_auth_headers,
         setup_bom_version,
+        bom_price_list,
     ):
         """Updating configuration data should recalculate bom_total_price."""
         data = setup_bom_version
@@ -405,6 +443,7 @@ class TestBOMTotalPriceUpdate:
         create_payload = {
             "entity_version_id": data["version_id"],
             "name": "BOM Update Price Test",
+            "price_list_id": bom_price_list.id,
             "data": [{"field_id": data["fields"]["material"], "value": "METAL"}],
         }
         create_resp = client.post("/configurations/", json=create_payload, headers=bom_auth_headers)
@@ -435,6 +474,7 @@ class TestBOMTotalPriceUpgrade:
         bom_admin_headers,
         db_session,
         setup_bom_upgrade_versions,
+        bom_price_list,
     ):
         """Upgrading to a new version should recalculate bom_total_price."""
         data = setup_bom_upgrade_versions
@@ -444,6 +484,7 @@ class TestBOMTotalPriceUpgrade:
         create_payload = {
             "entity_version_id": data["v1_id"],
             "name": "BOM Upgrade Price Test",
+            "price_list_id": bom_price_list.id,
             "data": [{"field_id": data["v1_field_id"], "value": "anything"}],
         }
         create_resp = client.post("/configurations/", json=create_payload, headers=bom_admin_headers)
@@ -470,6 +511,7 @@ class TestBOMTotalPriceClone:
         client,
         bom_auth_headers,
         setup_bom_version,
+        bom_price_list,
     ):
         """Cloning a configuration should preserve bom_total_price."""
         data = setup_bom_version
@@ -478,6 +520,7 @@ class TestBOMTotalPriceClone:
         create_payload = {
             "entity_version_id": data["version_id"],
             "name": "BOM Clone Source",
+            "price_list_id": bom_price_list.id,
             "data": [{"field_id": data["fields"]["material"], "value": "METAL"}],
         }
         create_resp = client.post("/configurations/", json=create_payload, headers=bom_auth_headers)

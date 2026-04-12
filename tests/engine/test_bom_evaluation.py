@@ -20,6 +20,7 @@ from app.models.domain import (
 )
 from app.schemas.engine import CalculationRequest, FieldInputState
 from app.services.rule_engine import RuleEngineService
+from tests.fixtures.price_lists import create_price_list_with_items
 
 
 @pytest.fixture(scope="function")
@@ -97,7 +98,6 @@ def setup_bom_scenario(db_session: Session):
         part_number="PNT-RED",
         description="Red paint coating",
         quantity=Decimal("1"),
-        unit_price=Decimal("25.00"),
         sequence=2,
     )
     bom_coating_tech = BOMItem(
@@ -114,7 +114,6 @@ def setup_bom_scenario(db_session: Session):
         part_number="CTG-MTL",
         description="Metal anti-rust coating (commercial)",
         quantity=Decimal("2"),
-        unit_price=Decimal("15.00"),
         sequence=4,
     )
     bom_screws = BOMItem(
@@ -123,7 +122,6 @@ def setup_bom_scenario(db_session: Session):
         part_number="SCR-100",
         description="Screw pack",
         quantity=Decimal("4"),
-        unit_price=Decimal("3.50"),
         sequence=5,
     )
     db_session.add_all([bom_frame, bom_paint, bom_coating_tech, bom_coating_comm, bom_screws])
@@ -153,9 +151,20 @@ def setup_bom_scenario(db_session: Session):
     db_session.add_all([rule_paint, rule_coating_tech, rule_coating_comm])
     db_session.commit()
 
+    # Price list for commercial items
+    pl = create_price_list_with_items(
+        db_session,
+        {
+            "PNT-RED": Decimal("25.00"),
+            "CTG-MTL": Decimal("15.00"),
+            "SCR-100": Decimal("3.50"),
+        },
+    )
+
     return {
         "entity_id": entity.id,
         "version_id": version.id,
+        "price_list_id": pl.id,
         "fields": {"color": f_color.id, "material": f_material.id},
         "bom_items": {
             "frame": bom_frame.id,
@@ -515,6 +524,7 @@ class TestBOMPricing:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[],
             ),
         )
@@ -534,6 +544,7 @@ class TestBOMPricing:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[
                     FieldInputState(field_id=data["fields"]["color"], value="RED"),
                     FieldInputState(field_id=data["fields"]["material"], value="METAL"),
@@ -557,6 +568,7 @@ class TestBOMPricing:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[],
             ),
         )

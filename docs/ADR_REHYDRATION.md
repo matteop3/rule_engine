@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted**
+**Amended** (see [Amendment: Hybrid Rehydration](#amendment-hybrid-rehydration-for-finalized-configurations) below)
 
 ## Context
 
@@ -77,3 +77,60 @@ This optimization is not implemented because the current recalculation cost is n
 - [Configuration calculate endpoint](../app/routers/configurations.py) — re-hydration in `load_and_calculate_configuration`
 - [Rule Engine](../app/services/rule_engine.py) — `calculate_state` method
 - [Configuration model](../app/models/domain.py) — `data` column (JSON)
+
+---
+
+## Amendment: Hybrid Rehydration for FINALIZED Configurations
+
+### Context
+
+The introduction of the Price List feature adds a mutable data source to the calculation pipeline. Price lists can be updated at any time — prices change, validity dates shift, items are added or removed. This breaks a key assumption underlying pure rehydration: that all data sources feeding the calculation are immutable once a configuration is FINALIZED.
+
+With pure rehydration, a FINALIZED configuration read today could produce different BOM prices than the same read tomorrow, if the price list was modified in between. This violates the guarantee that FINALIZED configurations are immutable snapshots.
+
+Three approaches were considered:
+
+| Approach | Guarantee | Trade-off |
+|----------|-----------|-----------|
+| **Pure rehydration** (status quo) | None — prices drift with price list edits | Simple, but FINALIZED configs are not truly immutable |
+| **Immutable price lists** | Structural — price list locked on first FINALIZED reference | Operational burden: forces creation of new price lists for any price change, even for unrelated products |
+| **Snapshot at finalization** | Structural — full calculated state frozen at finalization time | Slightly larger storage per FINALIZED config, but no constraints on price list mutability |
+
+### Decision
+
+FINALIZED configurations store a complete snapshot of the `CalculationResponse` at finalization time. The snapshot is stored in the `snapshot` column (JSON, nullable) on the `Configuration` model.
+
+**Read behavior by status:**
+
+| Configuration status | Read behavior (`GET /configurations/{id}/calculate`) |
+|---|---|
+| DRAFT | Rehydrate: recalculate from raw inputs, EntityVersion rules, and current price list with `price_date=today` |
+| FINALIZED (snapshot present) | Return stored snapshot directly — no rule engine invocation, no database lookups beyond the configuration itself |
+| FINALIZED (snapshot absent) | Fall back to rehydration using the stored `price_date` — backward compatibility for configurations finalized before this feature |
+
+**What the snapshot contains** (the full `CalculationResponse`):
+- All field states: `current_value`, `available_options`, `is_required`, `is_readonly`, `is_hidden`, `error_message`
+- BOM output: technical and commercial trees with resolved prices, `line_total`, `commercial_total`, `warnings`
+- `generated_sku` and `is_complete`
+
+**Finalization workflow:**
+1. Perform a full recalculation with `price_date=date.today()` and the configuration's `price_list_id`
+2. Serialize the `CalculationResponse` via `model_dump(mode="json")`
+3. Store the serialized result in `config.snapshot`
+4. Save `price_date`, `is_complete`, `generated_sku`, and `bom_total_price` from the fresh calculation
+5. Transition status to FINALIZED
+
+### Rationale
+
+The snapshot approach decouples FINALIZED configuration immutability from price list mutability. Price lists remain freely editable — prices can be corrected, future periods can be added, expired items can be cleaned up — without any risk of altering historical FINALIZED documents.
+
+DRAFT configurations continue to use pure rehydration because their purpose is to reflect the current state of all data sources. A DRAFT configuration should always show current prices, current rules, and current field behavior.
+
+The snapshot also eliminates unnecessary computation: both the inputs and the EntityVersion are immutable for FINALIZED configurations, so recalculating the same result on every read adds latency without value.
+
+### Consequences
+
+- FINALIZED configuration reads are faster (no rule engine pass, no price list lookup)
+- Price list modifications cannot retroactively alter FINALIZED documents
+- Storage increases slightly per FINALIZED configuration (one JSON column with the full calculated state)
+- The `snapshot` column is nullable for backward compatibility — configurations finalized before this feature fall back to rehydration

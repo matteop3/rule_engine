@@ -42,23 +42,6 @@ class TestWrongTypes:
         body = response.json()
         assert any("quantity" in str(e) for e in body.get("detail", []))
 
-    def test_bom_item_create_non_numeric_unit_price(self, client: TestClient, admin_headers, draft_version):
-        """unit_price must be numeric, not an arbitrary string."""
-        response = client.post(
-            "/bom-items/",
-            json={
-                "entity_version_id": draft_version.id,
-                "bom_type": "COMMERCIAL",
-                "part_number": "BAD-PRICE",
-                "quantity": 1,
-                "unit_price": "free",
-            },
-            headers=admin_headers,
-        )
-        assert response.status_code == 422
-        body = response.json()
-        assert any("unit_price" in str(e) for e in body.get("detail", []))
-
     def test_rule_create_non_integer_field_id_in_conditions(self, client: TestClient, admin_headers, draft_field):
         """field_id in rule conditions must be an integer."""
         response = client.post(

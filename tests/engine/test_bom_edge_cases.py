@@ -1,6 +1,8 @@
 """
 Tests for BOM numeric edge cases: precision limits, zero prices,
 large quantities, decimal accumulation, and quantity-from-field boundaries.
+
+Prices are resolved from price lists (not from BOM items).
 """
 
 from decimal import Decimal
@@ -19,6 +21,7 @@ from app.models.domain import (
 )
 from app.schemas.engine import CalculationRequest, FieldInputState
 from app.services.rule_engine import RuleEngineService
+from tests.fixtures.price_lists import create_price_list_with_items
 
 
 @pytest.fixture(scope="function")
@@ -71,16 +74,17 @@ class TestDecimalPrecision:
             bom_type=BOMType.COMMERCIAL.value,
             part_number="MAX-PRICE",
             quantity=Decimal("1"),
-            unit_price=Decimal("99999999.9999"),
             sequence=1,
         )
         db_session.add(bom)
         db_session.commit()
 
+        pl = create_price_list_with_items(db_session, {"MAX-PRICE": Decimal("99999999.9999")}, name="Max Price PL")
+
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
-            CalculationRequest(entity_id=data["entity_id"], current_state=[]),
+            CalculationRequest(entity_id=data["entity_id"], price_list_id=pl.id, current_state=[]),
         )
 
         assert response.bom is not None
@@ -96,16 +100,17 @@ class TestDecimalPrecision:
             bom_type=BOMType.COMMERCIAL.value,
             part_number="MAX-QTY",
             quantity=Decimal("99999999.9999"),
-            unit_price=Decimal("1"),
             sequence=1,
         )
         db_session.add(bom)
         db_session.commit()
 
+        pl = create_price_list_with_items(db_session, {"MAX-QTY": Decimal("1")}, name="Max Qty PL")
+
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
-            CalculationRequest(entity_id=data["entity_id"], current_state=[]),
+            CalculationRequest(entity_id=data["entity_id"], price_list_id=pl.id, current_state=[]),
         )
 
         assert response.bom is not None
@@ -121,16 +126,17 @@ class TestDecimalPrecision:
             bom_type=BOMType.COMMERCIAL.value,
             part_number="SMALL-QTY",
             quantity=Decimal("0.0001"),
-            unit_price=Decimal("10000.0000"),
             sequence=1,
         )
         db_session.add(bom)
         db_session.commit()
 
+        pl = create_price_list_with_items(db_session, {"SMALL-QTY": Decimal("10000.0000")}, name="Small Qty PL")
+
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
-            CalculationRequest(entity_id=data["entity_id"], current_state=[]),
+            CalculationRequest(entity_id=data["entity_id"], price_list_id=pl.id, current_state=[]),
         )
 
         assert response.bom is not None
@@ -139,13 +145,10 @@ class TestDecimalPrecision:
 
 
 class TestZeroPrice:
-    """Zero price on COMMERCIAL items."""
+    """Zero price on COMMERCIAL items via price list."""
 
     def test_zero_unit_price(self, db_session, setup_edge_case_entity):
-        """Zero unit_price is accepted and produces line_total = 0.
-        Note: the CRUD router requires unit_price to be non-null for COMMERCIAL items
-        but does not reject zero. This is intentional for promotional items.
-        """
+        """Zero unit_price from price list produces line_total = 0."""
         data = setup_edge_case_entity
 
         bom = BOMItem(
@@ -153,16 +156,17 @@ class TestZeroPrice:
             bom_type=BOMType.COMMERCIAL.value,
             part_number="FREE-ITEM",
             quantity=Decimal("5"),
-            unit_price=Decimal("0.0000"),
             sequence=1,
         )
         db_session.add(bom)
         db_session.commit()
 
+        pl = create_price_list_with_items(db_session, {"FREE-ITEM": Decimal("0.0000")}, name="Zero Price PL")
+
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
-            CalculationRequest(entity_id=data["entity_id"], current_state=[]),
+            CalculationRequest(entity_id=data["entity_id"], price_list_id=pl.id, current_state=[]),
         )
 
         assert response.bom is not None
@@ -177,25 +181,27 @@ class TestAccumulationPrecision:
         """commercial_total for 20 items at 0.0001 each equals exactly 0.0020."""
         data = setup_edge_case_entity
 
-        bom_ids = []
+        prices = {}
         for i in range(20):
+            part = f"ACC-{i:03d}"
             bom = BOMItem(
                 entity_version_id=data["version_id"],
                 bom_type=BOMType.COMMERCIAL.value,
-                part_number=f"ACC-{i:03d}",
+                part_number=part,
                 quantity=Decimal("1"),
-                unit_price=Decimal("0.0001"),
                 sequence=i + 1,
             )
             db_session.add(bom)
             db_session.flush()
-            bom_ids.append(bom.id)
+            prices[part] = Decimal("0.0001")
         db_session.commit()
+
+        pl = create_price_list_with_items(db_session, prices, name="Accumulation PL")
 
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
-            CalculationRequest(entity_id=data["entity_id"], current_state=[]),
+            CalculationRequest(entity_id=data["entity_id"], price_list_id=pl.id, current_state=[]),
         )
 
         assert response.bom is not None
@@ -215,16 +221,17 @@ class TestAggregationLargeQuantities:
                 bom_type=BOMType.COMMERCIAL.value,
                 part_number="AGG-LARGE",
                 quantity=Decimal("33333333.3333"),
-                unit_price=Decimal("1.0000"),
                 sequence=i + 1,
             )
             db_session.add(bom)
         db_session.commit()
 
+        pl = create_price_list_with_items(db_session, {"AGG-LARGE": Decimal("1.0000")}, name="Agg Large PL")
+
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
-            CalculationRequest(entity_id=data["entity_id"], current_state=[]),
+            CalculationRequest(entity_id=data["entity_id"], price_list_id=pl.id, current_state=[]),
         )
 
         assert response.bom is not None
@@ -247,7 +254,6 @@ class TestQuantityFromFieldBoundaries:
             part_number="QTY-ZERO",
             quantity=Decimal("1"),
             quantity_from_field_id=data["qty_field_id"],
-            unit_price=Decimal("10.00"),
             sequence=1,
         )
         db_session.add(bom)
@@ -277,7 +283,6 @@ class TestQuantityFromFieldBoundaries:
             part_number="QTY-NEG",
             quantity=Decimal("1"),
             quantity_from_field_id=data["qty_field_id"],
-            unit_price=Decimal("10.00"),
             sequence=1,
         )
         db_session.add(bom)
@@ -307,17 +312,19 @@ class TestQuantityFromFieldBoundaries:
             part_number="QTY-LARGE",
             quantity=Decimal("1"),
             quantity_from_field_id=data["qty_field_id"],
-            unit_price=Decimal("1.0000"),
             sequence=1,
         )
         db_session.add(bom)
         db_session.commit()
+
+        pl = create_price_list_with_items(db_session, {"QTY-LARGE": Decimal("1.0000")}, name="Qty Large PL")
 
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=pl.id,
                 current_state=[
                     FieldInputState(field_id=data["qty_field_id"], value=99999999.9999),
                 ],

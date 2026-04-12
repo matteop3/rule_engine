@@ -13,7 +13,9 @@ from app.models.domain import Configuration, ConfigurationStatus
 class TestFullLifecycleFlows:
     """Tests for complete configuration lifecycle workflows."""
 
-    def test_full_lifecycle_draft_to_finalized(self, client, lifecycle_user_headers, published_version_for_lifecycle):
+    def test_full_lifecycle_draft_to_finalized(
+        self, client, lifecycle_user_headers, published_version_for_lifecycle, lifecycle_price_list
+    ):
         """Complete workflow: Create -> Update -> Finalize."""
         version_data = published_version_for_lifecycle
         version = version_data["version"]
@@ -25,6 +27,7 @@ class TestFullLifecycleFlows:
             json={
                 "entity_version_id": version.id,
                 "name": "Lifecycle Test Config",
+                "price_list_id": lifecycle_price_list.id,
                 "data": [
                     {"field_id": fields["name"].id, "value": "Initial Name"},
                     {"field_id": fields["amount"].id, "value": 100},
@@ -151,7 +154,7 @@ class TestFullLifecycleFlows:
             assert update_response.status_code == 200
 
     def test_lifecycle_create_finalize_clone_finalize_chain(
-        self, client, lifecycle_user_headers, published_version_for_lifecycle
+        self, client, lifecycle_user_headers, published_version_for_lifecycle, lifecycle_price_list
     ):
         """Workflow: Create -> Finalize -> Clone -> Finalize (repeat)."""
         version_data = published_version_for_lifecycle
@@ -164,6 +167,7 @@ class TestFullLifecycleFlows:
             json={
                 "entity_version_id": version.id,
                 "name": "Chain Start",
+                "price_list_id": lifecycle_price_list.id,
                 "data": [
                     {"field_id": fields["name"].id, "value": "Initial"},
                     {"field_id": fields["amount"].id, "value": 100},
@@ -379,7 +383,12 @@ class TestMultiUserWorkflows:
     """Tests for workflows involving multiple users."""
 
     def test_user_creates_admin_reviews_and_finalizes(
-        self, client, lifecycle_user_headers, lifecycle_admin_headers, published_version_for_lifecycle
+        self,
+        client,
+        lifecycle_user_headers,
+        lifecycle_admin_headers,
+        published_version_for_lifecycle,
+        lifecycle_price_list,
     ):
         """Workflow: USER creates draft, ADMIN reviews and finalizes."""
         version_data = published_version_for_lifecycle
@@ -392,6 +401,7 @@ class TestMultiUserWorkflows:
             json={
                 "entity_version_id": version.id,
                 "name": "User Draft for Review",
+                "price_list_id": lifecycle_price_list.id,
                 "data": [
                     {"field_id": fields["name"].id, "value": "Pending Review"},
                     {"field_id": fields["amount"].id, "value": 5000},

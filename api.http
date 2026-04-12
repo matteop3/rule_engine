@@ -176,15 +176,17 @@ Authorization: Bearer {{adminToken}}
 
 
 ### ==========================================================
-### ENGINE (stateless — no auth required)
+### ENGINE (authenticated — price_list_id is mandatory)
 ### ==========================================================
 
-### Calculate — Employee with a CAR worth $25,000
+### Calculate — Employee with a CAR worth $25,000 (today's prices)
 POST {{baseUrl}}/engine/calculate
+Authorization: Bearer {{userToken}}
 Content-Type: application/json
 
 {
   "entity_id": 1,
+  "price_list_id": 1,
   "current_state": [
     {"field_id": 1, "value": "John Doe"},
     {"field_id": 2, "value": "1990-01-15"},
@@ -200,12 +202,15 @@ Content-Type: application/json
   ]
 }
 
-### Calculate — Retired with a TRUCK and hazardous cargo
+### Calculate — Future price simulation (price_date in the future)
 POST {{baseUrl}}/engine/calculate
+Authorization: Bearer {{userToken}}
 Content-Type: application/json
 
 {
   "entity_id": 1,
+  "price_list_id": 1,
+  "price_date": "2027-01-01",
   "current_state": [
     {"field_id": 1, "value": "Jane Smith"},
     {"field_id": 2, "value": "1965-03-20"},
@@ -220,10 +225,12 @@ Content-Type: application/json
 
 ### Calculate — Student with a MOTORCYCLE (minimal)
 POST {{baseUrl}}/engine/calculate
+Authorization: Bearer {{userToken}}
 Content-Type: application/json
 
 {
   "entity_id": 1,
+  "price_list_id": 1,
   "current_state": [
     {"field_id": 1, "value": "Alex Johnson"},
     {"field_id": 2, "value": "2002-07-10"},
@@ -232,6 +239,99 @@ Content-Type: application/json
     {"field_id": 5, "value": 5000}
   ]
 }
+
+
+### ==========================================================
+### PRICE LISTS (admin/author only)
+### ==========================================================
+
+### List active price lists (default filter: valid_at=today)
+GET {{baseUrl}}/price-lists/
+Authorization: Bearer {{authorToken}}
+
+### List price lists valid at a specific date
+GET {{baseUrl}}/price-lists/?valid_at=2027-01-01
+Authorization: Bearer {{authorToken}}
+
+### Get price list by ID
+GET {{baseUrl}}/price-lists/1
+Authorization: Bearer {{authorToken}}
+
+### Create price list
+POST {{baseUrl}}/price-lists/
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "name": "Auto Insurance Price List 2027",
+  "description": "Next-year rates",
+  "valid_from": "2027-01-01",
+  "valid_to": "2027-12-31"
+}
+
+### Update price list header
+PATCH {{baseUrl}}/price-lists/1
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "description": "Updated description"
+}
+
+### Delete price list (blocked if referenced by any FINALIZED configuration)
+DELETE {{baseUrl}}/price-lists/1
+Authorization: Bearer {{adminToken}}
+
+
+### ==========================================================
+### PRICE LIST ITEMS (admin/author only)
+### ==========================================================
+
+### List items in a price list
+GET {{baseUrl}}/price-list-items/?price_list_id=1
+Authorization: Bearer {{authorToken}}
+
+### Get price list item
+GET {{baseUrl}}/price-list-items/1
+Authorization: Bearer {{authorToken}}
+
+### Create price list item (dates default from the header's bounding box)
+POST {{baseUrl}}/price-list-items/
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "price_list_id": 1,
+  "part_number": "BOLT-M8",
+  "description": "M8 structural bolt",
+  "unit_price": 0.55
+}
+
+### Create item with narrower validity (must fit within header bounding box)
+POST {{baseUrl}}/price-list-items/
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "price_list_id": 1,
+  "part_number": "BOLT-M8",
+  "unit_price": 0.60,
+  "valid_from": "2026-07-01",
+  "valid_to": "9999-12-31"
+}
+
+### Update a price list item
+PATCH {{baseUrl}}/price-list-items/1
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "unit_price": 0.65
+}
+
+### Delete a price list item
+DELETE {{baseUrl}}/price-list-items/1
+Authorization: Bearer {{authorToken}}
 
 
 ### ==========================================================
@@ -262,7 +362,7 @@ Content-Type: application/json
   "sequence": 10
 }
 
-### Create COMMERCIAL BOM item (with pricing)
+### Create COMMERCIAL BOM item (pricing comes from the price list at calculate time)
 POST {{baseUrl}}/bom-items/
 Authorization: Bearer {{authorToken}}
 Content-Type: application/json
@@ -271,10 +371,9 @@ Content-Type: application/json
   "entity_version_id": 1,
   "bom_type": "COMMERCIAL",
   "part_number": "FRAME-001",
-  "description": "Frame assembly (priced)",
+  "description": "Frame assembly",
   "category": "Structure",
   "quantity": 1,
-  "unit_price": 150.00,
   "unit_of_measure": "pcs",
   "sequence": 10
 }
@@ -360,6 +459,7 @@ Content-Type: application/json
 {
   "entity_id": 1,
   "name": "My New Quote",
+  "price_list_id": 1,
   "data": {
     "current_state": [
       {"field_id": 1, "value": "Test User"},

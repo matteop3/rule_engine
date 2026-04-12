@@ -1,3 +1,4 @@
+import datetime as dt
 from decimal import Decimal
 from enum import Enum
 
@@ -32,6 +33,7 @@ class ConfigurationCreate(ConfigurationBase):
     """
 
     entity_version_id: int
+    price_list_id: int
 
 
 class ConfigurationRead(ConfigurationBase, AuditSchemaMixin):
@@ -48,6 +50,8 @@ class ConfigurationRead(ConfigurationBase, AuditSchemaMixin):
     generated_sku: str | None = None
     bom_total_price: Decimal | None = None
     is_deleted: bool = False
+    price_list_id: int | None = None
+    price_date: dt.date | None = None
 
 
 class ConfigurationUpdate(BaseSchema):
@@ -63,6 +67,7 @@ class ConfigurationUpdate(BaseSchema):
 
     name: str | None = None
     data: list[FieldInputState] | None = None
+    price_list_id: int | None = None
 
 
 class ConfigurationCloneResponse(ConfigurationRead):

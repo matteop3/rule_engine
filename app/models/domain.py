@@ -128,7 +128,7 @@ class BOMType(str, enum.Enum):
     Bill of Materials item type classification.
 
     - TECHNICAL: Engineering/assembly BOM — no pricing, supports hierarchy (sub-assemblies)
-    - COMMERCIAL: Sales/pricing BOM — requires unit_price, always root-level (flat list)
+    - COMMERCIAL: Sales/pricing BOM — pricing resolved from price list, always root-level (flat list)
 
     A component appearing in both lists is modeled as two separate BOM items
     with the same part_number — one TECHNICAL and one COMMERCIAL.
@@ -536,10 +536,7 @@ class BOMItem(Base):
     Represents a component, part, or sub-assembly in the product structure.
     Supports hierarchical nesting via self-referential parent relationship.
     Quantity can be static or dynamically resolved from a field value at evaluation time.
-
-    Pricing constraints by bom_type:
-        - TECHNICAL: unit_price must be null (no pricing for engineering BOM)
-        - COMMERCIAL: unit_price must be non-null (pricing required)
+    Pricing is resolved at calculation time from the price list, not stored on the BOM item.
 
     Relationships:
         - entity_version: Many-to-one with EntityVersion (cascade delete from version)
@@ -573,9 +570,6 @@ class BOMItem(Base):
         ForeignKey("fields.id", ondelete="SET NULL"), nullable=True
     )
     unit_of_measure: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="e.g., 'pcs', 'm', 'kg'")
-    unit_price: Mapped[Decimal | None] = mapped_column(
-        Numeric(12, 4), nullable=True, comment="Required for COMMERCIAL, rejected for TECHNICAL"
-    )
 
     sequence: Mapped[int] = mapped_column(
         Integer,

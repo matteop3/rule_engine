@@ -21,6 +21,7 @@ from app.models.domain import (
 )
 from app.schemas.engine import CalculationRequest, FieldInputState
 from app.services.rule_engine import RuleEngineService
+from tests.fixtures.price_lists import create_price_list_with_items
 
 
 @pytest.fixture(scope="function")
@@ -61,7 +62,6 @@ def setup_bom_quantity_scenario(db_session: Session):
         bom_type=BOMType.COMMERCIAL.value,
         part_number="STATIC-001",
         quantity=Decimal("5"),
-        unit_price=Decimal("10.00"),
         sequence=1,
     )
     # BOM item with quantity_from_field_id
@@ -71,15 +71,20 @@ def setup_bom_quantity_scenario(db_session: Session):
         part_number="DYN-001",
         quantity=Decimal("3"),
         quantity_from_field_id=f_qty.id,
-        unit_price=Decimal("10.00"),
         sequence=2,
     )
     db_session.add_all([bom_static, bom_dynamic])
     db_session.commit()
 
+    pl = create_price_list_with_items(
+        db_session,
+        {"STATIC-001": Decimal("10.00"), "DYN-001": Decimal("10.00")},
+    )
+
     return {
         "entity_id": entity.id,
         "version_id": version.id,
+        "price_list_id": pl.id,
         "fields": {"qty": f_qty.id},
         "bom_items": {"static": bom_static.id, "dynamic": bom_dynamic.id},
     }
@@ -97,6 +102,7 @@ class TestBOMQuantityResolution:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[],
             ),
         )
@@ -115,6 +121,7 @@ class TestBOMQuantityResolution:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[FieldInputState(field_id=data["fields"]["qty"], value=7)],
             ),
         )
@@ -134,6 +141,7 @@ class TestBOMQuantityResolution:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[],
             ),
         )
@@ -151,6 +159,7 @@ class TestBOMQuantityResolution:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[FieldInputState(field_id=data["fields"]["qty"], value=0)],
             ),
         )
@@ -168,6 +177,7 @@ class TestBOMQuantityResolution:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[FieldInputState(field_id=data["fields"]["qty"], value=-3)],
             ),
         )
@@ -185,6 +195,7 @@ class TestBOMQuantityResolution:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[FieldInputState(field_id=data["fields"]["qty"], value=2.5)],
             ),
         )
@@ -245,7 +256,6 @@ class TestBOMQuantityResolution:
             part_number="DYN-001",
             quantity=Decimal("3"),
             quantity_from_field_id=f_qty.id,
-            unit_price=Decimal("10.00"),
             sequence=1,
         )
         db_session.add(bom_dynamic)

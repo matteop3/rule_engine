@@ -16,6 +16,8 @@ Usage:
 Note: These tests require pytest-benchmark. Install with: pip install pytest-benchmark
 """
 
+import datetime as dt
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -25,6 +27,7 @@ from app.models.domain import (
     EntityVersion,
     Field,
     FieldType,
+    PriceList,
     Rule,
     RuleType,
     User,
@@ -60,6 +63,21 @@ def perf_auth_headers(perf_user):
     """Generates valid auth headers for the performance test user."""
     access_token = create_access_token(subject=perf_user.id)
     return {"Authorization": f"Bearer {access_token}"}
+
+
+@pytest.fixture(scope="function")
+def perf_price_list(db_session):
+    """Creates a price list for performance tests."""
+    price_list = PriceList(
+        name="Performance Test Price List",
+        description="Price list for performance tests",
+        valid_from=dt.date(2020, 1, 1),
+        valid_to=dt.date(9999, 12, 31),
+    )
+    db_session.add(price_list)
+    db_session.commit()
+    db_session.refresh(price_list)
+    return price_list
 
 
 @pytest.fixture(scope="function")
@@ -373,7 +391,9 @@ def test_benchmark_dropdown_cascading(benchmark, db_session, dropdown_scenario):
 
 
 @pytest.mark.benchmark(group="api")
-def test_benchmark_api_list_configurations(benchmark, client: TestClient, perf_auth_headers, simple_scenario):
+def test_benchmark_api_list_configurations(
+    benchmark, client: TestClient, perf_auth_headers, simple_scenario, perf_price_list
+):
     """
     Benchmark: List configurations API endpoint.
     """
@@ -381,7 +401,12 @@ def test_benchmark_api_list_configurations(benchmark, client: TestClient, perf_a
     for i in range(5):
         client.post(
             "/configurations/",
-            json={"entity_version_id": simple_scenario["version_id"], "name": f"Perf Config {i}", "data": []},
+            json={
+                "entity_version_id": simple_scenario["version_id"],
+                "name": f"Perf Config {i}",
+                "price_list_id": perf_price_list.id,
+                "data": [],
+            },
             headers=perf_auth_headers,
         )
 
@@ -395,7 +420,9 @@ def test_benchmark_api_list_configurations(benchmark, client: TestClient, perf_a
 
 
 @pytest.mark.benchmark(group="api")
-def test_benchmark_api_create_configuration(benchmark, client: TestClient, perf_auth_headers, simple_scenario):
+def test_benchmark_api_create_configuration(
+    benchmark, client: TestClient, perf_auth_headers, simple_scenario, perf_price_list
+):
     """
     Benchmark: Create configuration API endpoint.
     """
@@ -408,6 +435,7 @@ def test_benchmark_api_create_configuration(benchmark, client: TestClient, perf_
             json={
                 "entity_version_id": simple_scenario["version_id"],
                 "name": f"Benchmark Config {counter[0]}",
+                "price_list_id": perf_price_list.id,
                 "data": [{"field_id": simple_scenario["field_ids"][0], "value": "test"}],
             },
             headers=perf_auth_headers,
@@ -418,7 +446,7 @@ def test_benchmark_api_create_configuration(benchmark, client: TestClient, perf_
 
 
 @pytest.mark.benchmark(group="api")
-def test_benchmark_api_calculate(benchmark, client: TestClient, perf_auth_headers, medium_scenario):
+def test_benchmark_api_calculate(benchmark, client: TestClient, perf_auth_headers, medium_scenario, perf_price_list):
     """
     Benchmark: Calculate endpoint with medium complexity scenario.
     """
@@ -428,6 +456,7 @@ def test_benchmark_api_calculate(benchmark, client: TestClient, perf_auth_header
         json={
             "entity_version_id": medium_scenario["version_id"],
             "name": "Calc Benchmark",
+            "price_list_id": perf_price_list.id,
             "data": [{"field_id": fid, "value": f"val_{i}"} for i, fid in enumerate(medium_scenario["field_ids"][:10])],
         },
         headers=perf_auth_headers,
@@ -475,7 +504,7 @@ def test_throughput_calculations(db_session, medium_scenario):
     assert throughput >= 10, f"Throughput too low: {throughput:.2f} calc/s"
 
 
-def test_throughput_api_requests(client: TestClient, perf_auth_headers, simple_scenario):
+def test_throughput_api_requests(client: TestClient, perf_auth_headers, simple_scenario, perf_price_list):
     """
     Throughput test: Measure API requests per second.
     """
@@ -484,7 +513,12 @@ def test_throughput_api_requests(client: TestClient, perf_auth_headers, simple_s
     # Create a configuration to read
     create_resp = client.post(
         "/configurations/",
-        json={"entity_version_id": simple_scenario["version_id"], "name": "Throughput Test", "data": []},
+        json={
+            "entity_version_id": simple_scenario["version_id"],
+            "name": "Throughput Test",
+            "price_list_id": perf_price_list.id,
+            "data": [],
+        },
         headers=perf_auth_headers,
     )
     config_id = create_resp.json()["id"]

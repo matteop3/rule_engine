@@ -33,6 +33,7 @@ pytest_plugins = [
     "tests.fixtures.entities",
     "tests.fixtures.engine",
     "tests.fixtures.configurations_lifecycle",
+    "tests.fixtures.price_lists",
 ]
 
 

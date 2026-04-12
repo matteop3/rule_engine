@@ -1945,7 +1945,7 @@
           "BOM Items"
         ],
         "summary": "Create Bom Item",
-        "description": "Create a BOM item attached to a specific entity version.\n\nRestrictions:\n    - The version must be DRAFT\n    - Pricing validation by bom_type\n    - quantity must be > 0\n    - quantity_from_field_id must reference a NUMBER field in the same version\n    - parent_bom_item_id must reference an item in the same version\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create BOM items",
+        "description": "Create a BOM item attached to a specific entity version.\n\nRestrictions:\n    - The version must be DRAFT\n    - quantity must be > 0\n    - quantity_from_field_id must reference a NUMBER field in the same version\n    - parent_bom_item_id must reference an item in the same version\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create BOM items",
         "operationId": "create_bom_item_bom_items__post",
         "security": [
           {
@@ -2041,7 +2041,7 @@
           "BOM Items"
         ],
         "summary": "Update Bom Item",
-        "description": "Update a BOM item.\n\nRestrictions:\n    - The version must be DRAFT\n    - Pricing validation applies on type change\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update BOM items",
+        "description": "Update a BOM item.\n\nRestrictions:\n    - The version must be DRAFT\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update BOM items",
         "operationId": "update_bom_item_bom_items__bom_item_id__patch",
         "security": [
           {
@@ -2576,6 +2576,22 @@
             }
           },
           {
+            "name": "price_list_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Price List Id"
+            }
+          },
+          {
             "name": "status",
             "in": "query",
             "required": false,
@@ -2992,6 +3008,552 @@
         }
       }
     },
+    "/price-lists/": {
+      "get": {
+        "tags": [
+          "Price Lists"
+        ],
+        "summary": "List Price Lists",
+        "description": "List price lists, optionally filtered by validity at a given date.\n\nIf `valid_at` is not provided, defaults to today.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view price lists",
+        "operationId": "list_price_lists_price_lists__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "valid_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by validity date (default: today)",
+              "title": "Valid At"
+            },
+            "description": "Filter by validity date (default: today)"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PriceListRead"
+                  },
+                  "title": "Response List Price Lists Price Lists  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Price Lists"
+        ],
+        "summary": "Create Price List",
+        "description": "Create a new price list.\n\nValidation:\n    - valid_from must be strictly less than valid_to (enforced by schema)\n    - name must be unique (DB constraint)\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create price lists",
+        "operationId": "create_price_list_price_lists__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceListCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceListRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/price-lists/{price_list_id}": {
+      "get": {
+        "tags": [
+          "Price Lists"
+        ],
+        "summary": "Read Price List",
+        "description": "Retrieve a single price list by ID.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view price list details",
+        "operationId": "read_price_list_price_lists__price_list_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "price_list_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Price List Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceListRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Price Lists"
+        ],
+        "summary": "Update Price List",
+        "description": "Update a price list header.\n\nValidation:\n    - valid_from must be strictly less than valid_to (considering current + new values)\n    - If changing dates, all existing items must still fit within the new bounding box\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update price lists",
+        "operationId": "update_price_list_price_lists__price_list_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "price_list_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Price List Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceListUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceListRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Price Lists"
+        ],
+        "summary": "Delete Price List",
+        "description": "Delete a price list.\n\nRestrictions:\n    - Cannot delete if referenced by any FINALIZED configuration (HTTP 409)\n    - DRAFT configurations using this price list will have price_list_id set to NULL (FK SET NULL)\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete price lists",
+        "operationId": "delete_price_list_price_lists__price_list_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "price_list_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Price List Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/price-list-items/": {
+      "get": {
+        "tags": [
+          "Price List Items"
+        ],
+        "summary": "List Price List Items",
+        "description": "List items for a specific price list.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view price list items",
+        "operationId": "list_price_list_items_price_list_items__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "price_list_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Filter by price list ID",
+              "title": "Price List Id"
+            },
+            "description": "Filter by price list ID"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PriceListItemRead"
+                  },
+                  "title": "Response List Price List Items Price List Items  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Price List Items"
+        ],
+        "summary": "Create Price List Item",
+        "description": "Create a new price list item.\n\nValidation:\n    - unit_price must be > 0\n    - Dates default to parent price list's dates if not provided\n    - Item dates must fall within the parent price list's bounding box\n    - No overlapping date ranges for the same (price_list_id, part_number)\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create price list items",
+        "operationId": "create_price_list_item_price_list_items__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceListItemCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceListItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/price-list-items/{item_id}": {
+      "get": {
+        "tags": [
+          "Price List Items"
+        ],
+        "summary": "Read Price List Item",
+        "description": "Retrieve a single price list item by ID.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can view price list item details",
+        "operationId": "read_price_list_item_price_list_items__item_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceListItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Price List Items"
+        ],
+        "summary": "Update Price List Item",
+        "description": "Update a price list item.\n\nValidation:\n    - unit_price must be > 0 (if provided)\n    - Item dates must fall within the parent price list's bounding box\n    - No overlapping date ranges for the same (price_list_id, part_number)\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update price list items",
+        "operationId": "update_price_list_item_price_list_items__item_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceListItemUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceListItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Price List Items"
+        ],
+        "summary": "Delete Price List Item",
+        "description": "Delete a price list item.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete price list items",
+        "operationId": "delete_price_list_item_price_list_items__item_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/": {
       "get": {
         "summary": "Health Check",
@@ -3086,21 +3648,6 @@
             ],
             "title": "Unit Of Measure"
           },
-          "unit_price": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Price"
-          },
           "sequence": {
             "type": "integer",
             "title": "Sequence",
@@ -3192,18 +3739,6 @@
               }
             ],
             "title": "Unit Of Measure"
-          },
-          "unit_price": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Price"
           },
           "sequence": {
             "type": "integer",
@@ -3437,21 +3972,6 @@
             ],
             "title": "Unit Of Measure"
           },
-          "unit_price": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Price"
-          },
           "sequence": {
             "anyOf": [
               {
@@ -3590,6 +4110,14 @@
               }
             ],
             "title": "Commercial Total"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "default": []
           }
         },
         "type": "object",
@@ -3607,7 +4135,7 @@
           "COMMERCIAL"
         ],
         "title": "BOMType",
-        "description": "Bill of Materials item type classification.\n\n- TECHNICAL: Engineering/assembly BOM \u2014 no pricing, supports hierarchy (sub-assemblies)\n- COMMERCIAL: Sales/pricing BOM \u2014 requires unit_price, always root-level (flat list)\n\nA component appearing in both lists is modeled as two separate BOM items\nwith the same part_number \u2014 one TECHNICAL and one COMMERCIAL."
+        "description": "Bill of Materials item type classification.\n\n- TECHNICAL: Engineering/assembly BOM \u2014 no pricing, supports hierarchy (sub-assemblies)\n- COMMERCIAL: Sales/pricing BOM \u2014 pricing resolved from price list, always root-level (flat list)\n\nA component appearing in both lists is modeled as two separate BOM items\nwith the same part_number \u2014 one TECHNICAL and one COMMERCIAL."
       },
       "Body_login_for_access_token_auth_token_post": {
         "properties": {
@@ -3691,6 +4219,29 @@
               }
             ],
             "title": "Entity Version Id"
+          },
+          "price_list_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price List Id"
+          },
+          "price_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Date"
           }
         },
         "type": "object",
@@ -3851,6 +4402,29 @@
             "title": "Is Deleted",
             "default": false
           },
+          "price_list_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price List Id"
+          },
+          "price_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Date"
+          },
           "source_id": {
             "type": "string",
             "title": "Source Id"
@@ -3892,12 +4466,17 @@
           "entity_version_id": {
             "type": "integer",
             "title": "Entity Version Id"
+          },
+          "price_list_id": {
+            "type": "integer",
+            "title": "Price List Id"
           }
         },
         "type": "object",
         "required": [
           "data",
-          "entity_version_id"
+          "entity_version_id",
+          "price_list_id"
         ],
         "title": "ConfigurationCreate",
         "description": "Schema for creating a new Configuration (POST).\n\nNote: status is automatically set to DRAFT on creation."
@@ -4003,6 +4582,29 @@
             "type": "boolean",
             "title": "Is Deleted",
             "default": false
+          },
+          "price_list_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price List Id"
+          },
+          "price_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Date"
           }
         },
         "type": "object",
@@ -4052,6 +4654,17 @@
               }
             ],
             "title": "Data"
+          },
+          "price_list_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price List Id"
           }
         },
         "type": "object",
@@ -4621,6 +5234,415 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "PriceListCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Valid To",
+            "default": "9999-12-31"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "valid_from"
+        ],
+        "title": "PriceListCreate",
+        "description": "Schema for creating a price list (POST)."
+      },
+      "PriceListItemCreate": {
+        "properties": {
+          "part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Part Number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          },
+          "price_list_id": {
+            "type": "integer",
+            "title": "Price List Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part_number",
+          "unit_price",
+          "price_list_id"
+        ],
+        "title": "PriceListItemCreate",
+        "description": "Schema for creating a price list item (POST)."
+      },
+      "PriceListItemRead": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Part Number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "unit_price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unit Price"
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Valid To"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "price_list_id": {
+            "type": "integer",
+            "title": "Price List Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "part_number",
+          "unit_price",
+          "valid_from",
+          "valid_to",
+          "id",
+          "price_list_id"
+        ],
+        "title": "PriceListItemRead",
+        "description": "Schema for reading price list item data (GET responses)."
+      },
+      "PriceListItemUpdate": {
+        "properties": {
+          "part_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          }
+        },
+        "type": "object",
+        "title": "PriceListItemUpdate",
+        "description": "Schema for partially updating a price list item (PATCH)."
+      },
+      "PriceListRead": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Valid To",
+            "default": "9999-12-31"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "name",
+          "valid_from",
+          "id"
+        ],
+        "title": "PriceListRead",
+        "description": "Schema for reading price list data (GET responses)."
+      },
+      "PriceListUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          }
+        },
+        "type": "object",
+        "title": "PriceListUpdate",
+        "description": "Schema for partially updating a price list (PATCH)."
       },
       "RuleConditions": {
         "properties": {

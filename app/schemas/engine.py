@@ -1,3 +1,4 @@
+import datetime as dt
 from decimal import Decimal
 from typing import Any
 
@@ -19,6 +20,8 @@ class CalculationRequest(BaseModel):
     entity_id: int
     current_state: list[FieldInputState]
     entity_version_id: int | None = None
+    price_list_id: int | None = None
+    price_date: dt.date | None = None
 
 
 # --- OUTPUT: to client ---
@@ -68,6 +71,7 @@ class BOMOutput(BaseModel):
     technical: list[BOMLineItem]
     commercial: list[BOMLineItem]
     commercial_total: Decimal | None = None
+    warnings: list[str] = []
 
 
 class CalculationResponse(BaseModel):

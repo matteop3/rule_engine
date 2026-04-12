@@ -273,7 +273,13 @@ class TestCrossRoleInteractions:
     """Tests for interactions between different roles."""
 
     def test_user_creates_admin_finalizes(
-        self, client, db_session, lifecycle_user_headers, lifecycle_admin_headers, published_version_for_lifecycle
+        self,
+        client,
+        db_session,
+        lifecycle_user_headers,
+        lifecycle_admin_headers,
+        published_version_for_lifecycle,
+        lifecycle_price_list,
     ):
         """Workflow: USER creates, ADMIN finalizes."""
         version_data = published_version_for_lifecycle
@@ -286,6 +292,7 @@ class TestCrossRoleInteractions:
             json={
                 "entity_version_id": version.id,
                 "name": "User Created",
+                "price_list_id": lifecycle_price_list.id,
                 "data": [
                     {"field_id": fields["name"].id, "value": "Test"},
                     {"field_id": fields["amount"].id, "value": 100},
@@ -302,7 +309,12 @@ class TestCrossRoleInteractions:
         assert finalize_response.json()["status"] == "FINALIZED"
 
     def test_author_creates_user_cannot_access(
-        self, client, lifecycle_author_headers, lifecycle_user_headers, published_version_for_lifecycle
+        self,
+        client,
+        lifecycle_author_headers,
+        lifecycle_user_headers,
+        published_version_for_lifecycle,
+        lifecycle_price_list,
     ):
         """AUTHOR's config is not accessible to USER."""
         version_data = published_version_for_lifecycle
@@ -315,6 +327,7 @@ class TestCrossRoleInteractions:
             json={
                 "entity_version_id": version.id,
                 "name": "Author Created",
+                "price_list_id": lifecycle_price_list.id,
                 "data": [
                     {"field_id": fields["name"].id, "value": "Test"},
                     {"field_id": fields["amount"].id, "value": 100},

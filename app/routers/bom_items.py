@@ -33,23 +33,6 @@ router = APIRouter(prefix="/bom-items", tags=["BOM Items"])
 # ============================================================
 
 
-def _validate_pricing_by_type(bom_type: str | BOMType, unit_price: Decimal | None) -> None:
-    """Validates unit_price constraints based on bom_type."""
-    bom_type_val = bom_type.value if isinstance(bom_type, BOMType) else bom_type
-    if bom_type_val == BOMType.TECHNICAL.value:
-        if unit_price is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="TECHNICAL BOM items must not have a unit_price. Set unit_price to null.",
-            )
-    else:
-        if unit_price is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{bom_type_val} BOM items require a unit_price.",
-            )
-
-
 def _validate_quantity(quantity: Decimal) -> None:
     """Validates quantity is positive."""
     if quantity <= 0:
@@ -81,35 +64,6 @@ def _validate_commercial_is_root(bom_type: str | BOMType, parent_bom_item_id: in
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="COMMERCIAL BOM items must be root-level (parent_bom_item_id must be null).",
-        )
-
-
-def _validate_commercial_price_consistency(
-    db: Session,
-    version_id: int,
-    part_number: str,
-    unit_price: Decimal,
-    exclude_id: int | None = None,
-) -> None:
-    """Rejects if another COMMERCIAL item with the same part_number in this version has a different unit_price."""
-    query = db.query(BOMItem).filter(
-        BOMItem.entity_version_id == version_id,
-        BOMItem.bom_type == BOMType.COMMERCIAL.value,
-        BOMItem.part_number == part_number,
-        BOMItem.unit_price != unit_price,
-    )
-    if exclude_id is not None:
-        query = query.filter(BOMItem.id != exclude_id)
-
-    conflict = query.first()
-    if conflict:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"COMMERCIAL BOM item with part_number '{part_number}' already exists "
-                f"with unit_price '{conflict.unit_price}'. All COMMERCIAL items sharing "
-                f"the same part_number must have the same unit_price."
-            ),
         )
 
 
@@ -198,7 +152,6 @@ def create_bom_item(
 
     Restrictions:
         - The version must be DRAFT
-        - Pricing validation by bom_type
         - quantity must be > 0
         - quantity_from_field_id must reference a NUMBER field in the same version
         - parent_bom_item_id must reference an item in the same version
@@ -214,18 +167,12 @@ def create_bom_item(
     validate_version_is_draft(version)
 
     # Validations
-    _validate_pricing_by_type(bom_data.bom_type, bom_data.unit_price)
     _validate_quantity(bom_data.quantity)
 
     if bom_data.quantity_from_field_id is not None:
         _validate_quantity_from_field(db, bom_data.quantity_from_field_id, bom_data.entity_version_id)
 
     _validate_commercial_is_root(bom_data.bom_type, bom_data.parent_bom_item_id)
-
-    if bom_data.unit_price is not None:
-        _validate_commercial_price_consistency(
-            db, bom_data.entity_version_id, bom_data.part_number, bom_data.unit_price
-        )
 
     if bom_data.parent_bom_item_id is not None:
         _validate_parent_bom_item(db, bom_data.parent_bom_item_id, bom_data.entity_version_id)
@@ -253,7 +200,6 @@ def update_bom_item(
 
     Restrictions:
         - The version must be DRAFT
-        - Pricing validation applies on type change
 
     Access Control:
         - Only ADMIN and AUTHOR can update BOM items
@@ -266,13 +212,7 @@ def update_bom_item(
         logger.warning(f"Empty update request for BOM item {bom_item.id}")
         return bom_item
 
-    # Determine effective bom_type and unit_price for validation
     effective_type = update_data.get("bom_type", bom_item.bom_type)
-    effective_price = update_data.get("unit_price", bom_item.unit_price)
-
-    # Only validate pricing if either bom_type or unit_price is being changed
-    if "bom_type" in update_data or "unit_price" in update_data:
-        _validate_pricing_by_type(effective_type, effective_price)
 
     if "quantity" in update_data:
         _validate_quantity(update_data["quantity"])
@@ -283,14 +223,6 @@ def update_bom_item(
     if "bom_type" in update_data or "parent_bom_item_id" in update_data:
         effective_parent = update_data.get("parent_bom_item_id", bom_item.parent_bom_item_id)
         _validate_commercial_is_root(effective_type, effective_parent)
-
-    effective_type_val = effective_type.value if isinstance(effective_type, BOMType) else effective_type
-    if effective_type_val == BOMType.COMMERCIAL.value and effective_price is not None:
-        if "bom_type" in update_data or "unit_price" in update_data or "part_number" in update_data:
-            effective_part_number = update_data.get("part_number", bom_item.part_number)
-            _validate_commercial_price_consistency(
-                db, bom_item.entity_version_id, effective_part_number, effective_price, exclude_id=bom_item.id
-            )
 
     if "parent_bom_item_id" in update_data and update_data["parent_bom_item_id"] is not None:
         _validate_parent_bom_item(

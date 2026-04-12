@@ -17,7 +17,6 @@ class BOMItemBase(BaseSchema):
     quantity: Decimal = Decimal("1")
     quantity_from_field_id: int | None = None
     unit_of_measure: str | None = Field(None, max_length=20)
-    unit_price: Decimal | None = None
     sequence: int = 0
 
 
@@ -39,7 +38,6 @@ class BOMItemUpdate(BaseSchema):
     quantity: Decimal | None = None
     quantity_from_field_id: int | None = None
     unit_of_measure: str | None = Field(None, max_length=20)
-    unit_price: Decimal | None = None
     sequence: int | None = None
 
 

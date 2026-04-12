@@ -16,6 +16,8 @@ from app.models.domain import (
     EntityVersion,
     Field,
     FieldType,
+    PriceList,
+    PriceListItem,
     Rule,
     RuleType,
     Value,
@@ -99,6 +101,29 @@ class RuleEngineService:
             version=target_version, fields=fields_db, field_states=field_states, values_by_field=values_by_field
         )
 
+        # Resolve prices from price list
+        price_map: dict[str, Decimal] | None = None
+        price_list_name: str | None = None
+        price_date: date | None = None
+        known_parts: set[str] = set()
+        if request.price_list_id is not None:
+            price_date = request.price_date if request.price_date is not None else date.today()
+            price_list = db.query(PriceList).filter(PriceList.id == request.price_list_id).first()
+            if not price_list:
+                raise ValueError(f"Price list {request.price_list_id} not found.")
+            if not (price_list.valid_from <= price_date <= price_list.valid_to):
+                raise ValueError(
+                    f"Price list '{price_list.name}' is not valid at date {price_date} "
+                    f"(valid {price_list.valid_from}..{price_list.valid_to})."
+                )
+            price_list_name = price_list.name
+            # Collect COMMERCIAL part numbers for price resolution
+            commercial_parts = {item.part_number for item in all_bom_items if item.bom_type == "COMMERCIAL"}
+            if commercial_parts:
+                price_map, known_parts = self._resolve_prices(db, request.price_list_id, price_date, commercial_parts)
+            else:
+                price_map = {}
+
         # Evaluate BOM
         bom_output = self._evaluate_bom(
             running_context=running_context,
@@ -106,6 +131,10 @@ class RuleEngineService:
             bom_item_rules=all_bom_item_rules,
             type_map=type_map,
             field_states=field_states,
+            price_map=price_map,
+            price_list_name=price_list_name,
+            price_date=price_date,
+            known_parts=known_parts,
         )
 
         logger.info(
@@ -271,7 +300,6 @@ class RuleEngineService:
                     quantity=b.quantity,
                     quantity_from_field_id=b.quantity_from_field_id,
                     unit_of_measure=b.unit_of_measure,
-                    unit_price=b.unit_price,
                     sequence=b.sequence,
                 )
                 for b in all_bom_items_db
@@ -996,6 +1024,53 @@ class RuleEngineService:
     # BOM EVALUATION
     # ============================================================
 
+    def _resolve_prices(
+        self,
+        db: Session,
+        price_list_id: int,
+        price_date: date,
+        part_numbers: set[str],
+    ) -> tuple[dict[str, Decimal], set[str]]:
+        """
+        Resolves prices from the price list for a set of part numbers at a given date.
+
+        Queries PriceListItem directly (no cache — decision #10).
+
+        Returns:
+            Tuple of (price_map, known_parts) where:
+            - price_map: dict mapping part_number → unit_price for items valid at price_date
+            - known_parts: set of part_numbers that exist in the price list (any date)
+        """
+        # Get prices valid at the given date
+        valid_items = (
+            db.query(PriceListItem)
+            .filter(
+                PriceListItem.price_list_id == price_list_id,
+                PriceListItem.part_number.in_(part_numbers),
+                PriceListItem.valid_from <= price_date,
+                PriceListItem.valid_to >= price_date,
+            )
+            .all()
+        )
+        price_map = {item.part_number: item.unit_price for item in valid_items}
+
+        # Get all part numbers that exist in this price list (for differentiated warnings)
+        missing_parts = part_numbers - price_map.keys()
+        known_parts: set[str] = set()
+        if missing_parts:
+            known_rows = (
+                db.query(PriceListItem.part_number)
+                .filter(
+                    PriceListItem.price_list_id == price_list_id,
+                    PriceListItem.part_number.in_(missing_parts),
+                )
+                .distinct()
+                .all()
+            )
+            known_parts = {row[0] for row in known_rows}
+
+        return price_map, known_parts
+
     def _evaluate_bom(
         self,
         running_context: dict[int, Any],
@@ -1003,6 +1078,10 @@ class RuleEngineService:
         bom_item_rules: list[CachedBOMItemRule],
         type_map: dict[int, str],
         field_states: dict[int, FieldOutputState],
+        price_map: dict[str, Decimal] | None = None,
+        price_list_name: str | None = None,
+        price_date: date | None = None,
+        known_parts: set[str] | None = None,
     ) -> BOMOutput | None:
         """
         Evaluates BOM items after the waterfall to produce technical and commercial line items.
@@ -1048,7 +1127,15 @@ class RuleEngineService:
         deduplicated = self._aggregate_bom_items(bom_items, included_set, resolved_quantities)
 
         # 6. Build output
-        return self._build_bom_output(deduplicated, included_set, resolved_quantities)
+        return self._build_bom_output(
+            deduplicated,
+            included_set,
+            resolved_quantities,
+            price_map=price_map,
+            price_list_name=price_list_name,
+            price_date=price_date,
+            known_parts=known_parts,
+        )
 
     def _resolve_bom_quantity(
         self,
@@ -1152,20 +1239,48 @@ class RuleEngineService:
         bom_items: list[CachedBOMItem],
         included_set: set[int],
         resolved_quantities: dict[int, Decimal],
+        price_map: dict[str, Decimal] | None = None,
+        price_list_name: str | None = None,
+        price_date: date | None = None,
+        known_parts: set[str] | None = None,
     ) -> BOMOutput:
         """
         Constructs the BOM output: nested tree for TECHNICAL, flat list for COMMERCIAL.
 
         TECHNICAL items support hierarchy (parent/child relationships).
         COMMERCIAL items are always root-level (guaranteed by CRUD validation).
+
+        Price resolution: COMMERCIAL items get unit_price from price_map (if provided).
+        Missing prices generate warnings; line_total is null for unpriced items.
         """
+        warnings: list[str] = []
+
         # Build line items indexed by id
         line_items: dict[int, BOMLineItem] = {}
         for item in bom_items:
             if item.id not in included_set:
                 continue
             quantity = resolved_quantities[item.id]
-            line_total = quantity * item.unit_price if item.unit_price is not None else None
+
+            # Price resolution
+            unit_price: Decimal | None = None
+            line_total: Decimal | None = None
+            if item.bom_type == "COMMERCIAL" and price_map is not None:
+                resolved_price = price_map.get(item.part_number)
+                if resolved_price is not None:
+                    unit_price = resolved_price
+                    line_total = quantity * resolved_price
+                else:
+                    if price_list_name and price_date:
+                        effective_known = known_parts or set()
+                        if item.part_number in effective_known:
+                            warnings.append(
+                                f"Part '{item.part_number}' has no valid price "
+                                f"at date {price_date} in price list '{price_list_name}'"
+                            )
+                        else:
+                            warnings.append(f"Part '{item.part_number}' not found in price list '{price_list_name}'")
+
             line_items[item.id] = BOMLineItem(
                 bom_item_id=item.id,
                 bom_type=item.bom_type,
@@ -1174,7 +1289,7 @@ class RuleEngineService:
                 category=item.category,
                 quantity=quantity,
                 unit_of_measure=item.unit_of_measure,
-                unit_price=item.unit_price,
+                unit_price=unit_price,
                 line_total=line_total,
                 children=[],
             )
@@ -1196,13 +1311,14 @@ class RuleEngineService:
                 else:
                     technical.append(line_item)
 
-        # Compute commercial total (flat sum — no nesting for COMMERCIAL)
+        # Compute commercial total (partial sum of non-null line_totals)
         commercial_total = self._sum_line_totals(commercial)
 
         return BOMOutput(
             technical=technical,
             commercial=commercial,
             commercial_total=commercial_total,
+            warnings=warnings,
         )
 
     def _sum_line_totals(self, items: list[BOMLineItem]) -> Decimal | None:

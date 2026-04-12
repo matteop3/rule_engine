@@ -36,7 +36,7 @@ class TestCloneBOM:
                 - frame (TECHNICAL, root, quantity=1)
                     - bolt (TECHNICAL, child of frame, quantity=4)
                 - panel (TECHNICAL, root, quantity_from_field=width)
-                - coating (COMMERCIAL, root, unit_price=25.50, quantity=1)
+                - coating (COMMERCIAL, root, quantity=1)
             BOM Item Rules:
                 - rule on bolt: conditions referencing width field
                 - rule on coating: conditions referencing color field
@@ -103,7 +103,6 @@ class TestCloneBOM:
             description="Protective coating",
             category="Finish",
             quantity=Decimal("1"),
-            unit_price=Decimal("25.5000"),
             unit_of_measure="L",
             sequence=3,
         )
@@ -289,10 +288,10 @@ class TestCloneBOM:
         coating_rule = next(r for r in cloned_rules if r["bom_item_id"] == cloned_coating["id"])
         assert coating_rule["conditions"]["criteria"][0]["field_id"] == cloned_color["id"]
 
-    def test_clone_preserves_bom_type_and_pricing(
+    def test_clone_preserves_bom_type_and_metadata(
         self, client: TestClient, admin_headers, db_session, test_entity, admin_user
     ):
-        """Types, prices, quantities, and metadata are preserved exactly after clone."""
+        """Types, quantities, and metadata are preserved exactly after clone."""
         source = self._create_source_version(db_session, test_entity, admin_user)
         new_version_id = self._clone_and_get_data(client, admin_headers, source["version"].id)
 
@@ -304,7 +303,6 @@ class TestCloneBOM:
         # TECHNICAL item — frame
         frame = cloned_by_part["FRAME-001"]
         assert frame["bom_type"] == "TECHNICAL"
-        assert frame["unit_price"] is None
         assert Decimal(frame["quantity"]) == Decimal("1")
         assert frame["unit_of_measure"] == "pcs"
         assert frame["description"] == "Main frame"
@@ -313,7 +311,6 @@ class TestCloneBOM:
         # TECHNICAL child — bolt
         bolt = cloned_by_part["BOLT-M8"]
         assert bolt["bom_type"] == "TECHNICAL"
-        assert bolt["unit_price"] is None
         assert Decimal(bolt["quantity"]) == Decimal("4")
         assert bolt["category"] == "Fasteners"
 
@@ -326,7 +323,6 @@ class TestCloneBOM:
         # COMMERCIAL item — coating
         coating = cloned_by_part["COAT-001"]
         assert coating["bom_type"] == "COMMERCIAL"
-        assert Decimal(coating["unit_price"]) == Decimal("25.5000")
         assert Decimal(coating["quantity"]) == Decimal("1")
         assert coating["unit_of_measure"] == "L"
         assert coating["description"] == "Protective coating"

@@ -14,7 +14,7 @@ class TestCreateConfigurationStatus:
     """Tests for status behavior on configuration creation."""
 
     def test_create_configuration_default_status_draft(
-        self, client, lifecycle_user_headers, published_version_for_lifecycle
+        self, client, lifecycle_user_headers, published_version_for_lifecycle, lifecycle_price_list
     ):
         """New configuration should have DRAFT status by default."""
         version_data = published_version_for_lifecycle
@@ -23,6 +23,7 @@ class TestCreateConfigurationStatus:
 
         payload = {
             "entity_version_id": version.id,
+            "price_list_id": lifecycle_price_list.id,
             "name": "New Config",
             "data": [
                 {"field_id": fields["name"].id, "value": "Test User"},
@@ -37,7 +38,7 @@ class TestCreateConfigurationStatus:
         assert data["status"] == "DRAFT"
 
     def test_create_configuration_is_deleted_false(
-        self, client, lifecycle_user_headers, published_version_for_lifecycle
+        self, client, lifecycle_user_headers, published_version_for_lifecycle, lifecycle_price_list
     ):
         """New configuration should have is_deleted=False by default."""
         version_data = published_version_for_lifecycle
@@ -46,6 +47,7 @@ class TestCreateConfigurationStatus:
 
         payload = {
             "entity_version_id": version.id,
+            "price_list_id": lifecycle_price_list.id,
             "name": "New Config",
             "data": [
                 {"field_id": fields["name"].id, "value": "Test User"},
@@ -60,7 +62,7 @@ class TestCreateConfigurationStatus:
         assert data["is_deleted"] is False
 
     def test_create_configuration_cannot_set_status(
-        self, client, lifecycle_user_headers, published_version_for_lifecycle
+        self, client, lifecycle_user_headers, published_version_for_lifecycle, lifecycle_price_list
     ):
         """Status should be ignored if provided on create (always DRAFT)."""
         version_data = published_version_for_lifecycle
@@ -70,6 +72,7 @@ class TestCreateConfigurationStatus:
         # Try to set status to FINALIZED on create
         payload = {
             "entity_version_id": version.id,
+            "price_list_id": lifecycle_price_list.id,
             "name": "Attempted Finalized",
             "status": "FINALIZED",  # Should be ignored
             "data": [
@@ -86,7 +89,7 @@ class TestCreateConfigurationStatus:
         assert data["status"] == "DRAFT"
 
     def test_create_configuration_cannot_set_is_deleted(
-        self, client, lifecycle_user_headers, published_version_for_lifecycle
+        self, client, lifecycle_user_headers, published_version_for_lifecycle, lifecycle_price_list
     ):
         """is_deleted should be ignored if provided on create."""
         version_data = published_version_for_lifecycle
@@ -95,6 +98,7 @@ class TestCreateConfigurationStatus:
 
         payload = {
             "entity_version_id": version.id,
+            "price_list_id": lifecycle_price_list.id,
             "name": "Attempted Deleted",
             "is_deleted": True,  # Should be ignored
             "data": [

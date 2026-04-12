@@ -22,7 +22,7 @@ The key design questions are:
 
 BOM items are stored in a single `bom_items` table with a `bom_type` column (`TECHNICAL` or `COMMERCIAL`) rather than separate tables per type.
 
-**Rationale**: Both types share the same structure (part number, quantity, conditions, parent reference). The only difference is that COMMERCIAL items carry pricing. A single table simplifies queries, CRUD endpoints, and cloning logic. The `bom_type` discriminator enables type-specific validation at the CRUD layer (e.g., TECHNICAL items reject `unit_price`, COMMERCIAL items require it).
+**Rationale**: Both types share the same structure (part number, quantity, conditions, parent reference). A single table simplifies queries, CRUD endpoints, and cloning logic. The `bom_type` discriminator enables type-specific validation at the CRUD layer (e.g., COMMERCIAL items must be root-level). Pricing for COMMERCIAL items is resolved at calculation time from the centralized price list (see [ADR: Price List](ADR_PRICE_LIST.md)).
 
 ### 2. Separate BOM item rule table
 
@@ -49,7 +49,7 @@ TECHNICAL BOM items support hierarchical nesting via a self-referential `parent_
 
 A component that appears in both the technical and commercial BOM is modeled as **two separate BOM items** with the same `part_number` but different `bom_type` values, rather than a single item with `bom_type = BOTH`.
 
-**Rationale**: TECHNICAL and COMMERCIAL items carry different metadata (TECHNICAL has no pricing; COMMERCIAL has pricing, no hierarchy). A `BOTH` type would require the item to satisfy conflicting constraints. Separate items allow independent conditions, quantities, and metadata per context — standard practice in ERP systems.
+**Rationale**: TECHNICAL and COMMERCIAL items serve different purposes (TECHNICAL represents the manufacturing structure; COMMERCIAL represents the pricing/quoting structure). A `BOTH` type would require the item to satisfy conflicting constraints (e.g., hierarchy rules). Separate items allow independent conditions, quantities, and metadata per context — standard practice in ERP systems.
 
 ### 6. Aggregation key includes `bom_type`
 
@@ -57,11 +57,11 @@ When multiple BOM items share the same `part_number` and parent, the engine aggr
 
 **Rationale**: A TECHNICAL item "BOLT-M8" (no pricing) and a COMMERCIAL item "BOLT-M8" ($0.50 each) represent different concerns and must not be merged.
 
-### 7. COMMERCIAL price consistency validation
+### 7. ~~COMMERCIAL price consistency validation~~ (Superseded)
 
-COMMERCIAL items with the same `part_number` in the same version must have identical `unit_price`. This is enforced at CRUD time (HTTP 409 on conflict).
+~~COMMERCIAL items with the same `part_number` in the same version must have identical `unit_price`. This is enforced at CRUD time (HTTP 409 on conflict).~~
 
-**Rationale**: During aggregation, quantities are summed but `unit_price` is taken from the first item. If two items with the same part number had different prices, one price would be silently lost. CRUD-level validation prevents this. A future centralized BOM catalog/price list is planned to replace per-item pricing entirely.
+**Superseded**: Per-item pricing on BOM items has been replaced by the centralized price list. Pricing is resolved at calculation time from the price list, not stored on individual BOM items. Price consistency is guaranteed by the price list's no-overlap constraint for `(price_list_id, part_number)` date ranges. See [ADR: Price List](ADR_PRICE_LIST.md) for the new pricing design.
 
 ### 8. Position in the evaluation waterfall
 
@@ -94,3 +94,4 @@ BOM evaluation runs **after** SKU generation and **after** all field states are 
 - [ADR: Rule Expressions](ADR_RULE_EXPRESSIONS.md) — Why rules use single-field conditions
 - [ADR: Calculation Rules](ADR_CALCULATION_RULES.md) — How CALCULATION rules derive field values
 - [ADR: Re-hydration](ADR_REHYDRATION.md) — Why configurations store raw inputs and recalculate on read
+- [ADR: Price List](ADR_PRICE_LIST.md) — Centralized pricing via price list (supersedes per-item `unit_price` on BOM items)

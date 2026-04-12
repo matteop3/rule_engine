@@ -70,6 +70,15 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 - **Dynamic quantities**: Resolve from numeric field values or use static defaults
 - **Line totals & aggregation**: Auto-computed `line_total` and `commercial_total` with part-number aggregation
 
+### Price List Management
+- **Global price catalog**: Standalone price lists decoupled from entities and versions — reusable across products and markets
+- **Temporal validity**: Each item has `valid_from` / `valid_to` dates (SAP `9999-12-31` convention for open-ended). Future price lists can be prepared in advance with no-overlap constraints per `(price_list_id, part_number)`
+- **Bounding box validation**: Price list headers define the validity window; item dates must fall within it
+- **Graceful price resolution**: Missing prices produce per-line `unit_price = null` plus descriptive warnings in `BOMOutput.warnings`. The commercial total remains a partial sum to give users order-of-magnitude feedback, while `is_complete = false` gates finalization
+- **Simulation**: `price_list_id` is mandatory on calculation; `price_date` is optional (defaults to today) and enables future/historical price lookups
+- **Audit safety**: Finalization always recalculates with `price_date = today` to prevent stale-price exploitation; FINALIZED configurations store a full snapshot so subsequent price list edits cannot alter historical documents
+- **Deletion protection**: A price list referenced by any FINALIZED configuration cannot be deleted (HTTP 409)
+
 ### SKU Generation
 - **Base SKU + modifiers**: `LPT-PRO` + `-16G` + `-512S` → `LPT-PRO-16G-512S`
 - **Custom delimiters**: Configure separator per entity version
@@ -189,10 +198,12 @@ This creates:
 | Fields | 15 | 4 steps, all data types (string, number, boolean, date) |
 | Values | 35 | With SKU modifiers |
 | Rules | 19 | All 6 rule types, all 7 operators |
-| BOM Items | 8 | 5 TECHNICAL (incl. hierarchy) + 3 COMMERCIAL (with pricing) |
+| BOM Items | 8 | 5 TECHNICAL (incl. hierarchy) + 3 COMMERCIAL |
 | BOM Rules | 4 | Conditional inclusion, OR logic |
+| Price List | 1 | "Auto Insurance Price List 2026" with temporal validity |
+| Price List Items | 3 | One per COMMERCIAL BOM part number |
 | Users | 3 | One per role (see below) |
-| Configurations | 3 | 1 finalized + 2 drafts |
+| Configurations | 3 | 1 finalized + 2 drafts, all linked to the demo price list |
 
 **Demo users** (password: `password123`):
 
@@ -281,6 +292,8 @@ erDiagram
     BOMItem ||--o{ BOMItem : "has children"
     BOMItem ||--o{ BOMItemRule : "has rules"
     BOMItem }o--o| Field : "quantity from"
+    PriceList ||--o{ PriceListItem : "contains"
+    Configuration }o--o| PriceList : "uses"
     User ||--o{ Configuration : "owns"
     User ||--o{ RefreshToken : "has"
 
@@ -345,8 +358,25 @@ erDiagram
         string description
         decimal quantity
         int quantity_from_field_id FK "nullable"
-        decimal unit_price "nullable, COMMERCIAL only"
         int sequence
+    }
+
+    PriceList {
+        int id PK
+        string name UK
+        string description
+        date valid_from
+        date valid_to "default 9999-12-31"
+    }
+
+    PriceListItem {
+        int id PK
+        int price_list_id FK
+        string part_number
+        string description
+        decimal unit_price
+        date valid_from
+        date valid_to
     }
 
     BOMItemRule {
@@ -360,12 +390,15 @@ erDiagram
     Configuration {
         uuid id PK
         int entity_version_id FK
+        int price_list_id FK "nullable, SET NULL"
         uuid user_id FK
         string name
         enum status "DRAFT|FINALIZED"
         bool is_complete
         string generated_sku "nullable"
         decimal bom_total_price "nullable"
+        date price_date "nullable"
+        json snapshot "nullable, FINALIZED only"
         bool is_deleted
         json data
     }
@@ -465,7 +498,9 @@ flowchart TD
 
 ### Key Architectural Choices
 
-**Re-hydration strategy for configurations**: Configurations store raw inputs as JSON (`data` field) rather than denormalized snapshots. On read, the engine re-evaluates rules against the current EntityVersion schema. This enables version upgrades and ensures consistency. Key derived values (`is_complete`, `generated_sku`) are cached on the record for queryability. See [ADR: Re-hydration](docs/ADR_REHYDRATION.md).
+**Hybrid re-hydration strategy for configurations**: DRAFT configurations store raw inputs as JSON (`data` field) and recalculate on every read against the current EntityVersion and price list — this enables version upgrades, immediate rule previews, and live price updates. FINALIZED configurations additionally store a full `CalculationResponse` snapshot, so subsequent reads return the frozen state without rule engine invocation. This keeps FINALIZED documents immutable even though price lists are mutable. See [ADR: Re-hydration](docs/ADR_REHYDRATION.md).
+
+**Centralized pricing via price lists**: Commercial BOM pricing is resolved at calculation time from a global `PriceList` keyed by `part_number`, not stored on individual BOM items. Price lists use SAP-style temporal validity (`valid_from` / `valid_to`, default `9999-12-31`) with a strict no-overlap constraint per `(price_list_id, part_number)`. This supports future price planning, historical lookups, and market-specific catalogs. Missing prices produce warnings and a partial total rather than a hard failure, while `is_complete = false` gates finalization. See [ADR: Price List](docs/ADR_PRICE_LIST.md).
 
 **DRAFT-only editing**: Fields, Values, and Rules can only be modified on DRAFT versions. This prevents accidental changes to production configurations and ensures published versions are stable.
 
@@ -538,16 +573,33 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 | POST | `/configurations/{id}/upgrade` | Upgrade to latest version |
 | POST | `/configurations/{id}/finalize` | Make immutable (requires completeness) |
 
+### Price Lists
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/price-lists` | List price lists (filter: `?valid_at=`, default today) |
+| POST | `/price-lists` | Create price list |
+| GET | `/price-lists/{id}` | Get price list detail |
+| PATCH | `/price-lists/{id}` | Update price list header |
+| DELETE | `/price-lists/{id}` | Delete (blocked if referenced by FINALIZED config) |
+
+### Price List Items
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/price-list-items?price_list_id={id}` | List items in a price list |
+| POST | `/price-list-items` | Create price list item |
+| PATCH | `/price-list-items/{id}` | Update item |
+| DELETE | `/price-list-items/{id}` | Delete item |
+
 ### Engine
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/engine/calculate` | Stateless calculation |
+| POST | `/engine/calculate` | Stateless calculation (requires `price_list_id`, optional `price_date`) |
 
 ---
 
 ## Testing
 
-The project includes 975+ tests across multiple categories:
+The project includes 977+ tests across multiple categories:
 
 | Category | Location | Description |
 |----------|----------|-------------|
@@ -587,6 +639,18 @@ This project focuses on core rule engine functionality. The following features a
 | Cross-field expressions | Not implemented | See [ADR: Rule Expressions](docs/ADR_RULE_EXPRESSIONS.md). Single-field conditions keep rules simple and declarative. |
 | Inference tree evaluation | Not implemented | See [ADR: Inference Tree](docs/ADR_INFERENCE_TREE.md). Waterfall model is simpler and sufficient for typical CPQ scenarios. |
 | Pagination metadata | Not implemented | List endpoints return plain arrays with a 100-record limit and `skip`/`limit` parameters, but no total count or `has_more` indicator. For fields and values this is adequate (CPQ domains typically have 10-30 fields and 5-15 values per field), while for entities, versions, configurations, and users the client must paginate blindly. If needed, pagination metadata could be added via HTTP headers (`X-Total-Count`, `X-Has-More`) to avoid breaking the response format. |
+
+---
+
+## Design Decisions: Pricing
+
+| Area | Decision | Rationale |
+|---|---|---|
+| Where prices live | Global `PriceList` catalog, not per-BOM-item | Single source of truth; reusable across products and versions; supports market/channel segmentation |
+| Versioning | Date ranges with no-overlap constraint per `(price_list_id, part_number)` | Plan future prices without manual cut-over; historical traceability without explicit version numbers |
+| Missing prices | Partial total + warnings + `is_complete = false` | Users see order-of-magnitude feedback while finalization remains blocked |
+| FINALIZED immutability | Full `CalculationResponse` snapshot at finalization | Price lists can be edited freely without altering historical documents |
+| Finalize-time `price_date` | Always forced to `today` | Prevents finalizing with advantageous historical prices; locked at the audit trail |
 
 ---
 
@@ -642,8 +706,9 @@ rule_engine/
 - [ADR: Rule Expressions](docs/ADR_RULE_EXPRESSIONS.md) - Why rules use single-field conditions
 - [ADR: Calculation Rules](docs/ADR_CALCULATION_RULES.md) - How CALCULATION rules derive field values
 - [ADR: Inference Tree](docs/ADR_INFERENCE_TREE.md) - Why rules use waterfall evaluation instead of a dependency graph
-- [ADR: Re-hydration](docs/ADR_REHYDRATION.md) - Why configurations store raw inputs and recalculate on read
-- [ADR: BOM Generation](docs/ADR_BOM.md) - BOM design decisions (single table, hierarchy, pricing, aggregation)
+- [ADR: Re-hydration](docs/ADR_REHYDRATION.md) - Why configurations store raw inputs and recalculate on read (with hybrid snapshot amendment for FINALIZED)
+- [ADR: BOM Generation](docs/ADR_BOM.md) - BOM design decisions (single table, hierarchy, aggregation)
+- [ADR: Price List](docs/ADR_PRICE_LIST.md) - Centralized pricing with temporal validity, graceful resolution, and finalize-time lock
 
 ---
 

@@ -6,9 +6,29 @@ Covers two full workflows:
 - Configuration lifecycle with BOM: create → verify bom_total_price → update → recalculate → finalize → clone → verify copy
 """
 
+import datetime as dt
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
+
+from app.models.domain import PriceList
+
+
+@pytest.fixture(scope="function")
+def bom_workflow_price_list(db_session):
+    """Creates a price list for BOM workflow tests."""
+    price_list = PriceList(
+        name="BOM Workflow Price List",
+        description="Price list for BOM workflow integration tests",
+        valid_from=dt.date(2020, 1, 1),
+        valid_to=dt.date(9999, 12, 31),
+    )
+    db_session.add(price_list)
+    db_session.commit()
+    db_session.refresh(price_list)
+    return price_list
+
 
 # ============================================================
 # FULL BOM LIFECYCLE
@@ -18,7 +38,7 @@ from fastapi.testclient import TestClient
 class TestFullBOMLifecycle:
     """End-to-end: version setup through engine calculation with BOM output."""
 
-    def test_full_bom_lifecycle(self, client: TestClient, admin_headers):
+    def test_full_bom_lifecycle(self, client: TestClient, admin_headers, bom_workflow_price_list):
         """
         E2E: Create entity → Create version → Add fields → Add BOM items →
              Add BOM rules → Publish → Calculate → Verify BOM output.
@@ -138,7 +158,7 @@ class TestFullBOMLifecycle:
         assert bom_coating_resp.status_code == 201
         bom_coating_id = bom_coating_resp.json()["id"]
 
-        # 4d. Assembly service — COMMERCIAL, unconditional, priced
+        # 4d. Assembly service — COMMERCIAL, unconditional
         bom_assembly_resp = client.post(
             "/bom-items/",
             json={
@@ -147,14 +167,13 @@ class TestFullBOMLifecycle:
                 "part_number": "SVC-ASM",
                 "description": "Assembly service",
                 "quantity": "1",
-                "unit_price": "50.00",
                 "sequence": 4,
             },
             headers=admin_headers,
         )
         assert bom_assembly_resp.status_code == 201
 
-        # 4e. Coating service — COMMERCIAL, conditional on STEEL, priced
+        # 4e. Coating service — COMMERCIAL, conditional on STEEL
         bom_coat_svc_resp = client.post(
             "/bom-items/",
             json={
@@ -163,7 +182,6 @@ class TestFullBOMLifecycle:
                 "part_number": "SVC-CTG",
                 "description": "Coating service",
                 "quantity": "1",
-                "unit_price": "30.00",
                 "sequence": 5,
             },
             headers=admin_headers,
@@ -207,11 +225,25 @@ class TestFullBOMLifecycle:
         assert publish_resp.status_code == 200
         assert publish_resp.json()["status"] == "PUBLISHED"
 
+        # --- Step 6b: Add Price List Items ---
+        for pn, price in [("SVC-ASM", "50.00"), ("SVC-CTG", "30.00")]:
+            pli_resp = client.post(
+                "/price-list-items/",
+                json={
+                    "price_list_id": bom_workflow_price_list.id,
+                    "part_number": pn,
+                    "unit_price": price,
+                },
+                headers=admin_headers,
+            )
+            assert pli_resp.status_code == 201
+
         # --- Step 7: Calculate with STEEL + quantity_needed = 5 ---
         calc_steel_resp = client.post(
             "/engine/calculate",
             json={
                 "entity_id": entity_id,
+                "price_list_id": bom_workflow_price_list.id,
                 "current_state": [
                     {"field_id": f_material_id, "value": "STEEL"},
                     {"field_id": f_qty_id, "value": 5},
@@ -258,6 +290,7 @@ class TestFullBOMLifecycle:
             "/engine/calculate",
             json={
                 "entity_id": entity_id,
+                "price_list_id": bom_workflow_price_list.id,
                 "current_state": [
                     {"field_id": f_material_id, "value": "PLASTIC"},
                     {"field_id": f_qty_id, "value": 3},
@@ -294,7 +327,7 @@ class TestFullBOMLifecycle:
 class TestBOMConfigurationLifecycle:
     """End-to-end: configuration lifecycle with BOM total price tracking."""
 
-    def test_bom_with_configuration_lifecycle(self, client: TestClient, admin_headers):
+    def test_bom_with_configuration_lifecycle(self, client: TestClient, admin_headers, bom_workflow_price_list):
         """
         E2E: Create config → verify bom_total_price → update data →
              verify recalculation → finalize → clone → verify copy.
@@ -341,7 +374,7 @@ class TestBOMConfigurationLifecycle:
             )
             assert v_resp.status_code == 201
 
-        # BOM: base part — COMMERCIAL, unconditional, qty=1, price=100
+        # BOM: base part — COMMERCIAL, unconditional, qty=1
         client.post(
             "/bom-items/",
             json={
@@ -350,13 +383,12 @@ class TestBOMConfigurationLifecycle:
                 "part_number": "BASE-001",
                 "description": "Base part",
                 "quantity": "1",
-                "unit_price": "100.00",
                 "sequence": 1,
             },
             headers=admin_headers,
         )
 
-        # BOM: gloss finish — COMMERCIAL, conditional on GLOSSY, qty=1, price=25
+        # BOM: gloss finish — COMMERCIAL, conditional on GLOSSY, qty=1
         bom_gloss_resp = client.post(
             "/bom-items/",
             json={
@@ -365,7 +397,6 @@ class TestBOMConfigurationLifecycle:
                 "part_number": "FIN-GLOSS",
                 "description": "Glossy finish",
                 "quantity": "1",
-                "unit_price": "25.00",
                 "sequence": 2,
             },
             headers=admin_headers,
@@ -387,6 +418,19 @@ class TestBOMConfigurationLifecycle:
             headers=admin_headers,
         )
 
+        # Add price list items for BOM pricing
+        for pn, price in [("BASE-001", "100.00"), ("FIN-GLOSS", "25.00")]:
+            pli_resp = client.post(
+                "/price-list-items/",
+                json={
+                    "price_list_id": bom_workflow_price_list.id,
+                    "part_number": pn,
+                    "unit_price": price,
+                },
+                headers=admin_headers,
+            )
+            assert pli_resp.status_code == 201
+
         # Publish
         publish_resp = client.post(f"/versions/{version_id}/publish", headers=admin_headers)
         assert publish_resp.status_code == 200
@@ -397,6 +441,7 @@ class TestBOMConfigurationLifecycle:
             json={
                 "entity_version_id": version_id,
                 "name": "BOM Lifecycle Config",
+                "price_list_id": bom_workflow_price_list.id,
                 "data": [{"field_id": f_finish_id, "value": "GLOSSY"}],
             },
             headers=admin_headers,

@@ -69,7 +69,6 @@ class CachedBOMItem:
     quantity: Decimal
     quantity_from_field_id: int | None
     unit_of_measure: str | None
-    unit_price: Decimal | None
     sequence: int
 
 

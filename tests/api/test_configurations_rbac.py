@@ -5,11 +5,13 @@ Tests user isolation, authorization, and admin privileges.
 Each test is atomic and independent.
 """
 
+import datetime as dt
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token, get_password_hash
-from app.models.domain import Entity, EntityVersion, Field, FieldType, User, UserRole, VersionStatus
+from app.models.domain import Entity, EntityVersion, Field, FieldType, PriceList, User, UserRole, VersionStatus
 
 # ============================================================
 # FIXTURES - Entity/Version Scenario
@@ -51,7 +53,21 @@ def config_scenario(db_session):
     db_session.add_all([f_model, f_color])
     db_session.commit()
 
-    return {"entity_id": entity.id, "version_id": version.id, "f_model_id": f_model.id, "f_color_id": f_color.id}
+    price_list = PriceList(
+        name="RBAC Test Price List",
+        valid_from=dt.date(2020, 1, 1),
+        valid_to=dt.date(9999, 12, 31),
+    )
+    db_session.add(price_list)
+    db_session.commit()
+
+    return {
+        "entity_id": entity.id,
+        "version_id": version.id,
+        "f_model_id": f_model.id,
+        "f_color_id": f_color.id,
+        "price_list_id": price_list.id,
+    }
 
 
 # ============================================================
@@ -159,6 +175,7 @@ def test_user_cannot_read_other_user_configuration(client: TestClient, config_sc
     # User 1 creates a configuration
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "User1 Config",
         "data": [{"field_id": config_scenario["f_model_id"], "value": "Tesla"}],
     }
@@ -178,7 +195,12 @@ def test_user_cannot_update_other_user_configuration(client: TestClient, config_
     Test that a USER cannot update another USER's configuration.
     """
     # User 1 creates a configuration
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "User1 Config", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "User1 Config",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=user1_headers)
     config_id = create_resp.json()["id"]
 
@@ -195,7 +217,12 @@ def test_user_cannot_delete_other_user_configuration(client: TestClient, config_
     Test that a USER cannot delete another USER's configuration.
     """
     # User 1 creates a configuration
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "User1 Config", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "User1 Config",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=user1_headers)
     config_id = create_resp.json()["id"]
 
@@ -215,6 +242,7 @@ def test_user_cannot_calculate_other_user_configuration(
     # User 1 creates a configuration
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "User1 Config",
         "data": [{"field_id": config_scenario["f_model_id"], "value": "BMW"}],
     }
@@ -257,7 +285,12 @@ def test_author_cannot_read_other_author_configuration(client: TestClient, confi
     author2_headers = {"Authorization": f"Bearer {create_access_token(subject=author2.id)}"}
 
     # Author 1 creates a configuration
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "Author1 Config", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Author1 Config",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=author1_headers)
     config_id = create_resp.json()["id"]
 
@@ -275,7 +308,12 @@ def test_author_cannot_access_user_configuration(
     Test that an AUTHOR cannot access a USER's configuration.
     """
     # User creates a configuration
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "User Config", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "User Config",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=user1_headers)
     config_id = create_resp.json()["id"]
 
@@ -298,6 +336,7 @@ def test_admin_can_read_any_user_configuration(client: TestClient, config_scenar
     # User creates a configuration
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "User Config",
         "data": [{"field_id": config_scenario["f_model_id"], "value": "Audi"}],
     }
@@ -320,7 +359,12 @@ def test_admin_can_update_any_user_configuration(
     Test that an ADMIN can update any user's configuration.
     """
     # User creates a configuration
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "Original Name", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Original Name",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=user1_headers)
     config_id = create_resp.json()["id"]
 
@@ -339,7 +383,12 @@ def test_admin_can_delete_any_user_configuration(
     Test that an ADMIN can delete any user's configuration.
     """
     # User creates a configuration
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "User Config", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "User Config",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=user1_headers)
     config_id = create_resp.json()["id"]
 
@@ -362,6 +411,7 @@ def test_admin_can_calculate_any_user_configuration(
     # User creates a configuration
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "User Config",
         "data": [{"field_id": config_scenario["f_model_id"], "value": "Mercedes"}],
     }
@@ -387,11 +437,21 @@ def test_list_configurations_user_sees_only_own(client: TestClient, config_scena
     Test that USER can only see their own configurations in list.
     """
     # User 1 creates a configuration
-    payload1 = {"entity_version_id": config_scenario["version_id"], "name": "User1 Config", "data": []}
+    payload1 = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "User1 Config",
+        "data": [],
+    }
     client.post("/configurations/", json=payload1, headers=user1_headers)
 
     # User 2 creates a configuration
-    payload2 = {"entity_version_id": config_scenario["version_id"], "name": "User2 Config", "data": []}
+    payload2 = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "User2 Config",
+        "data": [],
+    }
     client.post("/configurations/", json=payload2, headers=user2_headers)
 
     # User 1 lists configurations
@@ -422,11 +482,21 @@ def test_list_configurations_author_sees_only_own(
     Test that AUTHOR can only see their own configurations in list.
     """
     # Author creates a configuration
-    payload_author = {"entity_version_id": config_scenario["version_id"], "name": "Author Config", "data": []}
+    payload_author = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Author Config",
+        "data": [],
+    }
     client.post("/configurations/", json=payload_author, headers=author_headers_rbac)
 
     # User creates a configuration
-    payload_user = {"entity_version_id": config_scenario["version_id"], "name": "User Config", "data": []}
+    payload_user = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "User Config",
+        "data": [],
+    }
     client.post("/configurations/", json=payload_user, headers=user1_headers)
 
     # Author lists configurations
@@ -449,17 +519,32 @@ def test_list_configurations_admin_sees_all(
     Test that ADMIN can see all users' configurations in list.
     """
     # User creates a configuration
-    payload_user = {"entity_version_id": config_scenario["version_id"], "name": "User Config", "data": []}
+    payload_user = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "User Config",
+        "data": [],
+    }
     user_resp = client.post("/configurations/", json=payload_user, headers=user1_headers)
     user_config_id = user_resp.json()["id"]
 
     # Author creates a configuration
-    payload_author = {"entity_version_id": config_scenario["version_id"], "name": "Author Config", "data": []}
+    payload_author = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Author Config",
+        "data": [],
+    }
     author_resp = client.post("/configurations/", json=payload_author, headers=author_headers_rbac)
     author_config_id = author_resp.json()["id"]
 
     # Admin creates a configuration
-    payload_admin = {"entity_version_id": config_scenario["version_id"], "name": "Admin Config", "data": []}
+    payload_admin = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Admin Config",
+        "data": [],
+    }
     admin_resp = client.post("/configurations/", json=payload_admin, headers=admin_headers_rbac)
     admin_config_id = admin_resp.json()["id"]
 
@@ -484,11 +569,21 @@ def test_list_configurations_admin_can_filter_by_user_id(
     Test that ADMIN can filter configurations by user_id.
     """
     # User 1 creates a configuration
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "User1 Config", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "User1 Config",
+        "data": [],
+    }
     client.post("/configurations/", json=payload, headers=user1_headers)
 
     # Admin creates a configuration
-    payload_admin = {"entity_version_id": config_scenario["version_id"], "name": "Admin Config", "data": []}
+    payload_admin = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Admin Config",
+        "data": [],
+    }
     client.post("/configurations/", json=payload_admin, headers=admin_headers_rbac)
 
     # Admin filters by User 1's ID

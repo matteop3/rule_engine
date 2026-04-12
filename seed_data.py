@@ -17,6 +17,8 @@ from app.models.domain import (
     EntityVersion,
     Field,
     FieldType,
+    PriceList,
+    PriceListItem,
     RefreshToken,
     Rule,
     RuleType,
@@ -44,9 +46,11 @@ def seed_db():
         db.query(Field).delete()
         db.query(EntityVersion).delete()
         db.query(Entity).delete()
+        db.query(PriceListItem).delete()
+        db.query(PriceList).delete()
         db.query(User).delete()
         db.commit()
-        print("\n[1/9] Database cleaned.")
+        print("\n[1/10] Database cleaned.")
 
         # 2. Entity
         entity = Entity(
@@ -735,7 +739,6 @@ def seed_db():
             description="Base annual premium",
             category="Premium",
             quantity=1,
-            unit_price=350,
             unit_of_measure="yr",
             sequence=10,
         )
@@ -748,7 +751,6 @@ def seed_db():
             description="Theft & fire coverage add-on",
             category="Add-on",
             quantity=1,
-            unit_price=89.99,
             unit_of_measure="yr",
             sequence=20,
         )
@@ -761,7 +763,6 @@ def seed_db():
             description="Policy document processing fee",
             category="Fee",
             quantity=1,
-            unit_price=15,
             unit_of_measure="pcs",
             sequence=30,
         )
@@ -830,9 +831,52 @@ def seed_db():
         )
 
         # ============================================================
-        # 8. USERS (3 demo users, one per role)
+        # 8. PRICE LIST (demo price list for COMMERCIAL BOM items)
         # ============================================================
-        # Same demo password for all: "password123"
+
+        price_list = PriceList(
+            name="Auto Insurance Price List 2026",
+            description="Standard pricing for auto insurance products — valid all of 2026",
+            valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 12, 31),
+        )
+        db.add(price_list)
+        db.flush()
+
+        pli_base_premium = PriceListItem(
+            price_list_id=price_list.id,
+            part_number="PREM-BASE",
+            description="Base annual premium",
+            unit_price=350,
+            valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 12, 31),
+        )
+        pli_theft_addon = PriceListItem(
+            price_list_id=price_list.id,
+            part_number="ADDON-THEFT",
+            description="Theft & fire coverage add-on",
+            unit_price=89.99,
+            valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 12, 31),
+        )
+        pli_pol_base = PriceListItem(
+            price_list_id=price_list.id,
+            part_number="POL-BASE",
+            description="Policy document processing fee",
+            unit_price=15,
+            valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 12, 31),
+        )
+
+        all_price_list_items = [pli_base_premium, pli_theft_addon, pli_pol_base]
+        db.add_all(all_price_list_items)
+        db.commit()
+        print(f"[8/10] Price list created: '{price_list.name}' with {len(all_price_list_items)} items")
+
+        # ============================================================
+        # 9. USERS (3 demo users, one per role)
+        # ============================================================
+        # Same demo password for all: "password123"  # noqa: S105
         demo_password_hash = get_password_hash("password123")
 
         user_admin = User(
@@ -848,10 +892,10 @@ def seed_db():
         all_users = [user_admin, user_author, user_demo]
         db.add_all(all_users)
         db.commit()
-        print(f"[8/10] Users created: {len(all_users)} users (admin, author, user) — password: password123")
+        print(f"[9/10] Users created: {len(all_users)} users (admin, author, user) — password: password123")
 
         # ============================================================
-        # 8. CONFIGURATIONS (sample quotes)
+        # 10. CONFIGURATIONS (sample quotes)
         # ============================================================
 
         # Config 1: FINALIZED — Complete retiree car quote (closed)
@@ -862,6 +906,7 @@ def seed_db():
             name="Retiree Car Quote — Complete",
             status=ConfigurationStatus.FINALIZED.value,
             is_complete=True,
+            price_list_id=price_list.id,
             generated_sku="POL-AUTO-P-A-ST-50M-INF2-FI-AS3-R7",
             data=[
                 {"field_id": f_name.id, "value": "John Smith"},
@@ -886,6 +931,7 @@ def seed_db():
             name="Truck Quote — In Progress",
             status=ConfigurationStatus.DRAFT.value,
             is_complete=False,
+            price_list_id=price_list.id,
             generated_sku="POL-AUTO-C-TN-ST-25M",
             data=[
                 {"field_id": f_name.id, "value": "Express Logistics LLC"},
@@ -906,6 +952,7 @@ def seed_db():
             name="Student Motorcycle Quote",
             status=ConfigurationStatus.DRAFT.value,
             is_complete=False,
+            price_list_id=price_list.id,
             generated_sku=None,
             data=[
                 {"field_id": f_name.id, "value": "Alex Johnson"},
@@ -919,13 +966,13 @@ def seed_db():
         all_configs = [config_finalized, config_draft, config_draft_moto]
         db.add_all(all_configs)
         db.commit()
-        print(f"[9/10] Configurations created: {len(all_configs)} (1 FINALIZED + 2 DRAFT)")
+        print(f"[10/10] Configurations created: {len(all_configs)} (1 FINALIZED + 2 DRAFT)")
 
         # ============================================================
         # SUMMARY
         # ============================================================
         print("\n" + "=" * 70)
-        print("[10/10] SEED COMPLETED SUCCESSFULLY")
+        print("SEED COMPLETED SUCCESSFULLY")
         print("=" * 70)
         print(f"""
 SUMMARY:
@@ -939,6 +986,8 @@ SUMMARY:
   Rules:          {len(all_rules)}
   BOM Items:      {len(all_bom_items)}
   BOM Rules:      {len(all_bom_rules)}
+  Price Lists:    1
+  Price Items:    {len(all_price_list_items)}
   Users:          {len(all_users)}
   Configurations: {len(all_configs)}
 
@@ -964,8 +1013,8 @@ FEATURE COVERAGE:
   BOM types:      2/2 (TECHNICAL, COMMERCIAL)
   BOM features:   hierarchy (nested sub-assembly), dynamic quantity,
                   conditional inclusion, OR logic (multiple rules),
-                  same part_number in TECHNICAL + COMMERCIAL,
-                  commercial pricing with totals
+                  same part_number in TECHNICAL + COMMERCIAL
+  Price list:     temporal validity, price resolution at calculation time
 
 CALCULATION (engine-derived dropdown):
   ┌─────────────────────────────────────────────────────┐
@@ -1009,10 +1058,16 @@ BOM ITEMS:
       RIDER-LUX       Luxury vehicle rider (child, conditional: value > $50k)
     ASSESS-HEAVY     Heavy risk assessment (conditional: OR logic, truck OR value > $40k)
     CERT-INSPECT     Inspection certificate (dynamic quantity from vehicle_value field)
-  COMMERCIAL (3 items):
-    PREM-BASE        Base annual premium ($350, unconditional)
-    ADDON-THEFT      Theft coverage add-on ($89.99, conditional: theft != NO)
-    POL-BASE         Policy document fee ($15, same part_number as TECHNICAL)
+  COMMERCIAL (3 items — prices from price list):
+    PREM-BASE        Base annual premium (unconditional)
+    ADDON-THEFT      Theft coverage add-on (conditional: theft != NO)
+    POL-BASE         Policy document fee (same part_number as TECHNICAL)
+
+PRICE LIST:
+  '{price_list.name}' (valid {price_list.valid_from} to {price_list.valid_to})
+    PREM-BASE:    $350.00
+    ADDON-THEFT:  $89.99
+    POL-BASE:     $15.00
 
 SKU EXAMPLES:
 

@@ -15,6 +15,7 @@ from app.models.domain import (
     EntityVersion,
     Field,
     FieldType,
+    PriceList,
     User,
     UserRole,
     Value,
@@ -112,6 +113,28 @@ def second_lifecycle_user_headers(second_lifecycle_user):
     """Auth headers for second lifecycle user."""
     token = create_access_token(subject=second_lifecycle_user.id)
     return {"Authorization": f"Bearer {token}"}
+
+
+# ============================================================
+# PRICE LIST FIXTURES
+# ============================================================
+
+
+@pytest.fixture(scope="function")
+def lifecycle_price_list(db_session):
+    """Creates a price list for lifecycle tests."""
+    import datetime as dt
+
+    price_list = PriceList(
+        name="Lifecycle Test Price List",
+        description="Price list for configuration lifecycle testing",
+        valid_from=dt.date(2020, 1, 1),
+        valid_to=dt.date(9999, 12, 31),
+    )
+    db_session.add(price_list)
+    db_session.commit()
+    db_session.refresh(price_list)
+    return price_list
 
 
 # ============================================================
@@ -341,7 +364,7 @@ def published_version_for_lifecycle(db_session, lifecycle_entity, lifecycle_admi
 
 
 @pytest.fixture(scope="function")
-def draft_configuration(db_session, lifecycle_user, published_version_for_lifecycle):
+def draft_configuration(db_session, lifecycle_user, published_version_for_lifecycle, lifecycle_price_list):
     """Creates a DRAFT configuration owned by lifecycle_user."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -354,6 +377,7 @@ def draft_configuration(db_session, lifecycle_user, published_version_for_lifecy
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[{"field_id": fields["name"].id, "value": "John Doe"}, {"field_id": fields["amount"].id, "value": 1000}],
         created_by_id=lifecycle_user.id,
     )
@@ -364,7 +388,7 @@ def draft_configuration(db_session, lifecycle_user, published_version_for_lifecy
 
 
 @pytest.fixture(scope="function")
-def finalized_configuration(db_session, lifecycle_user, published_version_for_lifecycle):
+def finalized_configuration(db_session, lifecycle_user, published_version_for_lifecycle, lifecycle_price_list):
     """Creates a FINALIZED configuration owned by lifecycle_user."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -377,6 +401,7 @@ def finalized_configuration(db_session, lifecycle_user, published_version_for_li
         status=ConfigurationStatus.FINALIZED,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[{"field_id": fields["name"].id, "value": "Jane Doe"}, {"field_id": fields["amount"].id, "value": 2000}],
         created_by_id=lifecycle_user.id,
         updated_by_id=lifecycle_user.id,
@@ -388,7 +413,7 @@ def finalized_configuration(db_session, lifecycle_user, published_version_for_li
 
 
 @pytest.fixture(scope="function")
-def soft_deleted_configuration(db_session, lifecycle_admin, published_version_for_lifecycle):
+def soft_deleted_configuration(db_session, lifecycle_admin, published_version_for_lifecycle, lifecycle_price_list):
     """Creates a soft-deleted FINALIZED configuration."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -401,6 +426,7 @@ def soft_deleted_configuration(db_session, lifecycle_admin, published_version_fo
         status=ConfigurationStatus.FINALIZED,
         is_complete=True,
         is_deleted=True,
+        price_list_id=lifecycle_price_list.id,
         data=[
             {"field_id": fields["name"].id, "value": "Deleted User"},
             {"field_id": fields["amount"].id, "value": 500},
@@ -415,7 +441,7 @@ def soft_deleted_configuration(db_session, lifecycle_admin, published_version_fo
 
 
 @pytest.fixture(scope="function")
-def configuration_with_empty_data(db_session, lifecycle_user, published_version_for_lifecycle):
+def configuration_with_empty_data(db_session, lifecycle_user, published_version_for_lifecycle, lifecycle_price_list):
     """Creates a DRAFT configuration with empty data array."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -427,6 +453,7 @@ def configuration_with_empty_data(db_session, lifecycle_user, published_version_
         status=ConfigurationStatus.DRAFT,
         is_complete=False,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[],
         created_by_id=lifecycle_user.id,
     )
@@ -437,7 +464,7 @@ def configuration_with_empty_data(db_session, lifecycle_user, published_version_
 
 
 @pytest.fixture(scope="function")
-def configuration_null_name(db_session, lifecycle_user, published_version_for_lifecycle):
+def configuration_null_name(db_session, lifecycle_user, published_version_for_lifecycle, lifecycle_price_list):
     """Creates a DRAFT configuration with null name."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -450,6 +477,7 @@ def configuration_null_name(db_session, lifecycle_user, published_version_for_li
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[{"field_id": fields["name"].id, "value": "Anonymous"}, {"field_id": fields["amount"].id, "value": 100}],
         created_by_id=lifecycle_user.id,
     )
@@ -460,7 +488,7 @@ def configuration_null_name(db_session, lifecycle_user, published_version_for_li
 
 
 @pytest.fixture(scope="function")
-def admin_owned_draft_configuration(db_session, lifecycle_admin, published_version_for_lifecycle):
+def admin_owned_draft_configuration(db_session, lifecycle_admin, published_version_for_lifecycle, lifecycle_price_list):
     """Creates a DRAFT configuration owned by admin."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -473,6 +501,7 @@ def admin_owned_draft_configuration(db_session, lifecycle_admin, published_versi
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[{"field_id": fields["name"].id, "value": "Admin User"}, {"field_id": fields["amount"].id, "value": 5000}],
         created_by_id=lifecycle_admin.id,
     )
@@ -483,7 +512,9 @@ def admin_owned_draft_configuration(db_session, lifecycle_admin, published_versi
 
 
 @pytest.fixture(scope="function")
-def admin_owned_finalized_configuration(db_session, lifecycle_admin, published_version_for_lifecycle):
+def admin_owned_finalized_configuration(
+    db_session, lifecycle_admin, published_version_for_lifecycle, lifecycle_price_list
+):
     """Creates a FINALIZED configuration owned by admin."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -496,6 +527,7 @@ def admin_owned_finalized_configuration(db_session, lifecycle_admin, published_v
         status=ConfigurationStatus.FINALIZED,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[
             {"field_id": fields["name"].id, "value": "Admin Finalized"},
             {"field_id": fields["amount"].id, "value": 10000},
@@ -510,7 +542,9 @@ def admin_owned_finalized_configuration(db_session, lifecycle_admin, published_v
 
 
 @pytest.fixture(scope="function")
-def author_owned_draft_configuration(db_session, lifecycle_author, published_version_for_lifecycle):
+def author_owned_draft_configuration(
+    db_session, lifecycle_author, published_version_for_lifecycle, lifecycle_price_list
+):
     """Creates a DRAFT configuration owned by author."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -523,6 +557,7 @@ def author_owned_draft_configuration(db_session, lifecycle_author, published_ver
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[
             {"field_id": fields["name"].id, "value": "Author User"},
             {"field_id": fields["amount"].id, "value": 3000},
@@ -536,7 +571,9 @@ def author_owned_draft_configuration(db_session, lifecycle_author, published_ver
 
 
 @pytest.fixture(scope="function")
-def second_user_draft_configuration(db_session, second_lifecycle_user, published_version_for_lifecycle):
+def second_user_draft_configuration(
+    db_session, second_lifecycle_user, published_version_for_lifecycle, lifecycle_price_list
+):
     """Creates a DRAFT configuration owned by second user (for ownership tests)."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -549,6 +586,7 @@ def second_user_draft_configuration(db_session, second_lifecycle_user, published
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[{"field_id": fields["name"].id, "value": "Second User"}, {"field_id": fields["amount"].id, "value": 750}],
         created_by_id=second_lifecycle_user.id,
     )
@@ -559,7 +597,9 @@ def second_user_draft_configuration(db_session, second_lifecycle_user, published
 
 
 @pytest.fixture(scope="function")
-def second_user_finalized_configuration(db_session, second_lifecycle_user, published_version_for_lifecycle):
+def second_user_finalized_configuration(
+    db_session, second_lifecycle_user, published_version_for_lifecycle, lifecycle_price_list
+):
     """Creates a FINALIZED configuration owned by second user."""
     version_data = published_version_for_lifecycle
     version = version_data["version"]
@@ -572,6 +612,7 @@ def second_user_finalized_configuration(db_session, second_lifecycle_user, publi
         status=ConfigurationStatus.FINALIZED,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[
             {"field_id": fields["name"].id, "value": "Second User Final"},
             {"field_id": fields["amount"].id, "value": 999},
@@ -591,7 +632,7 @@ def second_user_finalized_configuration(db_session, second_lifecycle_user, publi
 
 
 @pytest.fixture(scope="function")
-def configuration_on_archived_version(db_session, lifecycle_user, multi_version_entity):
+def configuration_on_archived_version(db_session, lifecycle_user, multi_version_entity, lifecycle_price_list):
     """Creates a DRAFT configuration linked to an ARCHIVED version."""
     archived_version = multi_version_entity["archived_version"]
     archived_fields = multi_version_entity["archived_fields"]
@@ -603,6 +644,7 @@ def configuration_on_archived_version(db_session, lifecycle_user, multi_version_
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[{"field_id": archived_fields["legacy"].id, "value": "Legacy Value"}],
         created_by_id=lifecycle_user.id,
     )
@@ -613,7 +655,7 @@ def configuration_on_archived_version(db_session, lifecycle_user, multi_version_
 
 
 @pytest.fixture(scope="function")
-def configuration_on_published_multi_version(db_session, lifecycle_user, multi_version_entity):
+def configuration_on_published_multi_version(db_session, lifecycle_user, multi_version_entity, lifecycle_price_list):
     """Creates a DRAFT configuration linked to the PUBLISHED version of multi_version_entity."""
     published_version = multi_version_entity["published_version"]
     published_fields = multi_version_entity["published_fields"]
@@ -625,6 +667,7 @@ def configuration_on_published_multi_version(db_session, lifecycle_user, multi_v
         status=ConfigurationStatus.DRAFT,
         is_complete=True,
         is_deleted=False,
+        price_list_id=lifecycle_price_list.id,
         data=[
             {"field_id": published_fields["type"].id, "value": "BASIC"},
             {"field_id": published_fields["value"].id, "value": 1500},

@@ -10,7 +10,7 @@ FAR_FUTURE = dt.date(9999, 12, 31)
 class PriceListBase(BaseSchema):
     """Base properties shared by create and read operations."""
 
-    name: str = Field(..., max_length=100)
+    name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     valid_from: dt.date
     valid_to: dt.date = FAR_FUTURE
@@ -35,7 +35,7 @@ class PriceListRead(PriceListBase, AuditSchemaMixin):
 class PriceListUpdate(BaseSchema):
     """Schema for partially updating a price list (PATCH)."""
 
-    name: str | None = Field(None, max_length=100)
+    name: str | None = Field(None, min_length=1, max_length=100)
     description: str | None = None
     valid_from: dt.date | None = None
     valid_to: dt.date | None = None

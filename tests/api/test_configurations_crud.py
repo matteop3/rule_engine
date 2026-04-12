@@ -5,11 +5,13 @@ Tests basic Create, Read, List, Update, Delete operations.
 Each test is atomic and independent.
 """
 
+import datetime as dt
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token, get_password_hash
-from app.models.domain import Entity, EntityVersion, Field, FieldType, User, UserRole, VersionStatus
+from app.models.domain import Entity, EntityVersion, Field, FieldType, PriceList, User, UserRole, VersionStatus
 
 # ============================================================
 # AUTH FIXTURES (local to this module)
@@ -84,7 +86,21 @@ def config_scenario(db_session):
     db_session.add_all([f_model, f_color])
     db_session.commit()
 
-    return {"entity_id": entity.id, "version_id": version.id, "f_model_id": f_model.id, "f_color_id": f_color.id}
+    price_list = PriceList(
+        name="CRUD Test Price List",
+        valid_from=dt.date(2020, 1, 1),
+        valid_to=dt.date(9999, 12, 31),
+    )
+    db_session.add(price_list)
+    db_session.commit()
+
+    return {
+        "entity_id": entity.id,
+        "version_id": version.id,
+        "f_model_id": f_model.id,
+        "f_color_id": f_color.id,
+        "price_list_id": price_list.id,
+    }
 
 
 # ============================================================
@@ -98,6 +114,7 @@ def test_create_configuration_success(client: TestClient, auth_headers, config_s
     """
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "My Configuration",
         "data": [
             {"field_id": config_scenario["f_model_id"], "value": "Tesla Model S"},
@@ -118,7 +135,12 @@ def test_create_configuration_without_auth(client: TestClient, config_scenario):
     """
     Test that creating configuration without auth returns 401.
     """
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "Unauthorized Config", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Unauthorized Config",
+        "data": [],
+    }
 
     response = client.post("/configurations/", json=payload)
 
@@ -130,7 +152,12 @@ def test_create_configuration_empty_name(client: TestClient, auth_headers, confi
     Test that creating configuration with empty name is allowed.
     The API accepts empty strings for name (schema allows Optional[str]).
     """
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "",
+        "data": [],
+    }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
 
@@ -153,6 +180,7 @@ def test_read_configuration_success(client: TestClient, auth_headers, config_sce
     # First create a configuration
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Test Read",
         "data": [{"field_id": config_scenario["f_model_id"], "value": "BMW"}],
     }
@@ -181,7 +209,12 @@ def test_read_configuration_without_auth(client: TestClient, auth_headers, confi
     Test reading configuration without auth returns 401.
     """
     # Create config first
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "Private Config", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Private Config",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=auth_headers)
     config_id = create_resp.json()["id"]
 
@@ -202,7 +235,12 @@ def test_list_configurations_success(client: TestClient, auth_headers, config_sc
     """
     # Create two configurations
     for name in ["Config A", "Config B"]:
-        payload = {"entity_version_id": config_scenario["version_id"], "name": name, "data": []}
+        payload = {
+            "entity_version_id": config_scenario["version_id"],
+            "price_list_id": config_scenario["price_list_id"],
+            "name": name,
+            "data": [],
+        }
         client.post("/configurations/", json=payload, headers=auth_headers)
 
     # List configurations
@@ -250,6 +288,7 @@ def test_update_configuration_success(client: TestClient, auth_headers, config_s
     # Create config
     create_payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Original Name",
         "data": [{"field_id": config_scenario["f_model_id"], "value": "Audi A4"}],
     }
@@ -284,7 +323,12 @@ def test_update_configuration_without_auth(client: TestClient, auth_headers, con
     Test updating configuration without auth returns 401.
     """
     # Create config first
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "To Update", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "To Update",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=auth_headers)
     config_id = create_resp.json()["id"]
 
@@ -304,7 +348,12 @@ def test_delete_configuration_success(client: TestClient, auth_headers, config_s
     Test deleting a configuration.
     """
     # Create config
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "To Delete", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "To Delete",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=auth_headers)
     config_id = create_resp.json()["id"]
 
@@ -332,7 +381,12 @@ def test_delete_configuration_without_auth(client: TestClient, auth_headers, con
     Test deleting configuration without auth returns 401.
     """
     # Create config first
-    payload = {"entity_version_id": config_scenario["version_id"], "name": "Cannot Delete", "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Cannot Delete",
+        "data": [],
+    }
     create_resp = client.post("/configurations/", json=payload, headers=auth_headers)
     config_id = create_resp.json()["id"]
 

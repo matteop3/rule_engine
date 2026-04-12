@@ -4,7 +4,6 @@ Test suite for BOM Items API endpoints.
 Tests the full CRUD lifecycle for BOM Item management including:
 - RBAC enforcement (admin/author only)
 - DRAFT-only modification policy
-- Pricing validation by bom_type
 - Quantity validation
 - quantity_from_field_id validation (NUMBER type, same version)
 - parent_bom_item_id validation (same version, no circular refs)
@@ -96,7 +95,7 @@ class TestCreateBOMItem:
     """Tests for POST /bom-items/ endpoint."""
 
     def test_create_technical_bom_item(self, client: TestClient, admin_headers, draft_version):
-        """Create a TECHNICAL BOM item (no unit_price)."""
+        """Create a TECHNICAL BOM item."""
         response = client.post(
             "/bom-items/",
             headers=admin_headers,
@@ -112,10 +111,9 @@ class TestCreateBOMItem:
         data = response.json()
         assert data["bom_type"] == "TECHNICAL"
         assert data["part_number"] == "TECH-001"
-        assert data["unit_price"] is None
 
     def test_create_commercial_bom_item(self, client: TestClient, admin_headers, draft_version):
-        """Create a COMMERCIAL BOM item (unit_price required)."""
+        """Create a COMMERCIAL BOM item."""
         response = client.post(
             "/bom-items/",
             headers=admin_headers,
@@ -124,11 +122,9 @@ class TestCreateBOMItem:
                 "bom_type": "COMMERCIAL",
                 "part_number": "COM-001",
                 "quantity": "1",
-                "unit_price": "49.99",
             },
         )
         assert response.status_code == 201
-        assert response.json()["unit_price"] == "49.9900"
 
     def test_create_draft_only_published_rejected(self, client: TestClient, admin_headers, published_version):
         """Creating on a PUBLISHED version returns 409."""
@@ -157,37 +153,6 @@ class TestCreateBOMItem:
             },
         )
         assert response.status_code == 409
-
-    def test_technical_with_price_rejected(self, client: TestClient, admin_headers, draft_version):
-        """TECHNICAL item with unit_price returns 400."""
-        response = client.post(
-            "/bom-items/",
-            headers=admin_headers,
-            json={
-                "entity_version_id": draft_version.id,
-                "bom_type": "TECHNICAL",
-                "part_number": "FAIL-003",
-                "quantity": "1",
-                "unit_price": "10.00",
-            },
-        )
-        assert response.status_code == 400
-        assert "TECHNICAL" in response.json()["detail"]
-
-    def test_commercial_without_price_rejected(self, client: TestClient, admin_headers, draft_version):
-        """COMMERCIAL item without unit_price returns 400."""
-        response = client.post(
-            "/bom-items/",
-            headers=admin_headers,
-            json={
-                "entity_version_id": draft_version.id,
-                "bom_type": "COMMERCIAL",
-                "part_number": "FAIL-004",
-                "quantity": "1",
-            },
-        )
-        assert response.status_code == 400
-        assert "unit_price" in response.json()["detail"]
 
     def test_quantity_zero_rejected(self, client: TestClient, admin_headers, draft_version):
         """Quantity = 0 returns 400."""
@@ -391,7 +356,6 @@ class TestCreateBOMItem:
                 "bom_type": "COMMERCIAL",
                 "part_number": "COM-CHILD",
                 "quantity": "1",
-                "unit_price": "10.00",
                 "parent_bom_item_id": parent.id,
             },
         )
@@ -409,7 +373,6 @@ class TestCreateBOMItem:
                 "bom_type": "COMMERCIAL",
                 "part_number": "COM-ROOT",
                 "quantity": "1",
-                "unit_price": "10.00",
             },
         )
         assert response.status_code == 201
@@ -431,93 +394,8 @@ class TestCreateBOMItem:
         assert response.status_code == 201
         assert response.json()["parent_bom_item_id"] == draft_bom_item.id
 
-    def test_commercial_same_part_same_price_allowed(
-        self, client: TestClient, admin_headers, db_session, draft_version
-    ):
-        """Same part_number + same unit_price for COMMERCIAL items is allowed."""
-        db_session.add(
-            BOMItem(
-                entity_version_id=draft_version.id,
-                bom_type=BOMType.COMMERCIAL.value,
-                part_number="PRICE-OK",
-                quantity=Decimal("1"),
-                unit_price=Decimal("10.00"),
-            )
-        )
-        db_session.commit()
-
-        response = client.post(
-            "/bom-items/",
-            headers=admin_headers,
-            json={
-                "entity_version_id": draft_version.id,
-                "bom_type": "COMMERCIAL",
-                "part_number": "PRICE-OK",
-                "quantity": "2",
-                "unit_price": "10.00",
-            },
-        )
-        assert response.status_code == 201
-
-    def test_commercial_same_part_different_price_rejected(
-        self, client: TestClient, admin_headers, db_session, draft_version
-    ):
-        """Same part_number + different unit_price for COMMERCIAL items returns 409."""
-        db_session.add(
-            BOMItem(
-                entity_version_id=draft_version.id,
-                bom_type=BOMType.COMMERCIAL.value,
-                part_number="PRICE-CONFLICT",
-                quantity=Decimal("1"),
-                unit_price=Decimal("10.00"),
-            )
-        )
-        db_session.commit()
-
-        response = client.post(
-            "/bom-items/",
-            headers=admin_headers,
-            json={
-                "entity_version_id": draft_version.id,
-                "bom_type": "COMMERCIAL",
-                "part_number": "PRICE-CONFLICT",
-                "quantity": "1",
-                "unit_price": "15.00",
-            },
-        )
-        assert response.status_code == 409
-        assert "unit_price" in response.json()["detail"]
-
-    def test_different_part_different_price_allowed(self, client: TestClient, admin_headers, db_session, draft_version):
-        """Different part_number with different unit_price is allowed."""
-        db_session.add(
-            BOMItem(
-                entity_version_id=draft_version.id,
-                bom_type=BOMType.COMMERCIAL.value,
-                part_number="PART-A",
-                quantity=Decimal("1"),
-                unit_price=Decimal("10.00"),
-            )
-        )
-        db_session.commit()
-
-        response = client.post(
-            "/bom-items/",
-            headers=admin_headers,
-            json={
-                "entity_version_id": draft_version.id,
-                "bom_type": "COMMERCIAL",
-                "part_number": "PART-B",
-                "quantity": "1",
-                "unit_price": "99.00",
-            },
-        )
-        assert response.status_code == 201
-
-    def test_technical_same_part_no_price_constraint(
-        self, client: TestClient, admin_headers, db_session, draft_version
-    ):
-        """TECHNICAL items with same part_number have no price consistency constraint."""
+    def test_technical_same_part_allowed(self, client: TestClient, admin_headers, db_session, draft_version):
+        """TECHNICAL items with same part_number are allowed."""
         db_session.add(
             BOMItem(
                 entity_version_id=draft_version.id,
@@ -578,26 +456,6 @@ class TestUpdateBOMItem:
         )
         assert response.status_code == 409
 
-    def test_update_pricing_validation_on_type_change(self, client: TestClient, admin_headers, draft_bom_item):
-        """Changing to COMMERCIAL without price returns 400."""
-        response = client.patch(
-            f"/bom-items/{draft_bom_item.id}",
-            headers=admin_headers,
-            json={"bom_type": "COMMERCIAL"},
-        )
-        assert response.status_code == 400
-        assert "unit_price" in response.json()["detail"]
-
-    def test_update_type_to_commercial_with_price(self, client: TestClient, admin_headers, draft_bom_item):
-        """Changing to COMMERCIAL with price succeeds."""
-        response = client.patch(
-            f"/bom-items/{draft_bom_item.id}",
-            headers=admin_headers,
-            json={"bom_type": "COMMERCIAL", "unit_price": "25.00"},
-        )
-        assert response.status_code == 200
-        assert response.json()["bom_type"] == "COMMERCIAL"
-
     def test_update_parent_cycle_detection(self, client: TestClient, admin_headers, db_session, draft_bom_item):
         """Setting parent to a child creates a cycle — rejected."""
         child = BOMItem(
@@ -645,86 +503,10 @@ class TestUpdateBOMItem:
         response = client.patch(
             f"/bom-items/{child.id}",
             headers=admin_headers,
-            json={"bom_type": "COMMERCIAL", "unit_price": "10.00"},
+            json={"bom_type": "COMMERCIAL"},
         )
         assert response.status_code == 400
         assert "COMMERCIAL" in response.json()["detail"]
-
-    def test_update_commercial_to_technical_with_parent_allowed(
-        self, client: TestClient, admin_headers, db_session, draft_version
-    ):
-        """Changing root-level COMMERCIAL to TECHNICAL (no parent) is allowed."""
-        item = BOMItem(
-            entity_version_id=draft_version.id,
-            bom_type=BOMType.COMMERCIAL.value,
-            part_number="UPD-SOLO",
-            quantity=Decimal("1"),
-            unit_price=Decimal("10.00"),
-        )
-        db_session.add(item)
-        db_session.commit()
-
-        response = client.patch(
-            f"/bom-items/{item.id}",
-            headers=admin_headers,
-            json={"bom_type": "TECHNICAL", "unit_price": None},
-        )
-        assert response.status_code == 200
-        assert response.json()["bom_type"] == "TECHNICAL"
-
-    def test_update_price_to_conflict_rejected(self, client: TestClient, admin_headers, db_session, draft_version):
-        """Changing unit_price to conflict with existing COMMERCIAL item returns 409."""
-        item_a = BOMItem(
-            entity_version_id=draft_version.id,
-            bom_type=BOMType.COMMERCIAL.value,
-            part_number="UPD-PRICE",
-            quantity=Decimal("1"),
-            unit_price=Decimal("10.00"),
-        )
-        item_b = BOMItem(
-            entity_version_id=draft_version.id,
-            bom_type=BOMType.COMMERCIAL.value,
-            part_number="UPD-PRICE",
-            quantity=Decimal("2"),
-            unit_price=Decimal("10.00"),
-        )
-        db_session.add_all([item_a, item_b])
-        db_session.commit()
-
-        response = client.patch(
-            f"/bom-items/{item_b.id}",
-            headers=admin_headers,
-            json={"unit_price": "20.00"},
-        )
-        assert response.status_code == 409
-        assert "unit_price" in response.json()["detail"]
-
-    def test_update_price_to_match_allowed(self, client: TestClient, admin_headers, db_session, draft_version):
-        """Changing unit_price to match existing COMMERCIAL item is allowed."""
-        item_a = BOMItem(
-            entity_version_id=draft_version.id,
-            bom_type=BOMType.COMMERCIAL.value,
-            part_number="UPD-PRICE-OK",
-            quantity=Decimal("1"),
-            unit_price=Decimal("10.00"),
-        )
-        item_b = BOMItem(
-            entity_version_id=draft_version.id,
-            bom_type=BOMType.COMMERCIAL.value,
-            part_number="UPD-PRICE-OK",
-            quantity=Decimal("2"),
-            unit_price=Decimal("15.00"),
-        )
-        db_session.add_all([item_a, item_b])
-        db_session.commit()
-
-        response = client.patch(
-            f"/bom-items/{item_b.id}",
-            headers=admin_headers,
-            json={"unit_price": "10.00"},
-        )
-        assert response.status_code == 200
-        assert response.json()["unit_price"] == "10.0000"
 
 
 # ============================================================

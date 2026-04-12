@@ -5,11 +5,13 @@ Tests malformed input, missing fields, null values, and data validation.
 Each test is atomic and independent.
 """
 
+import datetime as dt
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token, get_password_hash
-from app.models.domain import Entity, EntityVersion, Field, FieldType, User, UserRole, VersionStatus
+from app.models.domain import Entity, EntityVersion, Field, FieldType, PriceList, User, UserRole, VersionStatus
 
 # ============================================================
 # AUTH FIXTURES (local to this module)
@@ -84,7 +86,21 @@ def config_scenario(db_session):
     db_session.add_all([f_model, f_color])
     db_session.commit()
 
-    return {"entity_id": entity.id, "version_id": version.id, "f_model_id": f_model.id, "f_color_id": f_color.id}
+    price_list = PriceList(
+        name="Validation Test Price List",
+        valid_from=dt.date(2020, 1, 1),
+        valid_to=dt.date(9999, 12, 31),
+    )
+    db_session.add(price_list)
+    db_session.commit()
+
+    return {
+        "entity_id": entity.id,
+        "version_id": version.id,
+        "f_model_id": f_model.id,
+        "f_color_id": f_color.id,
+        "price_list_id": price_list.id,
+    }
 
 
 # ============================================================
@@ -116,11 +132,16 @@ def test_create_configuration_invalid_entity_version_id_type(client: TestClient,
     assert response.status_code == 422
 
 
-def test_create_configuration_nonexistent_entity_version(client: TestClient, auth_headers):
+def test_create_configuration_nonexistent_entity_version(client: TestClient, auth_headers, config_scenario):
     """
     Test that referencing a non-existent entity_version_id returns 404.
     """
-    payload = {"entity_version_id": 999999, "name": "Ghost Version", "data": []}
+    payload = {
+        "entity_version_id": 999999,
+        "price_list_id": config_scenario["price_list_id"],
+        "name": "Ghost Version",
+        "data": [],
+    }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
 
@@ -134,6 +155,7 @@ def test_create_configuration_invalid_field_id(client: TestClient, auth_headers,
     """
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Invalid Field",
         "data": [{"field_id": 999999, "value": "test"}],
     }
@@ -151,6 +173,7 @@ def test_create_configuration_duplicate_field_ids(client: TestClient, auth_heade
     """
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Duplicate Fields",
         "data": [
             {"field_id": config_scenario["f_model_id"], "value": "First"},
@@ -170,6 +193,7 @@ def test_create_configuration_invalid_data_structure(client: TestClient, auth_he
     """
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Bad Data",
         "data": "not_a_list",  # Should be a list
     }
@@ -185,6 +209,7 @@ def test_create_configuration_missing_field_id_in_data(client: TestClient, auth_
     """
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Missing field_id",
         "data": [
             {"value": "orphan_value"}  # Missing field_id
@@ -202,6 +227,7 @@ def test_create_configuration_negative_field_id(client: TestClient, auth_headers
     """
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Negative ID",
         "data": [{"field_id": -1, "value": "test"}],
     }
@@ -232,6 +258,7 @@ def test_create_configuration_null_value_in_field(client: TestClient, auth_heade
     """
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Null Value Config",
         "data": [{"field_id": config_scenario["f_model_id"], "value": None}],
     }
@@ -249,7 +276,12 @@ def test_create_configuration_null_name(client: TestClient, auth_headers, config
     """
     Test that null name is accepted (name: Optional[str]).
     """
-    payload = {"entity_version_id": config_scenario["version_id"], "name": None, "data": []}
+    payload = {
+        "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
+        "name": None,
+        "data": [],
+    }
 
     response = client.post("/configurations/", json=payload, headers=auth_headers)
 
@@ -276,6 +308,7 @@ def test_update_configuration_with_null_values(client: TestClient, auth_headers,
     # First create a config with a value
     create_payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Original",
         "data": [{"field_id": config_scenario["f_model_id"], "value": "Initial Value"}],
     }
@@ -297,6 +330,7 @@ def test_create_configuration_mixed_null_and_valid_values(client: TestClient, au
     """
     payload = {
         "entity_version_id": config_scenario["version_id"],
+        "price_list_id": config_scenario["price_list_id"],
         "name": "Mixed Values",
         "data": [
             {"field_id": config_scenario["f_model_id"], "value": "Valid String"},

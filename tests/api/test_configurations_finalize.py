@@ -281,7 +281,9 @@ class TestFinalizeEdgeCases:
 class TestFinalizeWorkflows:
     """Workflow tests involving finalize operation."""
 
-    def test_create_update_finalize_workflow(self, client, lifecycle_user_headers, published_version_for_lifecycle):
+    def test_create_update_finalize_workflow(
+        self, client, lifecycle_user_headers, published_version_for_lifecycle, lifecycle_price_list
+    ):
         """Complete workflow: create -> update -> finalize."""
         version_data = published_version_for_lifecycle
         version = version_data["version"]
@@ -292,6 +294,7 @@ class TestFinalizeWorkflows:
             "/configurations/",
             json={
                 "entity_version_id": version.id,
+                "price_list_id": lifecycle_price_list.id,
                 "name": "Workflow Config",
                 "data": [
                     {"field_id": fields["name"].id, "value": "Initial"},

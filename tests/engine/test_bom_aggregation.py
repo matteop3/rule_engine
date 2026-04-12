@@ -20,6 +20,7 @@ from app.models.domain import (
 )
 from app.schemas.engine import CalculationRequest, FieldInputState
 from app.services.rule_engine import RuleEngineService
+from tests.fixtures.price_lists import create_price_list_with_items
 
 
 @pytest.fixture(scope="function")
@@ -32,12 +33,14 @@ def setup_aggregation_scenario(db_session: Session):
     - size (dropdown): SMALL, LARGE
 
     BOM items (all root-level, COMMERCIAL, same part_number "BLT-10"):
-    - bolt_a: qty 2, unit_price 5.00, seq 1, conditional: color == RED
-    - bolt_b: qty 3, unit_price 5.00, seq 2, conditional: size == LARGE
+    - bolt_a: qty 2, seq 1, conditional: color == RED
+    - bolt_b: qty 3, seq 2, conditional: size == LARGE
 
     BOM items (unique parts):
     - frame: TECHNICAL, part_number "FRM-01", qty 1, seq 3, unconditional
-    - paint: COMMERCIAL, part_number "PNT-01", qty 1, unit_price 10.00, seq 4, unconditional
+    - paint: COMMERCIAL, part_number "PNT-01", qty 1, seq 4, unconditional
+
+    Price list: BLT-10 = 5.00, PNT-01 = 10.00
     """
     entity = Entity(name="Aggregation Test Product", description="Aggregation tests")
     db_session.add(entity)
@@ -93,7 +96,6 @@ def setup_aggregation_scenario(db_session: Session):
         category="Fasteners",
         unit_of_measure="pcs",
         quantity=Decimal("2"),
-        unit_price=Decimal("5.00"),
         sequence=1,
     )
     bolt_b = BOMItem(
@@ -104,7 +106,6 @@ def setup_aggregation_scenario(db_session: Session):
         category="Fasteners alt",
         unit_of_measure="box",
         quantity=Decimal("3"),
-        unit_price=Decimal("7.00"),
         sequence=2,
     )
     frame = BOMItem(
@@ -121,7 +122,6 @@ def setup_aggregation_scenario(db_session: Session):
         part_number="PNT-01",
         description="Paint",
         quantity=Decimal("1"),
-        unit_price=Decimal("10.00"),
         sequence=4,
     )
     db_session.add_all([bolt_a, bolt_b, frame, paint])
@@ -143,9 +143,18 @@ def setup_aggregation_scenario(db_session: Session):
     db_session.add_all([rule_a, rule_b])
     db_session.commit()
 
+    pl = create_price_list_with_items(
+        db_session,
+        {
+            "BLT-10": Decimal("5.00"),
+            "PNT-01": Decimal("10.00"),
+        },
+    )
+
     return {
         "entity_id": entity.id,
         "version_id": version.id,
+        "price_list_id": pl.id,
         "fields": {"color": f_color.id, "size": f_size.id},
         "bom_items": {
             "bolt_a": bolt_a.id,
@@ -286,7 +295,6 @@ class TestBOMAggregation:
             part_number="MTR-01",
             description="Motor (commercial)",
             quantity=Decimal("3"),
-            unit_price=Decimal("50.00"),
             sequence=2,
         )
         db_session.add_all([tech_item, comm_item])
@@ -320,6 +328,7 @@ class TestBOMAggregation:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[
                     FieldInputState(field_id=data["fields"]["color"], value="RED"),
                     FieldInputState(field_id=data["fields"]["size"], value="LARGE"),
@@ -342,6 +351,7 @@ class TestBOMAggregation:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[
                     FieldInputState(field_id=data["fields"]["color"], value="RED"),
                     FieldInputState(field_id=data["fields"]["size"], value="LARGE"),
@@ -362,6 +372,7 @@ class TestBOMAggregation:
             db_session,
             CalculationRequest(
                 entity_id=data["entity_id"],
+                price_list_id=data["price_list_id"],
                 current_state=[
                     FieldInputState(field_id=data["fields"]["color"], value="RED"),
                     FieldInputState(field_id=data["fields"]["size"], value="LARGE"),
@@ -378,7 +389,7 @@ class TestBOMAggregation:
         assert bolt.description == "Bolt pack (color rule)"
         assert bolt.category == "Fasteners"
         assert bolt.unit_of_measure == "pcs"
-        assert bolt.unit_price == Decimal("5.00")
+        assert bolt.unit_price == Decimal("5.00")  # From price list
 
     def test_three_items_same_part_aggregated(self, db_session):
         """Three items with same key aggregate into one line."""
@@ -403,18 +414,20 @@ class TestBOMAggregation:
                     part_number="NUT-05",
                     description=f"Nut batch {i}",
                     quantity=qty,
-                    unit_price=Decimal("2.00"),
                     sequence=i,
                 )
             )
         db_session.add_all(items)
         db_session.commit()
 
+        pl = create_price_list_with_items(db_session, {"NUT-05": Decimal("2.00")}, name="Agg Three PL")
+
         service = RuleEngineService()
         response = service.calculate_state(
             db_session,
             CalculationRequest(
                 entity_id=entity.id,
+                price_list_id=pl.id,
                 current_state=[],
             ),
         )

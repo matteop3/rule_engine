@@ -5,6 +5,8 @@ The generated_sku is cached on the Configuration model alongside is_complete.
 It is set during create, recalculated during update and upgrade, and copied during clone.
 """
 
+import datetime as dt
+
 import pytest
 
 from app.core.security import create_access_token, get_password_hash
@@ -13,6 +15,7 @@ from app.models.domain import (
     EntityVersion,
     Field,
     FieldType,
+    PriceList,
     User,
     UserRole,
     Value,
@@ -46,6 +49,20 @@ def sku_auth_headers(sku_user):
     return {"Authorization": f"Bearer {access_token}"}
 
 
+@pytest.fixture(scope="function")
+def sku_price_list(db_session):
+    """Creates a price list for SKU configuration tests."""
+    price_list = PriceList(
+        name="SKU Test Price List",
+        valid_from=dt.date(2020, 1, 1),
+        valid_to=dt.date(9999, 12, 31),
+    )
+    db_session.add(price_list)
+    db_session.commit()
+    db_session.refresh(price_list)
+    return price_list
+
+
 # ============================================================
 # CREATE TESTS
 # ============================================================
@@ -54,12 +71,13 @@ def sku_auth_headers(sku_user):
 class TestGeneratedSKUCreate:
     """Test that generated_sku is calculated and cached on create."""
 
-    def test_create_caches_generated_sku(self, client, sku_auth_headers, setup_sku_scenario):
+    def test_create_caches_generated_sku(self, client, sku_auth_headers, setup_sku_scenario, sku_price_list):
         """Creating a configuration with SKU-enabled version should cache the SKU."""
         data = setup_sku_scenario
         payload = {
             "entity_version_id": data["version_id"],
             "name": "SKU Create Test",
+            "price_list_id": sku_price_list.id,
             "data": [
                 {"field_id": data["fields"]["cpu"], "value": "Intel i7"},
                 {"field_id": data["fields"]["ram"], "value": "32GB"},
@@ -72,7 +90,7 @@ class TestGeneratedSKUCreate:
         result = response.json()
         assert result["generated_sku"] == "LPT-PRO-I7-32G"
 
-    def test_create_without_sku_base_returns_null(self, client, sku_auth_headers, db_session):
+    def test_create_without_sku_base_returns_null(self, client, sku_auth_headers, db_session, sku_price_list):
         """Creating a configuration on a version without sku_base should return null SKU."""
         entity = Entity(name="No SKU Entity", description="No SKU")
         db_session.add(entity)
@@ -97,6 +115,7 @@ class TestGeneratedSKUCreate:
         payload = {
             "entity_version_id": version.id,
             "name": "No SKU Config",
+            "price_list_id": sku_price_list.id,
             "data": [{"field_id": field.id, "value": "Red"}],
         }
 
@@ -114,7 +133,7 @@ class TestGeneratedSKUCreate:
 class TestGeneratedSKUUpdate:
     """Test that generated_sku is recalculated on data update."""
 
-    def test_update_recalculates_generated_sku(self, client, sku_auth_headers, setup_sku_scenario):
+    def test_update_recalculates_generated_sku(self, client, sku_auth_headers, setup_sku_scenario, sku_price_list):
         """Updating configuration data should recalculate the cached SKU."""
         data = setup_sku_scenario
 
@@ -122,6 +141,7 @@ class TestGeneratedSKUUpdate:
         create_payload = {
             "entity_version_id": data["version_id"],
             "name": "SKU Update Test",
+            "price_list_id": sku_price_list.id,
             "data": [
                 {"field_id": data["fields"]["cpu"], "value": "Intel i7"},
                 {"field_id": data["fields"]["ram"], "value": "32GB"},
@@ -152,7 +172,7 @@ class TestGeneratedSKUUpdate:
 class TestGeneratedSKUClone:
     """Test that generated_sku is copied during clone."""
 
-    def test_clone_copies_generated_sku(self, client, sku_auth_headers, setup_sku_scenario):
+    def test_clone_copies_generated_sku(self, client, sku_auth_headers, setup_sku_scenario, sku_price_list):
         """Cloning a configuration should preserve the cached SKU."""
         data = setup_sku_scenario
 
@@ -160,6 +180,7 @@ class TestGeneratedSKUClone:
         create_payload = {
             "entity_version_id": data["version_id"],
             "name": "SKU Clone Source",
+            "price_list_id": sku_price_list.id,
             "data": [
                 {"field_id": data["fields"]["cpu"], "value": "Intel i7"},
                 {"field_id": data["fields"]["ram"], "value": "32GB"},
@@ -184,7 +205,7 @@ class TestGeneratedSKUClone:
 class TestGeneratedSKUUpgrade:
     """Test that generated_sku is recalculated during version upgrade."""
 
-    def test_upgrade_recalculates_generated_sku(self, client, sku_auth_headers, db_session):
+    def test_upgrade_recalculates_generated_sku(self, client, sku_auth_headers, db_session, sku_price_list):
         """Upgrading to a new version should recalculate the SKU with new version's sku_base."""
         # Create entity with two versions (different sku_base)
         entity = Entity(name="SKU Upgrade Entity", description="Test upgrade SKU")
@@ -253,6 +274,7 @@ class TestGeneratedSKUUpgrade:
         create_payload = {
             "entity_version_id": v1.id,
             "name": "Upgrade SKU Test",
+            "price_list_id": sku_price_list.id,
             "data": [{"field_id": f1.id, "value": "A"}],
         }
         create_resp = client.post("/configurations/", json=create_payload, headers=admin_headers)
@@ -278,7 +300,7 @@ class TestGeneratedSKUUpgrade:
 class TestGeneratedSKUList:
     """Test that generated_sku appears in list responses."""
 
-    def test_list_includes_generated_sku(self, client, sku_auth_headers, setup_sku_scenario):
+    def test_list_includes_generated_sku(self, client, sku_auth_headers, setup_sku_scenario, sku_price_list):
         """Listed configurations should include the cached generated_sku."""
         data = setup_sku_scenario
 
@@ -286,6 +308,7 @@ class TestGeneratedSKUList:
         payload = {
             "entity_version_id": data["version_id"],
             "name": "SKU List Test",
+            "price_list_id": sku_price_list.id,
             "data": [{"field_id": data["fields"]["cpu"], "value": "Intel i5"}],
         }
         client.post("/configurations/", json=payload, headers=sku_auth_headers)
