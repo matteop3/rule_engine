@@ -4,6 +4,7 @@
 from .base_schema import AuditSchemaMixin, BaseSchema
 from .bom_item import BOMItemCreate, BOMItemRead, BOMItemUpdate
 from .bom_item_rule import BOMItemRuleCreate, BOMItemRuleRead, BOMItemRuleUpdate
+from .catalog_item import CatalogItemBase, CatalogItemCreate, CatalogItemRead, CatalogItemUpdate
 from .configuration import ConfigurationCreate, ConfigurationRead, ConfigurationUpdate
 from .engine import (
     BOMLineItem,

@@ -10,7 +10,6 @@ class PriceListItemBase(BaseSchema):
     """Base properties shared by create and read operations."""
 
     part_number: str = Field(..., max_length=100)
-    description: str | None = None
     unit_price: Decimal
     valid_from: dt.date | None = None
     valid_to: dt.date | None = None
@@ -35,7 +34,6 @@ class PriceListItemUpdate(BaseSchema):
     """Schema for partially updating a price list item (PATCH)."""
 
     part_number: str | None = Field(None, max_length=100)
-    description: str | None = None
     unit_price: Decimal | None = None
     valid_from: dt.date | None = None
     valid_to: dt.date | None = None

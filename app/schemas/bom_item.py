@@ -12,11 +12,8 @@ class BOMItemBase(BaseSchema):
 
     bom_type: BOMType
     part_number: str = Field(..., max_length=100)
-    description: str | None = None
-    category: str | None = Field(None, max_length=100)
     quantity: Decimal = Decimal("1")
     quantity_from_field_id: int | None = None
-    unit_of_measure: str | None = Field(None, max_length=20)
     sequence: int = 0
 
 
@@ -33,11 +30,8 @@ class BOMItemUpdate(BaseSchema):
     parent_bom_item_id: int | None = None
     bom_type: BOMType | None = None
     part_number: str | None = Field(None, max_length=100)
-    description: str | None = None
-    category: str | None = Field(None, max_length=100)
     quantity: Decimal | None = None
     quantity_from_field_id: int | None = None
-    unit_of_measure: str | None = Field(None, max_length=20)
     sequence: int | None = None
 
 

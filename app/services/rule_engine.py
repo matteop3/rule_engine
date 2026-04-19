@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.models.domain import (
     BOMItem,
     BOMItemRule,
+    CatalogItem,
     Entity,
     EntityVersion,
     Field,
@@ -124,6 +125,9 @@ class RuleEngineService:
             else:
                 price_map = {}
 
+        # Load catalog metadata for the part numbers referenced by this version's BOM
+        catalog_map = self._load_catalog_map(db, all_bom_items)
+
         # Evaluate BOM
         bom_output = self._evaluate_bom(
             running_context=running_context,
@@ -135,6 +139,7 @@ class RuleEngineService:
             price_list_name=price_list_name,
             price_date=price_date,
             known_parts=known_parts,
+            catalog_map=catalog_map,
         )
 
         logger.info(
@@ -295,11 +300,8 @@ class RuleEngineService:
                     parent_bom_item_id=b.parent_bom_item_id,
                     bom_type=b.bom_type,
                     part_number=b.part_number,
-                    description=b.description,
-                    category=b.category,
                     quantity=b.quantity,
                     quantity_from_field_id=b.quantity_from_field_id,
-                    unit_of_measure=b.unit_of_measure,
                     sequence=b.sequence,
                 )
                 for b in all_bom_items_db
@@ -1071,6 +1073,20 @@ class RuleEngineService:
 
         return price_map, known_parts
 
+    def _load_catalog_map(self, db: Session, bom_items: list[CachedBOMItem]) -> dict[str, CatalogItem]:
+        """
+        Loads CatalogItem rows for the part numbers referenced by the given BOM items.
+
+        Returned as an in-memory map keyed by `part_number`. Performed per
+        calculation (not cached): the catalog is mutable and the FK on
+        `bom_items.part_number` guarantees every entry resolves.
+        """
+        if not bom_items:
+            return {}
+        part_numbers = {item.part_number for item in bom_items}
+        rows = db.query(CatalogItem).filter(CatalogItem.part_number.in_(part_numbers)).all()
+        return {row.part_number: row for row in rows}
+
     def _evaluate_bom(
         self,
         running_context: dict[int, Any],
@@ -1082,6 +1098,7 @@ class RuleEngineService:
         price_list_name: str | None = None,
         price_date: date | None = None,
         known_parts: set[str] | None = None,
+        catalog_map: dict[str, CatalogItem] | None = None,
     ) -> BOMOutput | None:
         """
         Evaluates BOM items after the waterfall to produce technical and commercial line items.
@@ -1135,6 +1152,7 @@ class RuleEngineService:
             price_list_name=price_list_name,
             price_date=price_date,
             known_parts=known_parts,
+            catalog_map=catalog_map or {},
         )
 
     def _resolve_bom_quantity(
@@ -1243,6 +1261,7 @@ class RuleEngineService:
         price_list_name: str | None = None,
         price_date: date | None = None,
         known_parts: set[str] | None = None,
+        catalog_map: dict[str, CatalogItem] | None = None,
     ) -> BOMOutput:
         """
         Constructs the BOM output: nested tree for TECHNICAL, flat list for COMMERCIAL.
@@ -1254,6 +1273,7 @@ class RuleEngineService:
         Missing prices generate warnings; line_total is null for unpriced items.
         """
         warnings: list[str] = []
+        catalog = catalog_map or {}
 
         # Build line items indexed by id
         line_items: dict[int, BOMLineItem] = {}
@@ -1281,14 +1301,24 @@ class RuleEngineService:
                         else:
                             warnings.append(f"Part '{item.part_number}' not found in price list '{price_list_name}'")
 
+            # Metadata is sourced from the catalog (joined on part_number).
+            # The FK on bom_items.part_number guarantees a row exists; a missing
+            # entry here indicates a corrupted EntityVersion.
+            catalog_entry = catalog.get(item.part_number)
+            if catalog_entry is None:
+                raise ValueError(
+                    f"Catalog entry missing for part_number '{item.part_number}' "
+                    f"on bom_item {item.id}; EntityVersion is inconsistent."
+                )
+
             line_items[item.id] = BOMLineItem(
                 bom_item_id=item.id,
                 bom_type=item.bom_type,
                 part_number=item.part_number,
-                description=item.description,
-                category=item.category,
+                description=catalog_entry.description,
+                category=catalog_entry.category,
                 quantity=quantity,
-                unit_of_measure=item.unit_of_measure,
+                unit_of_measure=catalog_entry.unit_of_measure,
                 unit_price=unit_price,
                 line_total=line_total,
                 children=[],

@@ -12,6 +12,7 @@ tests/
 ├── fixtures/                    # Centralized test fixtures
 │   ├── __init__.py
 │   ├── auth.py                  # User and authentication fixtures
+│   ├── catalog_items.py         # Catalog item factory + strict_catalog_validation opt-in fixture
 │   ├── configurations_lifecycle.py  # Configuration lifecycle fixtures (DRAFT/FINALIZED, clone, upgrade)
 │   ├── entities.py              # Entity, Version, Field, Value, Rule fixtures
 │   └── engine.py                # Complex scenario fixtures (insurance, dropdown, operator, stress)
@@ -37,11 +38,12 @@ tests/
 │   ├── test_rules_crud.py                  # Rule CRUD operations
 │   ├── test_rules_edge_cases.py            # Rule edge cases and special scenarios
 │   ├── test_rules_types.py                 # Rule type-specific tests
-│   ├── test_bom_items.py                   # BOM item CRUD operations, validations, RBAC
+│   ├── test_bom_items.py                   # BOM item CRUD operations, validations, RBAC, catalog FK validation
 │   ├── test_bom_item_rules.py              # BOM item rule CRUD operations, validations, RBAC
+│   ├── test_catalog_items.py               # CatalogItem CRUD, RBAC, duplicate/part_number rejection, delete-blocking on live references
 │   ├── test_engine_bom.py                  # BOM engine integration (calculate, persist bom_total_price)
 │   ├── test_price_lists.py                 # PriceList CRUD, RBAC, deletion protection
-│   ├── test_price_list_items.py            # PriceListItem CRUD, date defaulting, overlap/bounding box validation
+│   ├── test_price_list_items.py            # PriceListItem CRUD, date defaulting, overlap/bounding box validation, catalog FK validation
 │   ├── test_configurations_snapshot.py     # FINALIZED snapshot/rehydration behavior
 │   ├── test_users.py                       # User CRUD operations
 │   ├── test_values.py                      # Value CRUD operations
@@ -55,6 +57,7 @@ tests/
 │   ├── test_bom_quantity.py     # BOM quantity resolution (static, field ref, fallback)
 │   ├── test_bom_tree.py         # BOM tree pruning, nesting, sequence ordering
 │   ├── test_cache.py            # TTLCache unit tests + engine caching integration tests
+│   ├── test_catalog_metadata.py # BOMLineItem description/category/UoM sourced from catalog, catalog mutation visibility, OBSOLETE tolerance, snapshot immunity, mutation-kill
 │   ├── test_calculation.py      # CALCULATION rule type (forced values, waterfall interactions, SKU, completeness)
 │   ├── test_dropdowns.py        # Cascading dropdown logic
 │   ├── test_logic.py            # Core engine logic (validation, mandatory, visibility, availability)
@@ -118,6 +121,8 @@ tests/
 - `db_session`: Clean in-memory database for each test
 - `client`: FastAPI TestClient with database override
 - `clear_engine_cache` (autouse): Clears the RuleEngineService in-memory cache after each test to prevent cross-test pollution. Global and autouse because API tests that call `calculate_state` indirectly also need a clean cache.
+- **Catalog auto-seed** (session event): a SQLAlchemy `before_flush` listener inspects pending `BOMItem` / `PriceListItem` rows and upserts matching `CatalogItem` entries (description = part_number, unit = `PC`, status = `ACTIVE`) so that the FK from `bom_items.part_number` and `price_list_items.part_number` to `catalog_items.part_number` is satisfied without every fixture explicitly seeding the catalog.
+- **Catalog validator monkeypatch** (module-level): `validate_catalog_reference` is replaced with a lenient no-op in the default test environment, so existing tests do not need to opt in to catalog seeding. The real validator is restored per-test by requesting the `strict_catalog_validation` fixture (see below).
 - **Logging configuration**: `setup_logging(json_output=False)` is called at module level in the root `conftest.py` to use plain-text logs during tests, avoiding JSON noise in pytest output and preventing interference with pytest's log capture.
 
 ### Auth Fixtures (fixtures/auth.py)

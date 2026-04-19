@@ -11,6 +11,7 @@ from app.dependencies import (
     get_bom_item_or_404,
     get_editable_bom_item,
     require_admin_or_author,
+    validate_catalog_reference,
     validate_version_is_draft,
 )
 from app.models.domain import BOMItem, BOMType, Field, FieldType, User
@@ -167,6 +168,7 @@ def create_bom_item(
     validate_version_is_draft(version)
 
     # Validations
+    validate_catalog_reference(db, bom_data.part_number, on_create=True)
     _validate_quantity(bom_data.quantity)
 
     if bom_data.quantity_from_field_id is not None:
@@ -213,6 +215,9 @@ def update_bom_item(
         return bom_item
 
     effective_type = update_data.get("bom_type", bom_item.bom_type)
+
+    if "part_number" in update_data and update_data["part_number"] != bom_item.part_number:
+        validate_catalog_reference(db, update_data["part_number"], on_create=False)
 
     if "quantity" in update_data:
         _validate_quantity(update_data["quantity"])

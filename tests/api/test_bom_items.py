@@ -15,7 +15,8 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import BOMItem, BOMType, Field, FieldType
+from app.models.domain import BOMItem, BOMType, CatalogItemStatus, Field, FieldType
+from tests.fixtures.catalog_items import create_catalog_item
 
 # ============================================================
 # LIST BOM ITEMS (GET /bom-items/)
@@ -103,7 +104,6 @@ class TestCreateBOMItem:
                 "entity_version_id": draft_version.id,
                 "bom_type": "TECHNICAL",
                 "part_number": "TECH-001",
-                "description": "Technical component",
                 "quantity": "2.0000",
             },
         )
@@ -432,10 +432,10 @@ class TestUpdateBOMItem:
         response = client.patch(
             f"/bom-items/{draft_bom_item.id}",
             headers=admin_headers,
-            json={"description": "Updated description"},
+            json={"quantity": "7.5000"},
         )
         assert response.status_code == 200
-        assert response.json()["description"] == "Updated description"
+        assert Decimal(response.json()["quantity"]) == Decimal("7.5000")
         assert response.json()["part_number"] == draft_bom_item.part_number
 
     def test_update_draft_only(self, client: TestClient, admin_headers, db_session, published_version):
@@ -452,7 +452,7 @@ class TestUpdateBOMItem:
         response = client.patch(
             f"/bom-items/{item.id}",
             headers=admin_headers,
-            json={"description": "Nope"},
+            json={"quantity": "5"},
         )
         assert response.status_code == 409
 
@@ -564,3 +564,134 @@ class TestDeleteBOMItem:
         """Regular user cannot delete BOM items (403)."""
         response = client.delete(f"/bom-items/{draft_bom_item.id}", headers=user_headers)
         assert response.status_code == 403
+
+
+# ============================================================
+# CATALOG REFERENCE VALIDATION
+# ============================================================
+
+
+class TestBOMItemCatalogValidation:
+    """POST/PATCH reject unknown or OBSOLETE catalog references."""
+
+    def test_create_unknown_part_number_rejected(
+        self,
+        client: TestClient,
+        admin_headers,
+        draft_version,
+        strict_catalog_validation,
+    ):
+        response = client.post(
+            "/bom-items/",
+            headers=admin_headers,
+            json={
+                "entity_version_id": draft_version.id,
+                "bom_type": "TECHNICAL",
+                "part_number": "UNKNOWN-PART",
+                "quantity": "1",
+            },
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Catalog item 'UNKNOWN-PART' does not exist"
+
+    def test_create_obsolete_part_number_rejected(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        draft_version,
+        strict_catalog_validation,
+    ):
+        create_catalog_item(db_session, "OBS-BOM-01", status=CatalogItemStatus.OBSOLETE)
+
+        response = client.post(
+            "/bom-items/",
+            headers=admin_headers,
+            json={
+                "entity_version_id": draft_version.id,
+                "bom_type": "TECHNICAL",
+                "part_number": "OBS-BOM-01",
+                "quantity": "1",
+            },
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == (
+            "Catalog item 'OBS-BOM-01' is OBSOLETE and cannot be referenced by new items"
+        )
+
+    def test_create_active_part_number_accepted(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        draft_version,
+        strict_catalog_validation,
+    ):
+        create_catalog_item(db_session, "ACTIVE-BOM-01")
+
+        response = client.post(
+            "/bom-items/",
+            headers=admin_headers,
+            json={
+                "entity_version_id": draft_version.id,
+                "bom_type": "TECHNICAL",
+                "part_number": "ACTIVE-BOM-01",
+                "quantity": "1",
+            },
+        )
+        assert response.status_code == 201
+
+    def test_patch_part_number_to_obsolete_rejected(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        draft_version,
+        strict_catalog_validation,
+    ):
+        create_catalog_item(db_session, "BOM-SRC")
+        create_catalog_item(db_session, "BOM-OBS", status=CatalogItemStatus.OBSOLETE)
+
+        item = BOMItem(
+            entity_version_id=draft_version.id,
+            bom_type=BOMType.TECHNICAL.value,
+            part_number="BOM-SRC",
+            quantity=Decimal("1"),
+        )
+        db_session.add(item)
+        db_session.commit()
+
+        response = client.patch(
+            f"/bom-items/{item.id}",
+            headers=admin_headers,
+            json={"part_number": "BOM-OBS"},
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Catalog item 'BOM-OBS' is OBSOLETE and cannot be referenced"
+
+    def test_patch_part_number_to_unknown_rejected(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        draft_version,
+        strict_catalog_validation,
+    ):
+        create_catalog_item(db_session, "BOM-SRC-2")
+
+        item = BOMItem(
+            entity_version_id=draft_version.id,
+            bom_type=BOMType.TECHNICAL.value,
+            part_number="BOM-SRC-2",
+            quantity=Decimal("1"),
+        )
+        db_session.add(item)
+        db_session.commit()
+
+        response = client.patch(
+            f"/bom-items/{item.id}",
+            headers=admin_headers,
+            json={"part_number": "BOM-MISSING"},
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Catalog item 'BOM-MISSING' does not exist"

@@ -63,7 +63,13 @@ When multiple BOM items share the same `part_number` and parent, the engine aggr
 
 **Superseded**: Per-item pricing on BOM items has been replaced by the centralized price list. Pricing is resolved at calculation time from the price list, not stored on individual BOM items. Price consistency is guaranteed by the price list's no-overlap constraint for `(price_list_id, part_number)` date ranges. See [ADR: Price List](ADR_PRICE_LIST.md) for the new pricing design.
 
-### 8. Position in the evaluation waterfall
+### 8. Part metadata sourced from the catalog
+
+`BOMItem` stores only the structural fields — `part_number`, `quantity`, `parent_bom_item_id`, `bom_type`, `quantity_from_field_id`, `sequence`. Canonical description, category, and unit of measure live on `CatalogItem` and are joined at calculation time to populate `BOMLineItem.description`, `category`, and `unit_of_measure` in the response. `BOMItem.part_number` is a foreign key to `CatalogItem.part_number`; CRUD validation rejects BOM items that reference a missing or `OBSOLETE` catalog entry. The response schema `BOMItemRead` exposes only the structural fields — clients that want metadata look it up through the catalog endpoints or read it off the calculation response.
+
+See [ADR: Catalog Item](ADR_CATALOG_ITEM.md) for the full design.
+
+### 9. Position in the evaluation waterfall
 
 BOM evaluation runs **after** SKU generation and **after** all field states are resolved. It is a post-calculation output layer that reads the resolved field states but does not modify them.
 
@@ -95,3 +101,4 @@ BOM evaluation runs **after** SKU generation and **after** all field states are 
 - [ADR: Calculation Rules](ADR_CALCULATION_RULES.md) — How CALCULATION rules derive field values
 - [ADR: Re-hydration](ADR_REHYDRATION.md) — Why configurations store raw inputs and recalculate on read
 - [ADR: Price List](ADR_PRICE_LIST.md) — Centralized pricing via price list (supersedes per-item `unit_price` on BOM items)
+- [ADR: Catalog Item](ADR_CATALOG_ITEM.md) — Canonical part identity and metadata (supersedes `description`, `category`, `unit_of_measure` on BOM items)

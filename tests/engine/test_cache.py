@@ -412,7 +412,6 @@ def _create_version_with_bom(db_session):
         entity_version_id=version.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="CHASSIS-001",
-        description="Main chassis",
         quantity=Decimal("1"),
     )
     db_session.add(bom_item)

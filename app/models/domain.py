@@ -31,7 +31,20 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -121,6 +134,18 @@ class RuleType(str, enum.Enum):
     EDITABILITY = "editability"
     MANDATORY = "mandatory"
     VALIDATION = "validation"
+
+
+class CatalogItemStatus(str, enum.Enum):
+    """
+    Lifecycle status for CatalogItem.
+
+    - ACTIVE: Can be referenced by new BOM items and price list items.
+    - OBSOLETE: Existing references keep working, but new references are blocked.
+    """
+
+    ACTIVE = "ACTIVE"
+    OBSOLETE = "OBSOLETE"
 
 
 class BOMType(str, enum.Enum):
@@ -559,17 +584,16 @@ class BOMItem(Base):
     )
 
     bom_type: Mapped[BOMType] = mapped_column(String(20), nullable=False)
-    part_number: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    category: Mapped[str | None] = mapped_column(
-        String(100), nullable=True, comment="Grouping label (e.g., 'Chassis', 'Electronics')"
+    part_number: Mapped[str] = mapped_column(
+        String(100),
+        ForeignKey("catalog_items.part_number"),
+        nullable=False,
     )
 
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False, server_default="1")
     quantity_from_field_id: Mapped[int | None] = mapped_column(
         ForeignKey("fields.id", ondelete="SET NULL"), nullable=True
     )
-    unit_of_measure: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="e.g., 'pcs', 'm', 'kg'")
 
     sequence: Mapped[int] = mapped_column(
         Integer,
@@ -584,6 +608,7 @@ class BOMItem(Base):
     children: Mapped[list["BOMItem"]] = relationship(back_populates="parent", cascade="all, delete-orphan")
     quantity_field: Mapped["Field | None"] = relationship(foreign_keys=[quantity_from_field_id])
     rules: Mapped[list["BOMItemRule"]] = relationship(back_populates="bom_item", cascade="all, delete-orphan")
+    catalog_item: Mapped["CatalogItem"] = relationship(foreign_keys=[part_number])
 
     def __repr__(self) -> str:
         return (
@@ -592,7 +617,7 @@ class BOMItem(Base):
         )
 
     def __str__(self) -> str:
-        return f"{self.part_number}: {self.description or 'No description'}"
+        return self.part_number
 
 
 class BOMItemRule(Base):
@@ -682,14 +707,18 @@ class PriceListItem(Base, AuditMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     price_list_id: Mapped[int] = mapped_column(ForeignKey("price_lists.id"), nullable=False)
-    part_number: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    part_number: Mapped[str] = mapped_column(
+        String(100),
+        ForeignKey("catalog_items.part_number"),
+        nullable=False,
+    )
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
     valid_from: Mapped[dt.date] = mapped_column(Date, nullable=False)
     valid_to: Mapped[dt.date] = mapped_column(Date, nullable=False)
 
     # Relationships
     price_list: Mapped["PriceList"] = relationship(back_populates="items")
+    catalog_item: Mapped["CatalogItem"] = relationship(foreign_keys=[part_number])
 
     def __repr__(self) -> str:
         return (
@@ -699,6 +728,34 @@ class PriceListItem(Base, AuditMixin):
 
     def __str__(self) -> str:
         return f"{self.part_number}: {self.unit_price}"
+
+
+class CatalogItem(Base, AuditMixin):
+    """
+    Catalog of part identities referenced by BOM items and price list items.
+
+    Holds the canonical metadata for each part number: description,
+    unit of measure, category, lifecycle status, and free-form notes.
+    The `part_number` is the business key and is immutable after creation;
+    to retire a part, set its `status` to OBSOLETE rather than renaming it.
+    """
+
+    __tablename__ = "catalog_items"
+    __table_args__ = (UniqueConstraint("part_number", name="uq_catalog_items_part_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    part_number: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    unit_of_measure: Mapped[str] = mapped_column(String(20), nullable=False, server_default="PC")
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[CatalogItemStatus] = mapped_column(String(20), nullable=False, server_default="ACTIVE")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<CatalogItem id={self.id} part_number='{self.part_number}' status={self.status}>"
+
+    def __str__(self) -> str:
+        return f"{self.part_number}: {self.description}"
 
 
 class RefreshToken(Base):

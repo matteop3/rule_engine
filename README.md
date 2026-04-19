@@ -70,6 +70,14 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 - **Dynamic quantities**: Resolve from numeric field values or use static defaults
 - **Line totals & aggregation**: Auto-computed `line_total` and `commercial_total` with part-number aggregation
 
+### Catalog Management
+- **Single source of truth for part identity**: `CatalogItem` holds canonical `description`, `category`, and `unit_of_measure` for every part referenced by BOM items and price list items. Inspired by SAP Material Master / Oracle Item Master: a part number is an entity, not a free string.
+- **Business-key foreign keys**: `BOMItem.part_number` and `PriceListItem.part_number` reference `CatalogItem.part_number` directly. The external API contract is unchanged — clients still send and receive `part_number` strings; the catalog is an internal integrity layer.
+- **Lifecycle `ACTIVE` / `OBSOLETE`**: obsoleting a part blocks new references (HTTP 409 on create/update) while leaving existing BOM items, price list items, and FINALIZED snapshots fully intact. Transition back to `ACTIVE` is supported.
+- **Immutable `part_number`**: the business key cannot be renamed in place — `PATCH` rejects `part_number` in the payload. To retire a part, mark it obsolete and create a new entry.
+- **Deletion blocked while referenced**: `DELETE /catalog-items/{id}` returns HTTP 409 with an explicit count when any BOM item or price list item still references the entry. The FINALIZED snapshot is self-contained JSON with no FK, so deleting an unreferenced catalog entry never corrupts historical configurations.
+- **Calculation-time metadata resolution**: the rule engine loads the catalog map on every calculation and joins to populate `BOMLineItem.description`, `category`, and `unit_of_measure`. Catalog mutations are visible to the next calculation; FINALIZED reads continue to return the frozen snapshot.
+
 ### Price List Management
 - **Global price catalog**: Standalone price lists decoupled from entities and versions — reusable across products and markets
 - **Temporal validity**: Each item has `valid_from` / `valid_to` dates (SAP `9999-12-31` convention for open-ended). Future price lists can be prepared in advance with no-overlap constraints per `(price_list_id, part_number)`
@@ -198,6 +206,7 @@ This creates:
 | Fields | 15 | 4 steps, all data types (string, number, boolean, date) |
 | Values | 35 | With SKU modifiers |
 | Rules | 19 | All 6 rule types, all 7 operators |
+| Catalog Items | 7 | One per distinct part_number used by BOM and price list (ACTIVE) |
 | BOM Items | 8 | 5 TECHNICAL (incl. hierarchy) + 3 COMMERCIAL |
 | BOM Rules | 4 | Conditional inclusion, OR logic |
 | Price List | 1 | "Auto Insurance Price List 2026" with temporal validity |
@@ -292,7 +301,9 @@ erDiagram
     BOMItem ||--o{ BOMItem : "has children"
     BOMItem ||--o{ BOMItemRule : "has rules"
     BOMItem }o--o| Field : "quantity from"
+    BOMItem }o--|| CatalogItem : "part_number FK"
     PriceList ||--o{ PriceListItem : "contains"
+    PriceListItem }o--|| CatalogItem : "part_number FK"
     Configuration }o--o| PriceList : "uses"
     User ||--o{ Configuration : "owns"
     User ||--o{ RefreshToken : "has"
@@ -354,11 +365,20 @@ erDiagram
         int entity_version_id FK
         int parent_bom_item_id FK "nullable, self-ref"
         enum bom_type "TECHNICAL|COMMERCIAL"
-        string part_number
-        string description
+        string part_number FK "catalog_items.part_number"
         decimal quantity
         int quantity_from_field_id FK "nullable"
         int sequence
+    }
+
+    CatalogItem {
+        int id PK
+        string part_number UK "immutable business key"
+        string description
+        string unit_of_measure "default 'PC'"
+        string category "nullable"
+        enum status "ACTIVE|OBSOLETE"
+        string notes "nullable"
     }
 
     PriceList {
@@ -372,8 +392,7 @@ erDiagram
     PriceListItem {
         int id PK
         int price_list_id FK
-        string part_number
-        string description
+        string part_number FK "catalog_items.part_number"
         decimal unit_price
         date valid_from
         date valid_to
@@ -550,12 +569,22 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 | GET | `/rules?entity_version_id={id}` | List rules |
 | POST | `/rules` | Create rule (DRAFT only) |
 
+### Catalog Items
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/catalog-items` | List catalog items (filters: `status`, `skip`, `limit`) |
+| POST | `/catalog-items` | Create catalog item (ADMIN/AUTHOR; 409 on duplicate `part_number`) |
+| GET | `/catalog-items/{id}` | Get catalog item by surrogate id |
+| GET | `/catalog-items/by-part-number/{part_number}` | Get catalog item by business key |
+| PATCH | `/catalog-items/{id}` | Update description, unit_of_measure, category, status, notes (422 if `part_number` in payload) |
+| DELETE | `/catalog-items/{id}` | Delete (409 if referenced by BOM or price list items) |
+
 ### BOM Items & BOM Item Rules
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/bom-items?entity_version_id={id}` | List BOM items |
-| POST | `/bom-items` | Create BOM item (DRAFT only) |
-| PATCH | `/bom-items/{id}` | Update BOM item (DRAFT only) |
+| POST | `/bom-items` | Create BOM item (DRAFT only; rejects unknown or OBSOLETE `part_number` with 409) |
+| PATCH | `/bom-items/{id}` | Update BOM item (DRAFT only; same catalog validation as create) |
 | DELETE | `/bom-items/{id}` | Delete BOM item (DRAFT only) |
 | GET | `/bom-item-rules?entity_version_id={id}` | List BOM item rules |
 | POST | `/bom-item-rules` | Create BOM item rule (DRAFT only) |
@@ -709,6 +738,7 @@ rule_engine/
 - [ADR: Re-hydration](docs/ADR_REHYDRATION.md) - Why configurations store raw inputs and recalculate on read (with hybrid snapshot amendment for FINALIZED)
 - [ADR: BOM Generation](docs/ADR_BOM.md) - BOM design decisions (single table, hierarchy, aggregation)
 - [ADR: Price List](docs/ADR_PRICE_LIST.md) - Centralized pricing with temporal validity, graceful resolution, and finalize-time lock
+- [ADR: Catalog Item](docs/ADR_CATALOG_ITEM.md) - Canonical part identity and metadata; supersedes `description`/`category`/`unit_of_measure` on BOMItem and `description` on PriceListItem
 
 ---
 

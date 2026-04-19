@@ -670,7 +670,6 @@ def draft_bom_item(db_session, draft_version):
         entity_version_id=draft_version.id,
         bom_type=BOMType.TECHNICAL.value,
         part_number="TEST-BOM-001",
-        description="Test BOM item",
         quantity=Decimal("1"),
         sequence=0,
     )

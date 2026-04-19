@@ -64,11 +64,8 @@ class CachedBOMItem:
     parent_bom_item_id: int | None
     bom_type: str
     part_number: str
-    description: str | None
-    category: str | None
     quantity: Decimal
     quantity_from_field_id: int | None
-    unit_of_measure: str | None
     sequence: int
 
 

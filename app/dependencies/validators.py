@@ -13,7 +13,18 @@ from app.dependencies.fetchers import (
     get_value_or_404,
     get_version_or_404,
 )
-from app.models.domain import BOMItem, BOMItemRule, EntityVersion, Field, Rule, Value, VersionStatus
+from app.models.domain import (
+    BOMItem,
+    BOMItemRule,
+    CatalogItem,
+    CatalogItemStatus,
+    EntityVersion,
+    Field,
+    PriceListItem,
+    Rule,
+    Value,
+    VersionStatus,
+)
 
 
 def validate_version_is_draft(version: EntityVersion) -> None:
@@ -134,6 +145,59 @@ def validate_value_not_used_in_rules(db: Session, value: Value) -> None:
                             f"in Rule ID {rule.id}. Please update or delete that rule first."
                         ),
                     )
+
+
+# ============================================================
+# CATALOG REFERENCE VALIDATORS
+# ============================================================
+
+
+def validate_catalog_reference(db: Session, part_number: str, *, on_create: bool) -> CatalogItem:
+    """
+    Validates a `part_number` references an ACTIVE CatalogItem.
+
+    Rules (see PART_CATALOG_ANALYSIS_AND_PLAN §4.3):
+        - Unknown part_number -> HTTP 409
+        - OBSOLETE catalog entry on create -> HTTP 409
+        - OBSOLETE catalog entry on update -> HTTP 409
+
+    Raises:
+        HTTPException(409): If catalog entry is missing or OBSOLETE.
+    Returns:
+        CatalogItem: The validated catalog item.
+    """
+    catalog_item = db.query(CatalogItem).filter(CatalogItem.part_number == part_number).first()
+    if catalog_item is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Catalog item '{part_number}' does not exist",
+        )
+    if catalog_item.status == CatalogItemStatus.OBSOLETE.value:
+        if on_create:
+            detail = f"Catalog item '{part_number}' is OBSOLETE and cannot be referenced by new items"
+        else:
+            detail = f"Catalog item '{part_number}' is OBSOLETE and cannot be referenced"
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+    return catalog_item
+
+
+def validate_catalog_not_referenced(db: Session, catalog_item: CatalogItem) -> None:
+    """
+    Blocks catalog deletion when live BOMItem or PriceListItem rows reference it.
+
+    Raises:
+        HTTPException(409): With message listing reference counts per §4.5.
+    """
+    bom_count = db.query(BOMItem).filter(BOMItem.part_number == catalog_item.part_number).count()
+    pli_count = db.query(PriceListItem).filter(PriceListItem.part_number == catalog_item.part_number).count()
+    if bom_count > 0 or pli_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Catalog item '{catalog_item.part_number}' cannot be deleted: "
+                f"referenced by {bom_count} BOM item(s) and {pli_count} price list item(s)"
+            ),
+        )
 
 
 # ============================================================

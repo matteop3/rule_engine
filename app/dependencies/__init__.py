@@ -43,6 +43,8 @@ from app.dependencies.validators import (
     get_editable_rule,
     get_editable_value,
     get_editable_version,
+    validate_catalog_not_referenced,
+    validate_catalog_reference,
     validate_field_belongs_to_version,
     validate_value_belongs_to_field,
     validate_value_not_used_in_rules,

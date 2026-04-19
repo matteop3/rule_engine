@@ -118,6 +118,10 @@ The column is removed from the model. Pricing is resolved exclusively from the p
 
 COMMERCIAL BOM items no longer carry pricing data. The response schema `BOMLineItem` retains `unit_price` and `line_total`; the values now come from the price list. The client does not know or need to know the source — the response contract is unchanged.
 
+### 13a. `PriceListItem.description` superseded by the catalog
+
+The `description` column on `PriceListItem` is superseded by `CatalogItem.description`. A price list item no longer carries its own description; `PriceListItem.part_number` is a foreign key to `CatalogItem.part_number`, and the canonical description is joined through the catalog. CRUD validation rejects price list items that reference a missing or `OBSOLETE` catalog entry. See [ADR: Catalog Item](ADR_CATALOG_ITEM.md) for the full design.
+
 ### 14. `BOMOutput.warnings` is additive
 
 `BOMOutput` gains a new `warnings: list[str]` field with an empty list default. Existing clients that ignore unknown fields continue to work; clients that surface warnings can read the new field.
@@ -166,7 +170,30 @@ Both `PriceList` and `PriceListItem` use `AuditMixin` (`created_at`, `updated_at
 | Approval workflows on price lists | Not needed without multi-user pricing governance |
 | Granular audit log (old/new value tracking) | Cross-cutting concern, not specific to price lists |
 
+## Known Gaps and Follow-ups
+
+These are not blocking issues for the current release, but are explicitly acknowledged for future work.
+
+### Snapshot schema versioning
+
+The FINALIZED `snapshot` column stores the JSON serialization of the Pydantic `CalculationResponse` (and its nested `BOMOutput`, `BOMLineItem`, etc.). The shape is dictated by the Python models, not by the EntityVersion — so EntityVersion immutability does not protect against schema drift. If a future change renames, adds, removes, or retypes a field in those models, existing snapshots written under the old shape will fail Pydantic validation on read.
+
+A cheap mitigation is to embed an explicit `schema_version` key in the serialized payload now (e.g. `schema_version: 1`). The read path can then branch on the version and invoke a `_migrate_snapshot_vN_to_vN_plus_1` helper when the model changes, instead of forcing a one-shot DB migration or accepting data loss.
+
+### Bulk import of price list items
+
+Real-world price catalogs routinely contain hundreds or thousands of rows. The current CRUD surface exposes only one-item-at-a-time endpoints, and the no-overlap check runs linearly per insert. This is sufficient for demos and tests but becomes impractical the first time a real catalog is loaded. A bulk import endpoint (CSV or JSON, validated and persisted in a single transaction) is a known follow-up.
+
+### Timezone semantics of `price_date = today`
+
+`date.today()` resolves against the server's local timezone. If the application runs in UTC while users operate in a different zone, there is a window around local midnight in which "today-server" and "today-user" disagree. For price lists that take effect on a specific date, two users calculating at nearly the same moment can observe different prices. The authoritative timezone (server, user, or business) should be chosen explicitly and documented; the current implementation implicitly uses the server.
+
+### Optimistic locking (cross-cutting, not price-list-specific)
+
+No mutable resource in the application (price lists, items, DRAFT configurations, DRAFT entities, rules, etc.) currently exposes optimistic locking. Two users who open the same record, edit it concurrently, and save in sequence will silently overwrite each other ("last write wins"). For audit-sensitive areas such as price lists the risk is tangible. The standard remedy — expose `updated_at` as an ETag on GET, require it in `If-Match` on PATCH/DELETE, return 412 on mismatch — is a cross-cutting enhancement rather than a price-list-specific one, and is noted here because pricing is the first area where the lack is materially visible.
+
 ## Related
 
 - [ADR: BOM Generation](ADR_BOM.md) — BOM structure and the pricing amendment (decisions #1 and #7)
 - [ADR: Re-hydration](ADR_REHYDRATION.md) — Hybrid rehydration that keeps FINALIZED configurations immutable despite mutable price lists
+- [ADR: Catalog Item](ADR_CATALOG_ITEM.md) — Canonical part identity and metadata; supersedes `PriceListItem.description`

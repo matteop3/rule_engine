@@ -79,31 +79,22 @@ class TestCloneBOM:
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="FRAME-001",
-            description="Main frame",
-            category="Structure",
             quantity=Decimal("1"),
-            unit_of_measure="pcs",
             sequence=1,
         )
         panel = BOMItem(
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="PANEL-001",
-            description="Side panel",
-            category="Structure",
             quantity=Decimal("2"),
             quantity_from_field_id=width_field.id,
-            unit_of_measure="pcs",
             sequence=2,
         )
         coating = BOMItem(
             entity_version_id=version.id,
             bom_type=BOMType.COMMERCIAL.value,
             part_number="COAT-001",
-            description="Protective coating",
-            category="Finish",
             quantity=Decimal("1"),
-            unit_of_measure="L",
             sequence=3,
         )
         db_session.add_all([frame, panel, coating])
@@ -115,10 +106,7 @@ class TestCloneBOM:
             parent_bom_item_id=frame.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="BOLT-M8",
-            description="M8 hex bolt",
-            category="Fasteners",
             quantity=Decimal("4"),
-            unit_of_measure="pcs",
             sequence=1,
         )
         db_session.add(bolt)
@@ -288,42 +276,30 @@ class TestCloneBOM:
         coating_rule = next(r for r in cloned_rules if r["bom_item_id"] == cloned_coating["id"])
         assert coating_rule["conditions"]["criteria"][0]["field_id"] == cloned_color["id"]
 
-    def test_clone_preserves_bom_type_and_metadata(
+    def test_clone_preserves_bom_type_and_quantity(
         self, client: TestClient, admin_headers, db_session, test_entity, admin_user
     ):
-        """Types, quantities, and metadata are preserved exactly after clone."""
+        """Types and quantities are preserved exactly after clone."""
         source = self._create_source_version(db_session, test_entity, admin_user)
         new_version_id = self._clone_and_get_data(client, admin_headers, source["version"].id)
 
-        # Get cloned BOM items
         resp = client.get(f"/bom-items/?entity_version_id={new_version_id}", headers=admin_headers)
         cloned_items = resp.json()
         cloned_by_part = {item["part_number"]: item for item in cloned_items}
 
-        # TECHNICAL item — frame
         frame = cloned_by_part["FRAME-001"]
         assert frame["bom_type"] == "TECHNICAL"
         assert Decimal(frame["quantity"]) == Decimal("1")
-        assert frame["unit_of_measure"] == "pcs"
-        assert frame["description"] == "Main frame"
-        assert frame["category"] == "Structure"
 
-        # TECHNICAL child — bolt
         bolt = cloned_by_part["BOLT-M8"]
         assert bolt["bom_type"] == "TECHNICAL"
         assert Decimal(bolt["quantity"]) == Decimal("4")
-        assert bolt["category"] == "Fasteners"
 
-        # TECHNICAL with dynamic quantity — panel
         panel = cloned_by_part["PANEL-001"]
         assert panel["bom_type"] == "TECHNICAL"
         assert Decimal(panel["quantity"]) == Decimal("2")
         assert panel["quantity_from_field_id"] is not None
 
-        # COMMERCIAL item — coating
         coating = cloned_by_part["COAT-001"]
         assert coating["bom_type"] == "COMMERCIAL"
         assert Decimal(coating["quantity"]) == Decimal("1")
-        assert coating["unit_of_measure"] == "L"
-        assert coating["description"] == "Protective coating"
-        assert coating["category"] == "Finish"

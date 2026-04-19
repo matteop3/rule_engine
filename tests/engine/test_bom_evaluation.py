@@ -88,7 +88,6 @@ def setup_bom_scenario(db_session: Session):
         entity_version_id=version.id,
         bom_type=BOMType.TECHNICAL.value,
         part_number="FRM-001",
-        description="Main frame",
         quantity=Decimal("1"),
         sequence=1,
     )
@@ -96,7 +95,6 @@ def setup_bom_scenario(db_session: Session):
         entity_version_id=version.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="PNT-RED",
-        description="Red paint coating",
         quantity=Decimal("1"),
         sequence=2,
     )
@@ -104,7 +102,6 @@ def setup_bom_scenario(db_session: Session):
         entity_version_id=version.id,
         bom_type=BOMType.TECHNICAL.value,
         part_number="CTG-MTL",
-        description="Metal anti-rust coating (technical)",
         quantity=Decimal("2"),
         sequence=3,
     )
@@ -112,7 +109,6 @@ def setup_bom_scenario(db_session: Session):
         entity_version_id=version.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="CTG-MTL",
-        description="Metal anti-rust coating (commercial)",
         quantity=Decimal("2"),
         sequence=4,
     )
@@ -120,7 +116,6 @@ def setup_bom_scenario(db_session: Session):
         entity_version_id=version.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="SCR-100",
-        description="Screw pack",
         quantity=Decimal("4"),
         sequence=5,
     )

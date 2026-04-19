@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import db_transaction, require_admin_or_author
+from app.dependencies import db_transaction, require_admin_or_author, validate_catalog_reference
 from app.models.domain import PriceList, PriceListItem, User
 from app.schemas.price_list_item import PriceListItemCreate, PriceListItemRead, PriceListItemUpdate
 
@@ -182,6 +182,7 @@ def create_price_list_item(
 
     price_list = _get_price_list_or_404(db, payload.price_list_id)
 
+    validate_catalog_reference(db, payload.part_number, on_create=True)
     _validate_unit_price(payload.unit_price)
 
     # Default dates from parent price list
@@ -236,6 +237,9 @@ def update_price_list_item(
     if not update_data:
         logger.warning(f"Empty update request for price list item {item.id}")
         return item
+
+    if "part_number" in update_data and update_data["part_number"] != item.part_number:
+        validate_catalog_reference(db, update_data["part_number"], on_create=False)
 
     if "unit_price" in update_data:
         _validate_unit_price(update_data["unit_price"])

@@ -11,7 +11,8 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models.domain import PriceList, PriceListItem
+from app.models.domain import CatalogItemStatus, PriceList, PriceListItem
+from tests.fixtures.catalog_items import create_catalog_item
 
 # ============================================================
 # LIST (GET /price-list-items/)
@@ -327,7 +328,7 @@ class TestUpdatePriceListItem:
         headers = request.getfixturevalue(headers_fixture)
         response = client.patch(
             f"/price-list-items/{item.id}",
-            json={"description": "updated"},
+            json={"unit_price": "25.00"},
             headers=headers,
         )
         assert response.status_code == expected_status
@@ -443,3 +444,133 @@ class TestDeletePriceListItem:
     def test_delete_not_found(self, client: TestClient, admin_headers):
         response = client.delete("/price-list-items/999999", headers=admin_headers)
         assert response.status_code == 404
+
+
+# ============================================================
+# CATALOG REFERENCE VALIDATION
+# ============================================================
+
+
+class TestPriceListItemCatalogValidation:
+    """POST/PATCH reject unknown or OBSOLETE catalog references."""
+
+    def test_create_unknown_part_number_rejected(
+        self,
+        client: TestClient,
+        admin_headers,
+        price_list,
+        strict_catalog_validation,
+    ):
+        response = client.post(
+            "/price-list-items/",
+            headers=admin_headers,
+            json={
+                "price_list_id": price_list.id,
+                "part_number": "UNKNOWN-PLI",
+                "unit_price": "10.00",
+            },
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Catalog item 'UNKNOWN-PLI' does not exist"
+
+    def test_create_obsolete_part_number_rejected(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        price_list,
+        strict_catalog_validation,
+    ):
+        create_catalog_item(db_session, "OBS-PLI-01", status=CatalogItemStatus.OBSOLETE)
+
+        response = client.post(
+            "/price-list-items/",
+            headers=admin_headers,
+            json={
+                "price_list_id": price_list.id,
+                "part_number": "OBS-PLI-01",
+                "unit_price": "10.00",
+            },
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == (
+            "Catalog item 'OBS-PLI-01' is OBSOLETE and cannot be referenced by new items"
+        )
+
+    def test_create_active_part_number_accepted(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        price_list,
+        strict_catalog_validation,
+    ):
+        create_catalog_item(db_session, "ACTIVE-PLI-01")
+
+        response = client.post(
+            "/price-list-items/",
+            headers=admin_headers,
+            json={
+                "price_list_id": price_list.id,
+                "part_number": "ACTIVE-PLI-01",
+                "unit_price": "10.00",
+            },
+        )
+        assert response.status_code == 201
+
+    def test_patch_part_number_to_obsolete_rejected(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        price_list,
+        strict_catalog_validation,
+    ):
+        create_catalog_item(db_session, "PLI-SRC")
+        create_catalog_item(db_session, "PLI-OBS", status=CatalogItemStatus.OBSOLETE)
+
+        item = PriceListItem(
+            price_list_id=price_list.id,
+            part_number="PLI-SRC",
+            unit_price=Decimal("10.00"),
+            valid_from=dt.date(2025, 1, 1),
+            valid_to=dt.date(2025, 12, 31),
+        )
+        db_session.add(item)
+        db_session.commit()
+
+        response = client.patch(
+            f"/price-list-items/{item.id}",
+            headers=admin_headers,
+            json={"part_number": "PLI-OBS"},
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Catalog item 'PLI-OBS' is OBSOLETE and cannot be referenced"
+
+    def test_patch_part_number_to_unknown_rejected(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        price_list,
+        strict_catalog_validation,
+    ):
+        create_catalog_item(db_session, "PLI-SRC-2")
+
+        item = PriceListItem(
+            price_list_id=price_list.id,
+            part_number="PLI-SRC-2",
+            unit_price=Decimal("10.00"),
+            valid_from=dt.date(2025, 1, 1),
+            valid_to=dt.date(2025, 12, 31),
+        )
+        db_session.add(item)
+        db_session.commit()
+
+        response = client.patch(
+            f"/price-list-items/{item.id}",
+            headers=admin_headers,
+            json={"part_number": "PLI-MISSING"},
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Catalog item 'PLI-MISSING' does not exist"

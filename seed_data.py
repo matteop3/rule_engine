@@ -11,6 +11,8 @@ from app.models.domain import (
     BOMItem,
     BOMItemRule,
     BOMType,
+    CatalogItem,
+    CatalogItemStatus,
     Configuration,
     ConfigurationStatus,
     Entity,
@@ -48,9 +50,10 @@ def seed_db():
         db.query(Entity).delete()
         db.query(PriceListItem).delete()
         db.query(PriceList).delete()
+        db.query(CatalogItem).delete()
         db.query(User).delete()
         db.commit()
-        print("\n[1/10] Database cleaned.")
+        print("\n[1/11] Database cleaned.")
 
         # 2. Entity
         entity = Entity(
@@ -59,7 +62,7 @@ def seed_db():
         )
         db.add(entity)
         db.commit()
-        print(f"[2/9] Entity created: {entity.name} (ID: {entity.id})")
+        print(f"[2/11] Entity created: {entity.name} (ID: {entity.id})")
 
         # 3. Version (with SKU configuration)
         version = EntityVersion(
@@ -72,7 +75,7 @@ def seed_db():
         )
         db.add(version)
         db.commit()
-        print(f"[3/9] Version created: v{version.version_number} (SKU: {version.sku_base})")
+        print(f"[3/11] Version created: v{version.version_number} (SKU: {version.sku_base})")
 
         # ============================================================
         # 4. FIELDS (15 fields in 4 steps)
@@ -268,7 +271,7 @@ def seed_db():
         ]
         db.add_all(all_fields)
         db.commit()
-        print(f"[4/9] Fields created: {len(all_fields)} fields in 4 steps")
+        print(f"[4/11] Fields created: {len(all_fields)} fields in 4 steps")
 
         # ============================================================
         # 5. VALUES (with SKU modifiers)
@@ -403,7 +406,7 @@ def seed_db():
         ]
         db.add_all(all_values)
         db.commit()
-        print(f"[5/9] Values created: {len(all_values)} values with SKU modifiers")
+        print(f"[5/11] Values created: {len(all_values)} values with SKU modifiers")
 
         # ============================================================
         # 6. RULES (19 rules: 6/6 types, 7/7 operators, 2 cascading chains)
@@ -659,24 +662,93 @@ def seed_db():
         ]
         db.add_all(all_rules)
         db.commit()
-        print(f"[6/10] Rules created: {len(all_rules)} rules (6/6 types + 2 cascading chains)")
+        print(f"[6/11] Rules created: {len(all_rules)} rules (6/6 types + 2 cascading chains)")
 
         # ============================================================
-        # 7. BOM ITEMS AND RULES
+        # 7. CATALOG ITEMS (canonical part identities)
+        # ============================================================
+        # Every part_number used by BOM items and price list items must
+        # resolve to a CatalogItem row. The catalog is the single source
+        # of truth for description, unit of measure, and category.
+
+        cat_pol_base = CatalogItem(
+            part_number="POL-BASE",
+            description="Base policy document package",
+            category="Policy",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_mod_liability = CatalogItem(
+            part_number="MOD-LIABILITY",
+            description="Liability coverage module",
+            category="Coverage",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_rider_lux = CatalogItem(
+            part_number="RIDER-LUX",
+            description="Luxury vehicle extended coverage rider",
+            category="Coverage",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_assess_heavy = CatalogItem(
+            part_number="ASSESS-HEAVY",
+            description="Heavy risk assessment report",
+            category="Assessment",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_cert_inspect = CatalogItem(
+            part_number="CERT-INSPECT",
+            description="Vehicle inspection certificate",
+            category="Certification",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_prem_base = CatalogItem(
+            part_number="PREM-BASE",
+            description="Base annual premium",
+            category="Premium",
+            unit_of_measure="yr",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_addon_theft = CatalogItem(
+            part_number="ADDON-THEFT",
+            description="Theft & fire coverage add-on",
+            category="Add-on",
+            unit_of_measure="yr",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+
+        all_catalog_items = [
+            cat_pol_base,
+            cat_mod_liability,
+            cat_rider_lux,
+            cat_assess_heavy,
+            cat_cert_inspect,
+            cat_prem_base,
+            cat_addon_theft,
+        ]
+        db.add_all(all_catalog_items)
+        db.commit()
+        print(f"[7/11] Catalog items created: {len(all_catalog_items)} parts (ACTIVE status)")
+
+        # ============================================================
+        # 8. BOM ITEMS AND RULES
         # ============================================================
         # The insurance entity doubles as a demonstration of BOM generation.
         # TECHNICAL items represent underwriting components; COMMERCIAL items
-        # represent priced line items on the quote.
+        # represent priced line items on the quote. BOM items reference the
+        # catalog by part_number; metadata (description, category, UoM) is
+        # sourced from the catalog at calculation time.
 
         # --- TECHNICAL: unconditional root item (always included) ---
         bom_base_policy = BOMItem(
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="POL-BASE",
-            description="Base policy document package",
-            category="Policy",
             quantity=1,
-            unit_of_measure="pcs",
             sequence=10,
         )
 
@@ -685,10 +757,7 @@ def seed_db():
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="MOD-LIABILITY",
-            description="Liability coverage module",
-            category="Coverage",
             quantity=1,
-            unit_of_measure="pcs",
             sequence=20,
         )
 
@@ -697,10 +766,7 @@ def seed_db():
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="RIDER-LUX",
-            description="Luxury vehicle extended coverage rider",
-            category="Coverage",
             quantity=1,
-            unit_of_measure="pcs",
             sequence=10,
         )
 
@@ -710,10 +776,7 @@ def seed_db():
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="ASSESS-HEAVY",
-            description="Heavy risk assessment report",
-            category="Assessment",
             quantity=1,
-            unit_of_measure="pcs",
             sequence=30,
         )
 
@@ -723,11 +786,8 @@ def seed_db():
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="CERT-INSPECT",
-            description="Vehicle inspection certificate",
-            category="Certification",
             quantity=1,
             quantity_from_field_id=f_vehicle_value.id,
-            unit_of_measure="pcs",
             sequence=40,
         )
 
@@ -736,10 +796,7 @@ def seed_db():
             entity_version_id=version.id,
             bom_type=BOMType.COMMERCIAL.value,
             part_number="PREM-BASE",
-            description="Base annual premium",
-            category="Premium",
             quantity=1,
-            unit_of_measure="yr",
             sequence=10,
         )
 
@@ -748,10 +805,7 @@ def seed_db():
             entity_version_id=version.id,
             bom_type=BOMType.COMMERCIAL.value,
             part_number="ADDON-THEFT",
-            description="Theft & fire coverage add-on",
-            category="Add-on",
             quantity=1,
-            unit_of_measure="yr",
             sequence=20,
         )
 
@@ -760,10 +814,7 @@ def seed_db():
             entity_version_id=version.id,
             bom_type=BOMType.COMMERCIAL.value,
             part_number="POL-BASE",
-            description="Policy document processing fee",
-            category="Fee",
             quantity=1,
-            unit_of_measure="pcs",
             sequence=30,
         )
 
@@ -824,14 +875,14 @@ def seed_db():
         db.commit()
 
         print(
-            f"[7/10] BOM created: {len(all_bom_items)} items "
+            f"[8/11] BOM created: {len(all_bom_items)} items "
             f"({sum(1 for b in all_bom_items if b.bom_type == BOMType.TECHNICAL.value)} TECHNICAL, "
             f"{sum(1 for b in all_bom_items if b.bom_type == BOMType.COMMERCIAL.value)} COMMERCIAL), "
             f"{len(all_bom_rules)} rules"
         )
 
         # ============================================================
-        # 8. PRICE LIST (demo price list for COMMERCIAL BOM items)
+        # 9. PRICE LIST (demo price list for COMMERCIAL BOM items)
         # ============================================================
 
         price_list = PriceList(
@@ -846,7 +897,6 @@ def seed_db():
         pli_base_premium = PriceListItem(
             price_list_id=price_list.id,
             part_number="PREM-BASE",
-            description="Base annual premium",
             unit_price=350,
             valid_from=date(2026, 1, 1),
             valid_to=date(2026, 12, 31),
@@ -854,7 +904,6 @@ def seed_db():
         pli_theft_addon = PriceListItem(
             price_list_id=price_list.id,
             part_number="ADDON-THEFT",
-            description="Theft & fire coverage add-on",
             unit_price=89.99,
             valid_from=date(2026, 1, 1),
             valid_to=date(2026, 12, 31),
@@ -862,7 +911,6 @@ def seed_db():
         pli_pol_base = PriceListItem(
             price_list_id=price_list.id,
             part_number="POL-BASE",
-            description="Policy document processing fee",
             unit_price=15,
             valid_from=date(2026, 1, 1),
             valid_to=date(2026, 12, 31),
@@ -871,10 +919,10 @@ def seed_db():
         all_price_list_items = [pli_base_premium, pli_theft_addon, pli_pol_base]
         db.add_all(all_price_list_items)
         db.commit()
-        print(f"[8/10] Price list created: '{price_list.name}' with {len(all_price_list_items)} items")
+        print(f"[9/11] Price list created: '{price_list.name}' with {len(all_price_list_items)} items")
 
         # ============================================================
-        # 9. USERS (3 demo users, one per role)
+        # 10. USERS (3 demo users, one per role)
         # ============================================================
         # Same demo password for all: "password123"  # noqa: S105
         demo_password_hash = get_password_hash("password123")
@@ -892,10 +940,10 @@ def seed_db():
         all_users = [user_admin, user_author, user_demo]
         db.add_all(all_users)
         db.commit()
-        print(f"[9/10] Users created: {len(all_users)} users (admin, author, user) — password: password123")
+        print(f"[10/11] Users created: {len(all_users)} users (admin, author, user) — password: password123")
 
         # ============================================================
-        # 10. CONFIGURATIONS (sample quotes)
+        # 11. CONFIGURATIONS (sample quotes)
         # ============================================================
 
         # Config 1: FINALIZED — Complete retiree car quote (closed)
@@ -966,7 +1014,7 @@ def seed_db():
         all_configs = [config_finalized, config_draft, config_draft_moto]
         db.add_all(all_configs)
         db.commit()
-        print(f"[10/10] Configurations created: {len(all_configs)} (1 FINALIZED + 2 DRAFT)")
+        print(f"[11/11] Configurations created: {len(all_configs)} (1 FINALIZED + 2 DRAFT)")
 
         # ============================================================
         # SUMMARY
@@ -984,6 +1032,7 @@ SUMMARY:
   Fields:         {len(all_fields)}
   Values:         {len(all_values)}
   Rules:          {len(all_rules)}
+  Catalog Items:  {len(all_catalog_items)}
   BOM Items:      {len(all_bom_items)}
   BOM Rules:      {len(all_bom_rules)}
   Price Lists:    1
@@ -1051,17 +1100,26 @@ EDITABILITY + IN OPERATOR:
   │   Retired/Student → stays readonly                  │
   └─────────────────────────────────────────────────────┘
 
-BOM ITEMS:
+CATALOG ITEMS (canonical part identities — ACTIVE):
+  POL-BASE        Policy            Base policy document package      (pcs)
+  MOD-LIABILITY   Coverage          Liability coverage module         (pcs)
+  RIDER-LUX       Coverage          Luxury vehicle extended rider     (pcs)
+  ASSESS-HEAVY    Assessment        Heavy risk assessment report      (pcs)
+  CERT-INSPECT    Certification     Vehicle inspection certificate    (pcs)
+  PREM-BASE       Premium           Base annual premium               (yr)
+  ADDON-THEFT     Add-on            Theft & fire coverage add-on      (yr)
+
+BOM ITEMS (reference catalog by part_number):
   TECHNICAL (5 items):
-    POL-BASE          Base policy document (unconditional, root)
-    MOD-LIABILITY     Liability coverage module (unconditional, root)
-      RIDER-LUX       Luxury vehicle rider (child, conditional: value > $50k)
-    ASSESS-HEAVY     Heavy risk assessment (conditional: OR logic, truck OR value > $40k)
-    CERT-INSPECT     Inspection certificate (dynamic quantity from vehicle_value field)
+    POL-BASE          (unconditional, root)
+    MOD-LIABILITY     (unconditional, root)
+      RIDER-LUX       (child, conditional: value > $50k)
+    ASSESS-HEAVY     (conditional: OR logic, truck OR value > $40k)
+    CERT-INSPECT     (dynamic quantity from vehicle_value field)
   COMMERCIAL (3 items — prices from price list):
-    PREM-BASE        Base annual premium (unconditional)
-    ADDON-THEFT      Theft coverage add-on (conditional: theft != NO)
-    POL-BASE         Policy document fee (same part_number as TECHNICAL)
+    PREM-BASE        (unconditional)
+    ADDON-THEFT      (conditional: theft != NO)
+    POL-BASE         (same part_number as TECHNICAL)
 
 PRICE LIST:
   '{price_list.name}' (valid {price_list.valid_from} to {price_list.valid_to})

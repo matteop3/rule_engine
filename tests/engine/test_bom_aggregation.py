@@ -92,9 +92,6 @@ def setup_aggregation_scenario(db_session: Session):
         entity_version_id=version.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="BLT-10",
-        description="Bolt pack (color rule)",
-        category="Fasteners",
-        unit_of_measure="pcs",
         quantity=Decimal("2"),
         sequence=1,
     )
@@ -102,9 +99,6 @@ def setup_aggregation_scenario(db_session: Session):
         entity_version_id=version.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="BLT-10",
-        description="Bolt pack (size rule)",
-        category="Fasteners alt",
-        unit_of_measure="box",
         quantity=Decimal("3"),
         sequence=2,
     )
@@ -112,7 +106,6 @@ def setup_aggregation_scenario(db_session: Session):
         entity_version_id=version.id,
         bom_type=BOMType.TECHNICAL.value,
         part_number="FRM-01",
-        description="Main frame",
         quantity=Decimal("1"),
         sequence=3,
     )
@@ -120,7 +113,6 @@ def setup_aggregation_scenario(db_session: Session):
         entity_version_id=version.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="PNT-01",
-        description="Paint",
         quantity=Decimal("1"),
         sequence=4,
     )
@@ -209,7 +201,6 @@ class TestBOMAggregation:
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="ASM-A",
-            description="Assembly A",
             quantity=Decimal("1"),
             sequence=1,
         )
@@ -217,7 +208,6 @@ class TestBOMAggregation:
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="ASM-B",
-            description="Assembly B",
             quantity=Decimal("1"),
             sequence=2,
         )
@@ -228,7 +218,6 @@ class TestBOMAggregation:
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="BLT-10",
-            description="Bolt under A",
             quantity=Decimal("2"),
             sequence=3,
             parent_bom_item_id=parent_a.id,
@@ -237,7 +226,6 @@ class TestBOMAggregation:
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="BLT-10",
-            description="Bolt under B",
             quantity=Decimal("3"),
             sequence=4,
             parent_bom_item_id=parent_b.id,
@@ -285,7 +273,6 @@ class TestBOMAggregation:
             entity_version_id=version.id,
             bom_type=BOMType.TECHNICAL.value,
             part_number="MTR-01",
-            description="Motor (technical)",
             quantity=Decimal("2"),
             sequence=1,
         )
@@ -293,7 +280,6 @@ class TestBOMAggregation:
             entity_version_id=version.id,
             bom_type=BOMType.COMMERCIAL.value,
             part_number="MTR-01",
-            description="Motor (commercial)",
             quantity=Decimal("3"),
             sequence=2,
         )
@@ -363,8 +349,8 @@ class TestBOMAggregation:
         # BLT-10: 5 x 5.00 = 25.00, PNT-01: 1 x 10.00 = 10.00 -> total = 35.00
         assert response.bom.commercial_total == Decimal("35.00")
 
-    def test_aggregation_preserves_first_item_metadata(self, db_session, setup_aggregation_scenario):
-        """description, category, unit_of_measure come from the first item by sequence."""
+    def test_aggregation_preserves_first_item_identity(self, db_session, setup_aggregation_scenario):
+        """Aggregated line keeps the first item's bom_item_id (and its price list unit_price)."""
         data = setup_aggregation_scenario
         service = RuleEngineService()
 
@@ -384,12 +370,8 @@ class TestBOMAggregation:
         bolt_lines = [item for item in response.bom.commercial if item.part_number == "BLT-10"]
         assert len(bolt_lines) == 1
         bolt = bolt_lines[0]
-        # First item (bolt_a, seq=1) metadata
         assert bolt.bom_item_id == data["bom_items"]["bolt_a"]
-        assert bolt.description == "Bolt pack (color rule)"
-        assert bolt.category == "Fasteners"
-        assert bolt.unit_of_measure == "pcs"
-        assert bolt.unit_price == Decimal("5.00")  # From price list
+        assert bolt.unit_price == Decimal("5.00")
 
     def test_three_items_same_part_aggregated(self, db_session):
         """Three items with same key aggregate into one line."""
@@ -412,7 +394,6 @@ class TestBOMAggregation:
                     entity_version_id=version.id,
                     bom_type=BOMType.COMMERCIAL.value,
                     part_number="NUT-05",
-                    description=f"Nut batch {i}",
                     quantity=qty,
                     sequence=i,
                 )

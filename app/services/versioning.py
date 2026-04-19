@@ -257,11 +257,8 @@ class VersioningService:
                 parent_bom_item_id=new_parent_id,
                 bom_type=old_bom_item.bom_type,
                 part_number=old_bom_item.part_number,
-                description=old_bom_item.description,
-                category=old_bom_item.category,
                 quantity=old_bom_item.quantity,
                 quantity_from_field_id=new_quantity_field_id,
-                unit_of_measure=old_bom_item.unit_of_measure,
                 sequence=old_bom_item.sequence,
             )
             db.add(new_bom_item)

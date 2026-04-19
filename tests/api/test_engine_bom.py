@@ -163,7 +163,6 @@ def setup_bom_version(db_session):
         entity_version_id=version.id,
         bom_type=BOMType.TECHNICAL.value,
         part_number="BASE-001",
-        description="Base plate",
         quantity=Decimal("1"),
         sequence=1,
     )
@@ -171,7 +170,6 @@ def setup_bom_version(db_session):
         entity_version_id=version.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="BLT-004",
-        description="Bolt pack",
         quantity=Decimal("4"),
         sequence=2,
     )
@@ -179,7 +177,6 @@ def setup_bom_version(db_session):
         entity_version_id=version.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="CTG-001",
-        description="Metal coating",
         quantity=Decimal("1"),
         sequence=3,
     )
@@ -240,7 +237,6 @@ def setup_bom_upgrade_versions(db_session):
         entity_version_id=v1.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="PART-V1",
-        description="V1 part",
         quantity=Decimal("2"),
         sequence=1,
     )
@@ -273,7 +269,6 @@ def setup_bom_upgrade_versions(db_session):
         entity_version_id=v2.id,
         bom_type=BOMType.COMMERCIAL.value,
         part_number="PART-V2",
-        description="V2 part",
         quantity=Decimal("5"),
         sequence=1,
     )
