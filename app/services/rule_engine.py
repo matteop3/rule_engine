@@ -13,6 +13,7 @@ from app.models.domain import (
     BOMItem,
     BOMItemRule,
     CatalogItem,
+    ConfigurationCustomItem,
     Entity,
     EntityVersion,
     Field,
@@ -141,6 +142,13 @@ class RuleEngineService:
             known_parts=known_parts,
             catalog_map=catalog_map,
         )
+
+        # Append custom items (configuration-scoped commercial lines). Only
+        # applies when calculating against a persisted Configuration; the
+        # stateless /engine/calculate endpoint passes configuration_id=None
+        # and never emits custom lines.
+        if request.configuration_id is not None:
+            bom_output = self._append_custom_items(db, request.configuration_id, bom_output)
 
         logger.info(
             f"State calculation completed for entity_id={request.entity_id}: "
@@ -1072,6 +1080,60 @@ class RuleEngineService:
             known_parts = {row[0] for row in known_rows}
 
         return price_map, known_parts
+
+    def _append_custom_items(
+        self,
+        db: Session,
+        configuration_id: str,
+        bom_output: BOMOutput | None,
+    ) -> BOMOutput | None:
+        """
+        Append configuration-scoped custom items to the commercial BOM output.
+
+        Custom items are emitted as commercial `BOMLineItem` rows with
+        ``is_custom=True``, ``part_number=custom_key``, and line totals from the
+        row itself. They never produce warnings and never influence completeness;
+        they contribute only to the commercial total.
+        """
+        custom_rows = (
+            db.query(ConfigurationCustomItem)
+            .filter(ConfigurationCustomItem.configuration_id == configuration_id)
+            .order_by(ConfigurationCustomItem.sequence, ConfigurationCustomItem.id)
+            .all()
+        )
+        if not custom_rows:
+            return bom_output
+
+        if bom_output is None:
+            bom_output = BOMOutput(technical=[], commercial=[], commercial_total=None, warnings=[])
+
+        custom_lines: list[BOMLineItem] = []
+        custom_total = Decimal("0")
+        for row in custom_rows:
+            quantity = Decimal(row.quantity)
+            unit_price = Decimal(row.unit_price)
+            line_total = quantity * unit_price
+            custom_total += line_total
+            custom_lines.append(
+                BOMLineItem(
+                    bom_item_id=None,
+                    bom_type="COMMERCIAL",
+                    part_number=row.custom_key,
+                    description=row.description,
+                    category=None,
+                    quantity=quantity,
+                    unit_of_measure=row.unit_of_measure,
+                    unit_price=unit_price,
+                    line_total=line_total,
+                    is_custom=True,
+                    children=[],
+                )
+            )
+
+        bom_output.commercial.extend(custom_lines)
+        existing_total = bom_output.commercial_total
+        bom_output.commercial_total = custom_total if existing_total is None else existing_total + custom_total
+        return bom_output
 
     def _load_catalog_map(self, db: Session, bom_items: list[CachedBOMItem]) -> dict[str, CatalogItem]:
         """

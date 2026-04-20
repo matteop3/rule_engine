@@ -34,6 +34,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -542,6 +543,9 @@ class Configuration(Base, AuditMixin):
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="configurations")
     owner: Mapped["User"] = relationship(back_populates="configurations", foreign_keys=[user_id])
     price_list: Mapped["PriceList | None"] = relationship(foreign_keys=[price_list_id])
+    custom_items: Mapped[list["ConfigurationCustomItem"]] = relationship(
+        back_populates="configuration", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return (
@@ -756,6 +760,47 @@ class CatalogItem(Base, AuditMixin):
 
     def __str__(self) -> str:
         return f"{self.part_number}: {self.description}"
+
+
+class ConfigurationCustomItem(Base, AuditMixin):
+    """
+    Configuration-scoped, one-off commercial line item.
+
+    Exists outside the catalog as an escape hatch for parts that are not yet
+    coded. Tied to a single `Configuration` via FK with cascade delete.
+    The `custom_key` is server-generated as ``CUSTOM-<uuid8>`` and is stable
+    for the lifetime of the row, so future retroactive classification can
+    reference it. Appears only in the commercial BOM output.
+    """
+
+    __tablename__ = "configuration_custom_items"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_cci_quantity_positive"),
+        CheckConstraint("unit_price >= 0", name="ck_cci_unit_price_nonnegative"),
+        UniqueConstraint("custom_key", name="uq_cci_custom_key"),
+        Index("ix_cci_configuration", "configuration_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    configuration_id: Mapped[str] = mapped_column(ForeignKey("configurations.id", ondelete="CASCADE"), nullable=False)
+    custom_key: Mapped[str] = mapped_column(String(20), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    unit_of_measure: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    # Relationships
+    configuration: Mapped["Configuration"] = relationship(back_populates="custom_items")
+
+    def __repr__(self) -> str:
+        return (
+            f"<ConfigurationCustomItem id={self.id} custom_key='{self.custom_key}' "
+            f"configuration_id={self.configuration_id}>"
+        )
+
+    def __str__(self) -> str:
+        return f"{self.custom_key}: {self.description}"
 
 
 class RefreshToken(Base):

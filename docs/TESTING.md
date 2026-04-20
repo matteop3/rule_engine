@@ -41,6 +41,7 @@ tests/
 │   ├── test_bom_items.py                   # BOM item CRUD operations, validations, RBAC, catalog FK validation
 │   ├── test_bom_item_rules.py              # BOM item rule CRUD operations, validations, RBAC
 │   ├── test_catalog_items.py               # CatalogItem CRUD, RBAC, duplicate/part_number rejection, delete-blocking on live references
+│   ├── test_configuration_custom_items.py  # ConfigurationCustomItem CRUD (list/create/update/delete), key auto-generation, DRAFT gating, ownership, value validation
 │   ├── test_engine_bom.py                  # BOM engine integration (calculate, persist bom_total_price)
 │   ├── test_price_lists.py                 # PriceList CRUD, RBAC, deletion protection
 │   ├── test_price_list_items.py            # PriceListItem CRUD, date defaulting, overlap/bounding box validation, catalog FK validation
@@ -58,6 +59,7 @@ tests/
 │   ├── test_bom_tree.py         # BOM tree pruning, nesting, sequence ordering
 │   ├── test_cache.py            # TTLCache unit tests + engine caching integration tests
 │   ├── test_catalog_metadata.py # BOMLineItem description/category/UoM sourced from catalog, catalog mutation visibility, OBSOLETE tolerance, snapshot immunity, mutation-kill
+│   ├── test_custom_items.py     # ConfigurationCustomItem engine integration — CUSTOM step output, commercial_total, no warnings, no completeness impact, stateless skip, mutation kills
 │   ├── test_calculation.py      # CALCULATION rule type (forced values, waterfall interactions, SKU, completeness)
 │   ├── test_dropdowns.py        # Cascading dropdown logic
 │   ├── test_logic.py            # Core engine logic (validation, mandatory, visibility, availability)
@@ -76,6 +78,7 @@ tests/
 │   ├── test_data_integrity_value_dependencies.py # Value-rule dependency validation
 │   ├── test_bom_workflow.py                      # End-to-end BOM lifecycle and configuration integration
 │   ├── test_clone_bom.py                        # BOM data integrity during version clone
+│   ├── test_custom_items_lifecycle.py           # End-to-end ConfigurationCustomItem lifecycle: create → calculate → finalize (snapshot), snapshot immunity under DB mutation, clone with fresh keys, upgrade preservation
 │   ├── test_price_list_workflow.py              # End-to-end price list workflow (create → attach → calculate → finalize)
 │   ├── test_integration_cascade.py              # Cascade delete/update operations
 │   ├── test_integration_complex_rules.py        # Complex rule interaction scenarios
@@ -203,12 +206,12 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
-| API           | 29    | ~644          | Endpoint CRUD, lifecycle, middleware, BOM, price lists, snapshots, input validation |
-| Engine        | 15    | ~206          | Business logic, rules, SKU, cache, BOM edge cases, price resolution, mutation kills |
-| Integration   | 15    | ~58           | End-to-end workflows, BOM clone, BOM lifecycle, price list workflow |
+| API           | 30    | ~690          | Endpoint CRUD, lifecycle, middleware, BOM, price lists, catalog, configuration custom items, snapshots, input validation |
+| Engine        | 16    | ~220          | Business logic, rules, SKU, cache, BOM edge cases, price resolution, catalog metadata, custom items, mutation kills |
+| Integration   | 16    | ~63           | End-to-end workflows, BOM clone, BOM lifecycle, price list workflow, custom items lifecycle |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
 | Stress        | 3     | ~54           | Concurrency and edge cases       |
-| **Total**     | **63**| **~977**      |                                  |
+| **Total**     | **66**| **~1193**     |                                  |
 
 ## Test Coverage
 
@@ -225,7 +228,8 @@ The test suite provides comprehensive coverage across all application layers:
 - **BOM Item Rules**: CRUD, DRAFT-only enforcement, RBAC, ownership validation, conditions field_id validation
 - **BOM Engine Integration**: Stateless and stateful BOM calculation, `bom_total_price` persistence across create/update/upgrade/clone
 - **Price Lists**: PriceList and PriceListItem CRUD, RBAC (ADMIN/AUTHOR), `?valid_at=` filter, deletion protection when referenced by FINALIZED configs, header bounding box and no-overlap validation, item date defaulting from header
-- **Configuration Snapshots**: FINALIZED configurations return the stored `CalculationResponse` snapshot directly; DRAFT configurations rehydrate; snapshot immunity from subsequent price list edits
+- **Configuration Custom Items**: `/configurations/{id}/custom-items` nested CRUD, server-generated `CUSTOM-<uuid8>` keys (distinct, immutable, client-provided values silently dropped on create and rejected on update), value validation at the Pydantic layer (`quantity > 0`, `unit_price >= 0`, non-empty `description`), DRAFT-only mutation gating (HTTP 409 on FINALIZED), owner/ADMIN authorization, `created_by_id` / `updated_by_id` audit trail, cascade delete from parent configuration
+- **Configuration Snapshots**: FINALIZED configurations return the stored `CalculationResponse` snapshot directly; DRAFT configurations rehydrate; snapshot immunity from subsequent price list edits and from custom-item mutations
 - **Input Validation**: Wrong types, missing fields, invalid enum values, empty/null payloads across all endpoints
 - **Users**: User management, role assignment, access control
 - **Middleware**: Request correlation ID generation, propagation, and logging filter injection
@@ -324,6 +328,7 @@ The configuration lifecycle management feature is thoroughly tested across multi
 - **BOM Tree**: Parent-child cascade pruning, three-level nesting, sibling independence, sequence ordering
 - **BOM Aggregation**: Part-number grouping, quantity summing, type-aware keys, parent-aware keys
 - **Price Resolution**: Lookup by `part_number`, temporal validity filtering at `price_date`, graceful handling of missing/expired prices with differentiated warnings, partial `commercial_total` computation
+- **Custom Items Engine Integration**: CUSTOM step appended after PRICING, custom lines emitted as commercial-only with `is_custom=true` and `part_number = custom_key`, `commercial_total` includes catalog + custom sums, no warnings generated for custom lines, no impact on `is_complete`, stateless `/engine/calculate` skips the step, `line_total = quantity * unit_price` mutation kill
 - **Stress Tests**: Domino effects, complex dependencies, performance under load
 
 #### CALCULATION Rule Tests (`test_calculation.py`)
@@ -371,6 +376,7 @@ The SKU generation feature is comprehensively tested across multiple scenarios:
 - **BOM Clone Remapping**: BOM item/rule ID remapping during version clone (parent, quantity_from_field, conditions)
 - **Configuration Lifecycle Flows**: Complete workflows (create → update → finalize → clone → modify), upgrade-then-finalize blocked when incompatible
 - **Price List Workflow**: End-to-end scenarios — create price list, attach to configuration, calculate with warnings, finalize with snapshot, verify immunity to subsequent price list edits
+- **Custom Items Lifecycle**: End-to-end scenarios — create DRAFT, add custom items via API, calculate, finalize with snapshot capturing custom lines, verify snapshot immunity after direct-DB mutation and deletion of underlying rows, clone FINALIZED configuration and verify the clone's custom items have disjoint keys, upgrade archived-version DRAFT and verify custom items survive
 
 ### Performance & Stress (~66 tests)
 - **Benchmarks**: Throughput measurements, response time analysis

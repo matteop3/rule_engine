@@ -22,6 +22,7 @@ class CalculationRequest(BaseModel):
     entity_version_id: int | None = None
     price_list_id: int | None = None
     price_date: dt.date | None = None
+    configuration_id: str | None = None
 
 
 # --- OUTPUT: to client ---
@@ -53,7 +54,7 @@ class FieldOutputState(BaseModel):
 class BOMLineItem(BaseModel):
     """A single BOM line item in the calculation output, with nested children."""
 
-    bom_item_id: int
+    bom_item_id: int | None = None
     bom_type: str
     part_number: str
     description: str | None = None
@@ -62,6 +63,7 @@ class BOMLineItem(BaseModel):
     unit_of_measure: str | None = None
     unit_price: Decimal | None = None
     line_total: Decimal | None = None
+    is_custom: bool = False
     children: list["BOMLineItem"] = []
 
 

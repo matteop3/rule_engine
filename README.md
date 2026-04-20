@@ -87,6 +87,15 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 - **Audit safety**: Finalization always recalculates with `price_date = today` to prevent stale-price exploitation; FINALIZED configurations store a full snapshot so subsequent price list edits cannot alter historical documents
 - **Deletion protection**: A price list referenced by any FINALIZED configuration cannot be deleted (HTTP 409)
 
+### Custom Items (commercial-only escape hatch)
+- **Per-configuration, commercial-only**: `ConfigurationCustomItem` rows are scoped to a single configuration and appear only in the commercial BOM output. They never enter the technical BOM — production needs coded parts, and one-off quote lines (on-site installs, rush fees, sample services) are a commercial construct.
+- **Server-generated immutable key**: Every custom item gets a `CUSTOM-<uuid8>` identifier assigned server-side on create. Clients cannot provide or modify the key — it occupies the `part_number` slot in `BOMLineItem` and is stable forever, keeping the door open for future retroactive classification against the catalog.
+- **Inline pricing**: `quantity > 0` and `unit_price >= 0` are enforced at both the DB (`CHECK` constraints) and Pydantic layers. `unit_price = 0` is valid (a $0 commercial line for a free add-on).
+- **Clean engine integration**: The engine appends custom lines to `BOMOutput.commercial` **after** catalog-sourced lines with `is_custom=true`, sums them into `commercial_total`, and never emits warnings for them. They cannot block or unblock `is_complete`.
+- **Snapshot immunity**: Finalization freezes custom lines into `Configuration.snapshot` together with the rest of the `CalculationResponse`. Subsequent mutations to the underlying rows (bypassing the FINALIZED gate) do not alter the read path.
+- **Clone and upgrade preserve intent**: Cloning copies custom items with **fresh** `custom_key` values (source and clone key sets are disjoint) so future promotions remain distinguishable. Upgrading a DRAFT to a newer `EntityVersion` leaves custom items untouched — they belong to the configuration, not the version.
+- **Nested CRUD under `/configurations/{id}/custom-items`**: DRAFT-only mutations, owner-or-ADMIN authorization, HTTP 409 on FINALIZED and HTTP 422 on attempted `custom_key` modification.
+
 ### SKU Generation
 - **Base SKU + modifiers**: `LPT-PRO` + `-16G` + `-512S` → `LPT-PRO-16G-512S`
 - **Custom delimiters**: Configure separator per entity version
@@ -213,6 +222,7 @@ This creates:
 | Price List Items | 3 | One per COMMERCIAL BOM part number |
 | Users | 3 | One per role (see below) |
 | Configurations | 3 | 1 finalized + 2 drafts, all linked to the demo price list |
+| Custom Items | 2 | Attached to the Truck DRAFT (on-site safety audit + fleet signage package) |
 
 **Demo users** (password: `password123`):
 
@@ -305,6 +315,7 @@ erDiagram
     PriceList ||--o{ PriceListItem : "contains"
     PriceListItem }o--|| CatalogItem : "part_number FK"
     Configuration }o--o| PriceList : "uses"
+    Configuration ||--o{ ConfigurationCustomItem : "has custom lines"
     User ||--o{ Configuration : "owns"
     User ||--o{ RefreshToken : "has"
 
@@ -396,6 +407,17 @@ erDiagram
         decimal unit_price
         date valid_from
         date valid_to
+    }
+
+    ConfigurationCustomItem {
+        int id PK
+        uuid configuration_id FK "ON DELETE CASCADE"
+        string custom_key UK "CUSTOM-<uuid8>, immutable"
+        string description
+        decimal quantity "CHECK > 0"
+        decimal unit_price "CHECK >= 0"
+        string unit_of_measure "nullable"
+        int sequence "default 0"
     }
 
     BOMItemRule {
@@ -598,9 +620,17 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 | POST | `/configurations` | Create configuration |
 | PATCH | `/configurations/{id}` | Update inputs (DRAFT only) |
 | GET | `/configurations/{id}/calculate` | Recalculate with current inputs |
-| POST | `/configurations/{id}/clone` | Clone to new DRAFT |
-| POST | `/configurations/{id}/upgrade` | Upgrade to latest version |
-| POST | `/configurations/{id}/finalize` | Make immutable (requires completeness) |
+| POST | `/configurations/{id}/clone` | Clone to new DRAFT (copies custom items with fresh keys) |
+| POST | `/configurations/{id}/upgrade` | Upgrade to latest version (custom items preserved) |
+| POST | `/configurations/{id}/finalize` | Make immutable (requires completeness; snapshot freezes custom items) |
+
+### Configuration Custom Items
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/configurations/{id}/custom-items` | List custom items for this configuration (owner/ADMIN) |
+| POST | `/configurations/{id}/custom-items` | Create custom item (DRAFT only; server generates `custom_key`) |
+| PATCH | `/configurations/{id}/custom-items/{item_id}` | Update (DRAFT only; 422 if `custom_key` in payload) |
+| DELETE | `/configurations/{id}/custom-items/{item_id}` | Delete (DRAFT only) |
 
 ### Price Lists
 | Method | Endpoint | Description |
@@ -628,7 +658,7 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 
 ## Testing
 
-The project includes 977+ tests across multiple categories:
+The project includes 1193+ tests across multiple categories:
 
 | Category | Location | Description |
 |----------|----------|-------------|
@@ -739,6 +769,7 @@ rule_engine/
 - [ADR: BOM Generation](docs/ADR_BOM.md) - BOM design decisions (single table, hierarchy, aggregation)
 - [ADR: Price List](docs/ADR_PRICE_LIST.md) - Centralized pricing with temporal validity, graceful resolution, and finalize-time lock
 - [ADR: Catalog Item](docs/ADR_CATALOG_ITEM.md) - Canonical part identity and metadata; supersedes `description`/`category`/`unit_of_measure` on BOMItem and `description` on PriceListItem
+- [ADR: Configuration Custom Items](docs/ADR_CUSTOM_ITEMS.md) - Per-configuration commercial-only escape-hatch lines with server-generated `CUSTOM-<uuid8>` keys
 
 ---
 

@@ -66,6 +66,8 @@ Warning messages are differentiated to aid debugging:
 
 **Why partial total instead of null total**: `is_complete = false` already gates finalization. A partial total gives the user feedback on the order of magnitude during drafting. A null total for a 25,000 EUR configuration missing a 0.50 EUR bolt is disproportionately uninformative.
 
+**Interaction with custom items.** `BOMOutput.commercial` may also contain lines with `is_custom = true` sourced from the configuration itself (see [ADR: Configuration Custom Items](ADR_CUSTOM_ITEMS.md)). Those lines are appended after the price-list-driven catalog lines and carry their own `unit_price` and `line_total`. They **never** emit warnings and **never** affect `is_complete` — they are always complete by construction. `commercial_total` is the sum of catalog-line totals with valid prices **plus** the sum of custom-line totals.
+
 ### 5. `price_list_id` mandatory, `price_date` optional
 
 `price_list_id` is mandatory in the `CalculationRequest`. The client must always specify which price list to use — there is no default. "Default" would be arbitrary when price lists can represent different markets, channels, or product lines.
@@ -197,3 +199,4 @@ No mutable resource in the application (price lists, items, DRAFT configurations
 - [ADR: BOM Generation](ADR_BOM.md) — BOM structure and the pricing amendment (decisions #1 and #7)
 - [ADR: Re-hydration](ADR_REHYDRATION.md) — Hybrid rehydration that keeps FINALIZED configurations immutable despite mutable price lists
 - [ADR: Catalog Item](ADR_CATALOG_ITEM.md) — Canonical part identity and metadata; supersedes `PriceListItem.description`
+- [ADR: Configuration Custom Items](ADR_CUSTOM_ITEMS.md) — Per-configuration commercial lines that share `BOMOutput.commercial` with catalog-sourced lines but carry their own price and never emit warnings

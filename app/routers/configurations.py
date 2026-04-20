@@ -10,6 +10,7 @@ from app.database import get_db
 from app.dependencies import db_transaction, fetch_version_by_id, get_current_user, get_rule_engine_service
 from app.models.domain import (
     Configuration,
+    ConfigurationCustomItem,
     ConfigurationStatus,
     EntityVersion,
     Field,
@@ -206,6 +207,7 @@ def calculate_configuration_state(
     data: list[dict[str, Any]],
     price_list_id: int | None = None,
     price_date: dt.date | None = None,
+    configuration_id: str | None = None,
 ) -> CalculationResponse:
     """
     Calculates the configuration state using the rule engine.
@@ -217,6 +219,9 @@ def calculate_configuration_state(
         data: List of field inputs (dicts with field_id and value)
         price_list_id: Price list to use for BOM pricing
         price_date: Effective date for price lookup
+        configuration_id: Persisted configuration id; when provided, the
+            engine loads and appends ConfigurationCustomItem rows as
+            commercial lines with ``is_custom=True``.
 
     Returns:
         CalculationResponse: Full calculated state including is_complete flag
@@ -233,6 +238,7 @@ def calculate_configuration_state(
             current_state=current_state_objects,
             price_list_id=price_list_id,
             price_date=price_date,
+            configuration_id=configuration_id,
         )
 
         logger.debug(f"Calculating state for version {version.id} with {len(data)} field inputs")
@@ -592,6 +598,7 @@ def update_configuration(
             data=data_for_calc,
             price_list_id=effective_price_list_id,
             price_date=dt.date.today(),
+            configuration_id=config.id,
         )
 
         update_data["is_complete"] = calc_result.is_complete
@@ -710,6 +717,7 @@ def load_and_calculate_configuration(
             current_state=current_state_objects,
             price_list_id=config.price_list_id,
             price_date=config.price_date if is_finalized else dt.date.today(),
+            configuration_id=config.id,
         )
 
         result = engine_service.calculate_state(db, engine_payload)
@@ -773,6 +781,13 @@ def clone_configuration(config_id: str, db: Session = Depends(get_db), current_u
         base_name = source.name[:max_base_length] if len(source.name) > max_base_length else source.name
         new_name = f"{base_name}{suffix}"
 
+    source_custom_items = (
+        db.query(ConfigurationCustomItem)
+        .filter(ConfigurationCustomItem.configuration_id == source.id)
+        .order_by(ConfigurationCustomItem.sequence, ConfigurationCustomItem.id)
+        .all()
+    )
+
     with db_transaction(db, f"clone_configuration {config_id}"):
         cloned_config = Configuration(
             id=str(uuid.uuid4()),
@@ -793,9 +808,26 @@ def clone_configuration(config_id: str, db: Session = Depends(get_db), current_u
         db.add(cloned_config)
         db.flush()
 
+        # Copy custom items with fresh custom_key values so source and clone
+        # never share keys (future promotions or histories may diverge).
+        for src_item in source_custom_items:
+            db.add(
+                ConfigurationCustomItem(
+                    configuration_id=cloned_config.id,
+                    custom_key=f"CUSTOM-{uuid.uuid4().hex[:8]}",
+                    description=src_item.description,
+                    quantity=src_item.quantity,
+                    unit_price=src_item.unit_price,
+                    unit_of_measure=src_item.unit_of_measure,
+                    sequence=src_item.sequence,
+                    created_by_id=current_user.id,
+                )
+            )
+
         logger.info(
             f"Configuration {config_id} cloned to {cloned_config.id} "
-            f"(source status: {source.status}, clone status: DRAFT)"
+            f"(source status: {source.status}, clone status: DRAFT, "
+            f"custom_items copied: {len(source_custom_items)})"
         )
 
     db.refresh(cloned_config)
@@ -882,6 +914,7 @@ def upgrade_configuration(
         data=config.data,
         price_list_id=config.price_list_id,
         price_date=dt.date.today(),
+        configuration_id=config.id,
     )
 
     with db_transaction(db, f"upgrade_configuration {config_id}"):
@@ -965,6 +998,7 @@ def finalize_configuration(
         data=config.data,
         price_list_id=config.price_list_id,
         price_date=today,
+        configuration_id=config.id,
     )
 
     with db_transaction(db, f"finalize_configuration {config_id}"):

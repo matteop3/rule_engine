@@ -12,6 +12,7 @@ from app.routers import (
     bom_item_rules,
     bom_items,
     catalog_items,
+    configuration_custom_items,
     configurations,
     entities,
     fields,
@@ -77,6 +78,7 @@ app.include_router(configurations.router)
 app.include_router(price_lists.router)
 app.include_router(price_list_items.router)
 app.include_router(catalog_items.router)
+app.include_router(configuration_custom_items.router)
 
 
 @app.get("/")

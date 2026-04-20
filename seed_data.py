@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 from datetime import date
 
 # Fix path to import app modules from root
@@ -14,6 +15,7 @@ from app.models.domain import (
     CatalogItem,
     CatalogItemStatus,
     Configuration,
+    ConfigurationCustomItem,
     ConfigurationStatus,
     Entity,
     EntityVersion,
@@ -40,6 +42,7 @@ def seed_db():
 
         # 1. Cleanup (order: FK dependencies)
         db.query(RefreshToken).delete()
+        db.query(ConfigurationCustomItem).delete()
         db.query(Configuration).delete()
         db.query(BOMItemRule).delete()
         db.query(BOMItem).delete()
@@ -53,7 +56,7 @@ def seed_db():
         db.query(CatalogItem).delete()
         db.query(User).delete()
         db.commit()
-        print("\n[1/11] Database cleaned.")
+        print("\n[1/12] Database cleaned.")
 
         # 2. Entity
         entity = Entity(
@@ -62,7 +65,7 @@ def seed_db():
         )
         db.add(entity)
         db.commit()
-        print(f"[2/11] Entity created: {entity.name} (ID: {entity.id})")
+        print(f"[2/12] Entity created: {entity.name} (ID: {entity.id})")
 
         # 3. Version (with SKU configuration)
         version = EntityVersion(
@@ -75,7 +78,7 @@ def seed_db():
         )
         db.add(version)
         db.commit()
-        print(f"[3/11] Version created: v{version.version_number} (SKU: {version.sku_base})")
+        print(f"[3/12] Version created: v{version.version_number} (SKU: {version.sku_base})")
 
         # ============================================================
         # 4. FIELDS (15 fields in 4 steps)
@@ -271,7 +274,7 @@ def seed_db():
         ]
         db.add_all(all_fields)
         db.commit()
-        print(f"[4/11] Fields created: {len(all_fields)} fields in 4 steps")
+        print(f"[4/12] Fields created: {len(all_fields)} fields in 4 steps")
 
         # ============================================================
         # 5. VALUES (with SKU modifiers)
@@ -406,7 +409,7 @@ def seed_db():
         ]
         db.add_all(all_values)
         db.commit()
-        print(f"[5/11] Values created: {len(all_values)} values with SKU modifiers")
+        print(f"[5/12] Values created: {len(all_values)} values with SKU modifiers")
 
         # ============================================================
         # 6. RULES (19 rules: 6/6 types, 7/7 operators, 2 cascading chains)
@@ -662,7 +665,7 @@ def seed_db():
         ]
         db.add_all(all_rules)
         db.commit()
-        print(f"[6/11] Rules created: {len(all_rules)} rules (6/6 types + 2 cascading chains)")
+        print(f"[6/12] Rules created: {len(all_rules)} rules (6/6 types + 2 cascading chains)")
 
         # ============================================================
         # 7. CATALOG ITEMS (canonical part identities)
@@ -732,7 +735,7 @@ def seed_db():
         ]
         db.add_all(all_catalog_items)
         db.commit()
-        print(f"[7/11] Catalog items created: {len(all_catalog_items)} parts (ACTIVE status)")
+        print(f"[7/12] Catalog items created: {len(all_catalog_items)} parts (ACTIVE status)")
 
         # ============================================================
         # 8. BOM ITEMS AND RULES
@@ -875,7 +878,7 @@ def seed_db():
         db.commit()
 
         print(
-            f"[8/11] BOM created: {len(all_bom_items)} items "
+            f"[8/12] BOM created: {len(all_bom_items)} items "
             f"({sum(1 for b in all_bom_items if b.bom_type == BOMType.TECHNICAL.value)} TECHNICAL, "
             f"{sum(1 for b in all_bom_items if b.bom_type == BOMType.COMMERCIAL.value)} COMMERCIAL), "
             f"{len(all_bom_rules)} rules"
@@ -919,7 +922,7 @@ def seed_db():
         all_price_list_items = [pli_base_premium, pli_theft_addon, pli_pol_base]
         db.add_all(all_price_list_items)
         db.commit()
-        print(f"[9/11] Price list created: '{price_list.name}' with {len(all_price_list_items)} items")
+        print(f"[9/12] Price list created: '{price_list.name}' with {len(all_price_list_items)} items")
 
         # ============================================================
         # 10. USERS (3 demo users, one per role)
@@ -940,7 +943,7 @@ def seed_db():
         all_users = [user_admin, user_author, user_demo]
         db.add_all(all_users)
         db.commit()
-        print(f"[10/11] Users created: {len(all_users)} users (admin, author, user) — password: password123")
+        print(f"[10/12] Users created: {len(all_users)} users (admin, author, user) — password: password123")
 
         # ============================================================
         # 11. CONFIGURATIONS (sample quotes)
@@ -1014,7 +1017,40 @@ def seed_db():
         all_configs = [config_finalized, config_draft, config_draft_moto]
         db.add_all(all_configs)
         db.commit()
-        print(f"[11/11] Configurations created: {len(all_configs)} (1 FINALIZED + 2 DRAFT)")
+        print(f"[11/12] Configurations created: {len(all_configs)} (1 FINALIZED + 2 DRAFT)")
+
+        # ============================================================
+        # 12. CONFIGURATION CUSTOM ITEMS
+        # ============================================================
+        # Commercial-only, configuration-scoped lines that do not exist in the catalog.
+        # Attached to the Truck DRAFT so the full custom-line path is exercised end-to-end.
+        all_custom_items = [
+            ConfigurationCustomItem(
+                configuration_id=config_draft.id,
+                custom_key=f"CUSTOM-{uuid.uuid4().hex[:8]}",
+                description="On-site safety audit (one-off)",
+                quantity=1,
+                unit_price=250.00,
+                unit_of_measure="PC",
+                sequence=0,
+                created_by_id=user_demo.id,
+            ),
+            ConfigurationCustomItem(
+                configuration_id=config_draft.id,
+                custom_key=f"CUSTOM-{uuid.uuid4().hex[:8]}",
+                description="Fleet signage package",
+                quantity=3,
+                unit_price=45.00,
+                unit_of_measure="PC",
+                sequence=1,
+                created_by_id=user_demo.id,
+            ),
+        ]
+        db.add_all(all_custom_items)
+        db.commit()
+        print(
+            f"[12/12] Configuration custom items created: {len(all_custom_items)} (attached to '{config_draft.name}')"
+        )
 
         # ============================================================
         # SUMMARY
@@ -1022,6 +1058,7 @@ def seed_db():
         print("\n" + "=" * 70)
         print("SEED COMPLETED SUCCESSFULLY")
         print("=" * 70)
+        ci0, ci1 = all_custom_items
         print(f"""
 SUMMARY:
   Entity ID:      {entity.id}
@@ -1039,6 +1076,7 @@ SUMMARY:
   Price Items:    {len(all_price_list_items)}
   Users:          {len(all_users)}
   Configurations: {len(all_configs)}
+  Custom Items:   {len(all_custom_items)}
 
 DEMO USERS (password: password123):
   admin@demo.com   — ADMIN  (full access)
@@ -1050,6 +1088,7 @@ DEMO CONFIGURATIONS (user: user@demo.com):
      SKU: {config_finalized.generated_sku}
   2. "{config_draft.name}" [DRAFT, incomplete]
      SKU: {config_draft.generated_sku}
+     Custom items: {len(all_custom_items)} (safety audit + signage package)
   3. "{config_draft_moto.name}" [DRAFT, partial]
      No SKU (missing fields)
 
@@ -1126,6 +1165,11 @@ PRICE LIST:
     PREM-BASE:    $350.00
     ADDON-THEFT:  $89.99
     POL-BASE:     $15.00
+
+CONFIGURATION CUSTOM ITEMS (commercial-only, configuration-scoped):
+  On "{config_draft.name}" (DRAFT):
+    {ci0.custom_key}  {ci0.description:<35} {ci0.quantity} x ${ci0.unit_price}
+    {ci1.custom_key}  {ci1.description:<35} {ci1.quantity} x ${ci1.unit_price}
 
 SKU EXAMPLES:
 

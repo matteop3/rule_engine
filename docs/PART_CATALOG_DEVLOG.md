@@ -46,11 +46,11 @@ Several phases declare that the suite will be in a broken state at their end. Th
 
 | Field | Value |
 |---|---|
-| **Current phase** | B1 — ConfigurationCustomItem model & migration (next) |
-| **Last completed phase** | A6 — Seed data, ADR_CATALOG_ITEM, README, TESTING |
+| **Current phase** | — (feature complete) |
+| **Last completed phase** | B4 — Documentation closeout, ADR_CUSTOM_ITEMS, README, TESTING |
 | **Feature A (CatalogItem) status** | Complete |
-| **Feature B (CustomItems) status** | Not started |
-| **Test suite state** | Fully green (1128 passed) |
+| **Feature B (CustomItems) status** | Complete |
+| **Test suite state** | Fully green (1193 passed) |
 | **Blocking issues** | None |
 
 Phase progress overview:
@@ -63,10 +63,10 @@ Phase progress overview:
 | A4 | Test fixture refactor & BOM/PriceList CRUD validation | A | ☑ |
 | A5 | Engine integration (BOMLineItem from catalog) | A | ☑ |
 | A6 | Seed data, ADR_CATALOG_ITEM, README, TESTING | A | ☑ |
-| B1 | ConfigurationCustomItem model & migration | B | ☐ |
-| B2 | ConfigurationCustomItem CRUD API | B | ☐ |
-| B3 | Engine integration (CUSTOM step, snapshot, clone) | B | ☐ |
-| B4 | Custom items tests, ADR_CUSTOM_ITEMS, README, TESTING | B | ☐ |
+| B1 | ConfigurationCustomItem model & migration | B | ☑ |
+| B2 | ConfigurationCustomItem CRUD API | B | ☑ |
+| B3 | Engine integration (CUSTOM step, snapshot, clone) | B | ☑ |
+| B4 | Custom items tests, ADR_CUSTOM_ITEMS, README, TESTING | B | ☑ |
 
 ---
 
@@ -308,12 +308,12 @@ This is expected. Do **not** fix these failures in A3. They are addressed in A4 
 
 **Implementation checklist.**
 
-- [ ] Add `ConfigurationCustomItem` model to `app/models/domain.py`, with all columns from §6.1. The `custom_key` column is `String(20)`, `UNIQUE`, non-nullable. `quantity` is `Numeric(12, 4)` with a CHECK constraint `quantity > 0`. `unit_price` is `Numeric(12, 4)` with a CHECK constraint `unit_price >= 0`. `configuration_id` is a `ForeignKey("configurations.id", ondelete="CASCADE")`.
-- [ ] Add a `custom_items: Mapped[list["ConfigurationCustomItem"]] = relationship(..., cascade="all, delete-orphan")` backref on `Configuration`.
-- [ ] Generate and hand-edit an Alembic migration that creates `configuration_custom_items`, the UNIQUE index on `custom_key`, a regular index on `configuration_id`, and both CHECK constraints. The CHECK constraints must be named (`ck_cci_quantity_positive`, `ck_cci_unit_price_nonnegative`) for future referencing.
-- [ ] Confirm `alembic upgrade head` and `alembic downgrade -1` both run cleanly.
-- [ ] Run `ruff check .`, `ruff format --check .`, `mypy app/`. Fix any issues.
-- [ ] Run the full test suite once at the end. Must be fully green — the new table is unreferenced by any test yet.
+- [x] Add `ConfigurationCustomItem` model to `app/models/domain.py`, with all columns from §6.1. The `custom_key` column is `String(20)`, `UNIQUE`, non-nullable. `quantity` is `Numeric(12, 4)` with a CHECK constraint `quantity > 0`. `unit_price` is `Numeric(12, 4)` with a CHECK constraint `unit_price >= 0`. `configuration_id` is a `ForeignKey("configurations.id", ondelete="CASCADE")`.
+- [x] Add a `custom_items: Mapped[list["ConfigurationCustomItem"]] = relationship(..., cascade="all, delete-orphan")` backref on `Configuration`.
+- [x] Generate and hand-edit an Alembic migration that creates `configuration_custom_items`, the UNIQUE index on `custom_key`, a regular index on `configuration_id`, and both CHECK constraints. The CHECK constraints must be named (`ck_cci_quantity_positive`, `ck_cci_unit_price_nonnegative`) for future referencing.
+- [x] Confirm `alembic upgrade head` and `alembic downgrade -1` both run cleanly.
+- [x] Run `ruff check .`, `ruff format --check .`, `mypy app/`. Fix any issues.
+- [x] Run the full test suite once at the end. Must be fully green — the new table is unreferenced by any test yet.
 
 **Expected test failures.** None.
 
@@ -336,11 +336,11 @@ This is expected. Do **not** fix these failures in A3. They are addressed in A4 
 
 **Implementation checklist.**
 
-- [ ] Create `app/schemas/configuration_custom_item.py` with `CustomItemCreate`, `CustomItemUpdate`, `CustomItemRead`. Pydantic validators enforce: `quantity > 0` (with explicit 422 message), `unit_price >= 0`, `description` non-empty after strip. `custom_key` is **not** in the Create schema; the server generates it.
-- [ ] Create `app/routers/configuration_custom_items.py` (or add to the existing `configurations.py` router if the project prefers nested routers in the same file). Implement the four endpoints from §6.5. Authorization: reuse the existing configuration-ownership check. DRAFT gating: reuse the existing FINALIZED write-block check.
-- [ ] Implement `custom_key` generation: `f"CUSTOM-{uuid.uuid4().hex[:8]}"`. If the client provides a `custom_key` in the payload, ignore it silently. The key is assigned in the create service call, not in the schema.
-- [ ] Register the router in `app/main.py`.
-- [ ] Create `tests/api/test_configuration_custom_items.py` covering the full list from §8.2:
+- [x] Create `app/schemas/configuration_custom_item.py` with `CustomItemCreate`, `CustomItemUpdate`, `CustomItemRead`. Pydantic validators enforce: `quantity > 0` (with explicit 422 message), `unit_price >= 0`, `description` non-empty after strip. `custom_key` is **not** in the Create schema; the server generates it.
+- [x] Create `app/routers/configuration_custom_items.py` (or add to the existing `configurations.py` router if the project prefers nested routers in the same file). Implement the four endpoints from §6.5. Authorization: reuse the existing configuration-ownership check. DRAFT gating: reuse the existing FINALIZED write-block check.
+- [x] Implement `custom_key` generation: `f"CUSTOM-{uuid.uuid4().hex[:8]}"`. If the client provides a `custom_key` in the payload, ignore it silently. The key is assigned in the create service call, not in the schema.
+- [x] Register the router in `app/main.py`.
+- [x] Create `tests/api/test_configuration_custom_items.py` covering the full list from §8.2:
   - Happy-path create, read, update, delete.
   - Auto-generated `custom_key` format (`CUSTOM-` prefix + 8 hex chars, 15 chars total).
   - Client-provided `custom_key` is ignored.
@@ -348,8 +348,8 @@ This is expected. Do **not** fix these failures in A3. They are addressed in A4 
   - FINALIZED gating: create/update/delete on FINALIZED → 409.
   - Ownership: USER on another user's configuration → 403, USER on their own → allowed, ADMIN on any → allowed.
   - List returns items ordered by `sequence`.
-- [ ] Run `ruff check .`, `ruff format --check .`, `mypy app/`. Fix any issues.
-- [ ] Run the full test suite once at the end. Must be fully green.
+- [x] Run `ruff check .`, `ruff format --check .`, `mypy app/`. Fix any issues.
+- [x] Run the full test suite once at the end. Must be fully green.
 
 **Expected test failures.** None.
 
@@ -371,31 +371,31 @@ This is expected. Do **not** fix these failures in A3. They are addressed in A4 
 
 **Implementation checklist.**
 
-- [ ] Add `is_custom: bool = False` to `BOMLineItem` in `app/schemas/engine.py`.
-- [ ] In `app/services/rule_engine.py`, add the CUSTOM step at the end of the BOM/PRICING pipeline:
+- [x] Add `is_custom: bool = False` to `BOMLineItem` in `app/schemas/engine.py`.
+- [x] In `app/services/rule_engine.py`, add the CUSTOM step at the end of the BOM/PRICING pipeline:
   - Load `ConfigurationCustomItem` rows for the current configuration (only when calculating for a persisted configuration; the stateless `/engine/calculate` endpoint has no custom items and skips this step).
   - For each custom item, emit a `BOMLineItem` with `is_custom=True`, `part_number=custom_key`, metadata from the custom item, `line_total = quantity * unit_price`.
   - Append custom lines to `BOMOutput.commercial` after all catalog-sourced lines, preserving `sequence` within the custom block.
   - Add custom-line totals to `commercial_total`.
   - Custom lines must **not** generate warnings and must **not** influence `is_complete`.
-- [ ] Update `app/routers/configurations.py`:
+- [x] Update `app/routers/configurations.py`:
   - Clone endpoint (`POST /configurations/{id}/clone`): after creating the new DRAFT configuration, iterate over the source's `ConfigurationCustomItem` rows and create copies on the new configuration with **fresh** `custom_key` values.
   - Upgrade endpoint (`POST /configurations/{id}/upgrade`): custom items are preserved as-is on the upgraded DRAFT (they belong to the configuration, not the version).
   - Finalize endpoint: confirm the snapshot built from the `CalculationResponse` includes custom lines. No code change should be needed if the serialization is generic, but verify with a test.
-- [ ] Create `tests/engine/test_custom_items.py` covering:
+- [x] Create `tests/engine/test_custom_items.py` covering:
   - Custom items appear in the commercial output after catalog lines, with `is_custom=True`.
   - `commercial_total` correctly sums catalog + custom.
   - Custom items do not generate warnings even when catalog lines have missing prices.
   - Custom items do not affect `is_complete`.
   - `unit_price = 0` custom item is included and produces `line_total = 0`.
   - At least one mutation-killing test targeting the value constraints.
-- [ ] Create `tests/integration/test_custom_items_lifecycle.py` covering:
+- [x] Create `tests/integration/test_custom_items_lifecycle.py` covering:
   - Create DRAFT, add custom items, calculate, finalize; verify snapshot contains custom items with exact values.
   - Mutate custom items via direct DB after finalize; verify FINALIZED read returns unchanged snapshot.
   - Clone a FINALIZED configuration with custom items; verify the new DRAFT has copies with **new** `custom_key` values (assert the old and new keys are disjoint).
   - Upgrade a DRAFT to a newer EntityVersion; verify custom items are preserved.
-- [ ] Run `ruff check .`, `ruff format --check .`, `mypy app/`. Fix any issues.
-- [ ] Run the full test suite once at the end. Must be fully green.
+- [x] Run `ruff check .`, `ruff format --check .`, `mypy app/`. Fix any issues.
+- [x] Run the full test suite once at the end. Must be fully green.
 
 **Expected test failures.** None.
 
@@ -417,20 +417,20 @@ This is expected. Do **not** fix these failures in A3. They are addressed in A4 
 
 **Implementation checklist.**
 
-- [ ] Update `seed_data.py` to add one or two example custom items to an existing DRAFT demo configuration. Run the seed against a fresh database and confirm success.
-- [ ] Create `docs/ADR_CUSTOM_ITEMS.md` using §6 of the analysis document as input. Same structural template as `ADR_CATALOG_ITEM.md` / `ADR_PRICE_LIST.md`: Status, Context, Decisions, Consequences, Out of Scope, Known Gaps and Follow-ups. The Known Gaps section **must** explicitly mention the postponed `CustomItemPromotion` per §10.2, including the two stability invariants (`custom_key` stable forever, `part_number` never renamed in place) that keep the promotion path open.
-- [ ] Update `docs/ADR_PRICE_LIST.md`:
+- [x] Update `seed_data.py` to add one or two example custom items to an existing DRAFT demo configuration. Run the seed against a fresh database and confirm success.
+- [x] Create `docs/ADR_CUSTOM_ITEMS.md` using §6 of the analysis document as input. Same structural template as `ADR_CATALOG_ITEM.md` / `ADR_PRICE_LIST.md`: Status, Context, Decisions, Consequences, Out of Scope, Known Gaps and Follow-ups. The Known Gaps section **must** explicitly mention the postponed `CustomItemPromotion` per §10.2, including the two stability invariants (`custom_key` stable forever, `part_number` never renamed in place) that keep the promotion path open.
+- [x] Update `docs/ADR_PRICE_LIST.md`:
   - Add a note near decision #4 (graceful price resolution) that `BOMOutput.commercial` may also contain `is_custom = True` lines sourced from the configuration, that custom lines never generate warnings, and that they never affect `is_complete`.
   - Add `ADR_CUSTOM_ITEMS.md` to the "Related" section at the bottom.
-- [ ] Update `README.md`:
+- [x] Update `README.md`:
   - Amend the Mermaid ERD to include `ConfigurationCustomItem` with FK to `Configuration`.
   - Add a "Custom Items" subsection under the existing BOM or Configuration section describing the feature: commercial-only, configuration-scoped, inline pricing, auto-generated `CUSTOM-<uuid8>` key, frozen in snapshot at finalization.
   - Add the `/configurations/{id}/custom-items` endpoints to the API Overview table.
   - Update the "Load Demo Data" counts to reflect the new custom item entries.
   - Add `docs/ADR_CUSTOM_ITEMS.md` to the Documentation section at the bottom.
-- [ ] Update `docs/TESTING.md` to document `tests/api/test_configuration_custom_items.py`, `tests/engine/test_custom_items.py`, and `tests/integration/test_custom_items_lifecycle.py`.
-- [ ] Run `ruff check .`, `ruff format --check .`, `mypy app/`. Fix any issues.
-- [ ] Run the full test suite once at the end. Must be fully green.
+- [x] Update `docs/TESTING.md` to document `tests/api/test_configuration_custom_items.py`, `tests/engine/test_custom_items.py`, and `tests/integration/test_custom_items_lifecycle.py`.
+- [x] Run `ruff check .`, `ruff format --check .`, `mypy app/`. Fix any issues.
+- [x] Run the full test suite once at the end. Must be fully green.
 
 **Expected test failures.** None.
 
@@ -441,6 +441,97 @@ This is expected. Do **not** fix these failures in A3. They are addressed in A4 
 ## Session Log
 
 Sessions append entries here in reverse chronological order (most recent at the top). Each session records: what phase was worked on, what was completed, the state of the suite, and any notable deviation from the plan. Do **not** delete or rewrite past entries.
+
+### 2026-04-20 — Phase B4
+
+Completed Phase B4, the final documentation pass. Feature B (ConfigurationCustomItem) is fully shipped. No code changes — this phase is pure docs plus seed data, so the suite count is unchanged from B3.
+
+New ADR at [docs/ADR_CUSTOM_ITEMS.md](ADR_CUSTOM_ITEMS.md). Structure mirrors `ADR_CATALOG_ITEM.md` / `ADR_PRICE_LIST.md`: Status, Context, Decisions, Consequences, Out of Scope, Known Gaps and Follow-ups, Related. Twelve numbered decisions covering per-configuration table with `ON DELETE CASCADE`, server-generated `CUSTOM-<uuid8>` keys, dual-layer value constraints (DB CHECKs + Pydantic `gt=0` / `ge=0`), commercial-only scope, nested CRUD surface under `/configurations/{config_id}/custom-items`, CUSTOM engine step appended after PRICING and gated by `request.configuration_id`, additive schema changes (`BOMLineItem.is_custom: bool = False`, nullable `bom_item_id`, optional `CalculationRequest.configuration_id`), clone with fresh keys, upgrade preservation, self-contained finalization snapshot, stateless-endpoint skip, and shared `part_number` slot disambiguated by `is_custom`. Known Gaps section explicitly documents the postponed `CustomItemPromotion` workflow (§10.2) with both stability invariants — `custom_key` is forever stable, `CatalogItem.part_number` is never renamed in place — that keep the promotion path open for a later feature.
+
+[docs/ADR_PRICE_LIST.md](ADR_PRICE_LIST.md) amended: appended a paragraph to decision #4 (graceful price resolution) explaining that `BOMOutput.commercial` may also contain `is_custom = True` lines sourced from the configuration itself, that those lines carry their own `unit_price` / `line_total`, never produce warnings, and never affect `is_complete`. Added `ADR_CUSTOM_ITEMS.md` to the Related section at the bottom.
+
+[README.md](../README.md) updates: Mermaid ERD gained `Configuration ||--o{ ConfigurationCustomItem : "has custom lines"` plus a full entity block for `ConfigurationCustomItem` (id, configuration_id FK CASCADE, custom_key UK, description, quantity CHECK > 0, unit_price CHECK >= 0, unit_of_measure nullable, sequence default 0). New "Custom Items (commercial-only escape hatch)" feature subsection describing the full lifecycle. New "Configuration Custom Items" API Overview table with the four nested endpoints. Demo Data counts table gained `| Custom Items | 2 | Attached to the Truck DRAFT (on-site safety audit + fleet signage package) |`. Test-count reference updated from `977+` to `1193+`. Configurations endpoints table amended so the clone/upgrade/finalize lines mention the custom-items behavior. `docs/ADR_CUSTOM_ITEMS.md` added to the Documentation links.
+
+[docs/TESTING.md](TESTING.md) updates: added `test_configuration_custom_items.py` to the API directory listing, `test_custom_items.py` to the engine listing, `test_custom_items_lifecycle.py` to the integration listing. Test Statistics table bumped: API 29 → 30, Engine 15 → 16, Integration 15 → 16, Files 63 → 66, Tests ~977 → ~1193. Added one coverage bullet per new suite (Configuration Custom Items API, Custom Items Engine Integration, Custom Items Lifecycle). Configuration Snapshots bullet amended to call out custom-item mutation immunity post-finalize.
+
+[seed_data.py](../seed_data.py) updates: added top-level `import uuid`, imported `ConfigurationCustomItem`, added the model to the cleanup DELETE chain before `Configuration`, and inserted a new step 12 that creates two `ConfigurationCustomItem` rows attached to the Truck DRAFT configuration — "On-site safety audit (one-off)" (quantity 1, unit price 250.00, sequence 0) and "Fleet signage package" (quantity 3, unit price 45.00, sequence 1), both with server-generated `CUSTOM-<uuid8>` keys. Attached to the DRAFT specifically because rows added after finalization would not be reflected in the snapshot. All existing `[X/11]` step markers renumbered to `[X/12]` via `replace_all`. Summary output extended with a CONFIGURATION CUSTOM ITEMS block that prints both keys/descriptions and a count. Seed re-run against a fresh database: all 12 steps clean.
+
+`ruff check .` clean. `ruff format` reformatted `seed_data.py` once after the step 12 edits (mostly the multi-line split needed to stay under the 120-char line limit — `print(f"[12/12] ...")` had to be split across lines and the big summary `print(f"""...""")` had to be broken up by extracting `ci0, ci1 = all_custom_items` before the f-string). `ruff format --check .` then clean across all 145 files. `mypy app/` — Success: no issues found in 56 source files. Full test suite ran once at the end: **1193 passed, 1 warning** in 1100.57s (18:20). Delta from B3's 1193: zero — B4 is pure docs/seed.
+
+No deviations from plan. Feature B complete. All 10 phases (A1–A6, B1–B4) done; Current Status table at the top of this file reflects completion.
+
+### 2026-04-20 — Phase B3
+
+Completed Phase B3. Wired `ConfigurationCustomItem` rows into the calculation pipeline as a new CUSTOM step after PRICING, extended the clone endpoint to copy custom items with fresh keys, and verified upgrade + finalize-snapshot semantics require no additional code. Added engine-level and end-to-end integration tests.
+
+Schema changes in [app/schemas/engine.py](../app/schemas/engine.py):
+- `BOMLineItem.is_custom: bool = False` — new flag, defaults to `False` so every existing catalog-sourced line serializes unchanged.
+- `BOMLineItem.bom_item_id: int | None = None` — relaxed from required `int`. Custom lines have no `BOMItem` row to reference, so the field must be nullable. Additive change: catalog lines still populate it.
+- `CalculationRequest.configuration_id: str | None = None` — optional pointer that lets the engine locate the configuration row. Absent on stateless `/engine/calculate` requests; populated automatically by `calculate_configuration_state` when operating on a persisted configuration.
+
+Engine change in [app/services/rule_engine.py](../app/services/rule_engine.py): after `_evaluate_bom`, if `request.configuration_id` is set, `_append_custom_items` runs. It loads all `ConfigurationCustomItem` rows for the configuration ordered by `(sequence, id)`, builds a `BOMLineItem` per row (`bom_type="COMMERCIAL"`, `part_number=custom_key`, `is_custom=True`, `line_total = quantity * unit_price`), appends them to `BOMOutput.commercial` **after** catalog lines, and bumps `commercial_total`. If the entity has no BOM (`bom_output is None`), a fresh `BOMOutput(technical=[], commercial=[], commercial_total=None, warnings=[])` is created so custom items alone can still produce output. Custom lines never emit warnings and never affect completeness — by construction, they're appended after the completeness check and warnings are only generated by the catalog pipeline.
+
+Router changes in [app/routers/configurations.py](../app/routers/configurations.py):
+- Added `configuration_id: str | None = None` to `calculate_configuration_state` and threaded it into `CalculationRequest` at all four call sites that operate on a persisted configuration: `update_configuration`, `upgrade_configuration`, `finalize_configuration`, and `load_and_calculate_configuration`. `create_configuration` does **not** pass it — the configuration row doesn't exist yet at that point and, critically, there can be no custom items to load.
+- Clone endpoint: queries the source's `ConfigurationCustomItem` rows **before** opening the transaction (so the query isn't inside a write transaction for longer than necessary), then inside the transaction, after flushing `cloned_config`, creates a fresh `ConfigurationCustomItem` per source row with a **new** `CUSTOM-<uuid8>` key, preserving `description`, `quantity`, `unit_price`, `unit_of_measure`, and `sequence`. `created_by_id` is set to the current user — the clone is their action.
+- Upgrade endpoint: no code change. Custom items belong to the configuration, not the `EntityVersion`; upgrading swaps `entity_version_id` only, so rows survive untouched. Verified by `TestUpgradePreservesCustomItems`.
+- Finalize endpoint: no code change. `config.snapshot = calc_result.model_dump(mode="json")` already captures the full `CalculationResponse` including the custom lines now in `bom.commercial`. Verified by `TestFinalizedSnapshotImmutability`.
+
+Engine tests at [tests/engine/test_custom_items.py](../tests/engine/test_custom_items.py) — 14 tests across 7 classes, all using a single `custom_items_scenario` fixture that builds a catalog + a BOMItem + a price list (producing `line_total=35.00`) + a configuration with three `ConfigurationCustomItem` rows (`sequence` values 5, 0, 10 → `CUSTOM-bbbbbbbb`, `CUSTOM-aaaaaaaa`, `CUSTOM-cccccccc` respectively) so ordering, totals (expected commercial total = 35 + 325 = 360), and the `is_custom` flag can all be asserted from the same setup. Classes: `TestCustomItemsAppearInOutput`, `TestCommercialTotalIncludesCustom`, `TestCustomItemsDoNotProduceWarnings` (verified with a catalog line missing a price — warnings come only from the catalog pipeline), `TestCustomItemsDoNotAffectCompleteness`, `TestZeroPricedCustomItem` (unit_price=0 → line_total=0, still included), `TestStatelessEngineSkipsCustomItems` (calculate without `configuration_id` → no custom lines even when rows exist for that configuration), `TestCustomItemsMutationKill` (directly flipping `line_total = quantity * unit_price` to the wrong decimal product kills the test).
+
+Integration tests at [tests/integration/test_custom_items_lifecycle.py](../tests/integration/test_custom_items_lifecycle.py) — 5 tests across 4 classes using the existing lifecycle fixtures (`draft_configuration`, `lifecycle_user_headers`, `configuration_on_archived_version`, `multi_version_entity`):
+- `TestEndToEndCustomItemLifecycle`: creates DRAFT, POSTs two custom items, calls `/calculate`, asserts both appear as `is_custom=True` with correct `line_total`s (120.00 and 71.00), finalizes, re-reads `/calculate`, asserts the snapshot serves the same custom lines.
+- `TestFinalizedSnapshotImmutability` (2 tests): after finalize, mutates the underlying `ConfigurationCustomItem` row directly via `db_session` (bypassing the FINALIZED-gated API), asserts `/calculate` still returns the pre-finalize values from the snapshot. Second test deletes the row entirely — snapshot still intact.
+- `TestCloneCopiesCustomItemsWithFreshKeys`: finalizes source, clones, asserts source and clone key sets are **disjoint** but values (`description`, `unit_price`, `sequence`) are preserved. Also re-reads the source snapshot post-clone to confirm the clone operation doesn't mutate the source.
+- `TestUpgradePreservesCustomItems`: adds a custom item to a configuration on an archived version, upgrades to the published version, verifies the single row survives with its original `custom_key`, description, and unit price.
+
+Implementation notes:
+- `_append_custom_items` is a separate method rather than inlined so the conditional (`request.configuration_id is not None`) stays at the top of the pipeline and the stateless path in `/engine/calculate` remains a single-line skip.
+- Making `bom_item_id` optional is technically a breaking change to the output schema for strict consumers, but nothing internal reads the field as non-null, and Pydantic serializes `None` identically to an absent integer for JSON output of catalog lines (they always have the id populated). Documented in §6.7 of the analysis.
+- The clone endpoint reads source custom items *before* entering the transaction block. This mirrors the existing pattern for source field values — keep the transaction as narrow as possible.
+
+`ruff check .` clean. `ruff format` reformatted `tests/integration/test_custom_items_lifecycle.py` (condensed a multi-line query chain); `ruff format --check .` then clean. `mypy app/` — Success: no issues found in 56 source files. Full test suite ran once at the end: **1193 passed, 1 warning** in 1032.21s (17:12). Net suite growth over B2's 1174 baseline: +19 (14 engine + 5 integration).
+
+No deviations from plan.
+
+### 2026-04-19 — Phase B2
+
+Completed Phase B2. Shipped the nested `/configurations/{config_id}/custom-items` CRUD surface with four endpoints (list, create, update, delete), server-generated `CUSTOM-<uuid8>` keys, Pydantic-level value validation, DRAFT gating, and owner/ADMIN authorization. No engine integration yet — that lands in B3.
+
+Schemas in [app/schemas/configuration_custom_item.py](../app/schemas/configuration_custom_item.py): `ConfigurationCustomItemBase` (with a `description` `field_validator` that strips whitespace and rejects empty strings, `quantity: Decimal = Field(..., gt=0)`, `unit_price: Decimal = Field(..., ge=0)`), `ConfigurationCustomItemCreate` (adds a `model_validator(mode="before")` that silently pops any client-provided `custom_key`), `ConfigurationCustomItemUpdate` (same validator but raises on `custom_key` presence — immutable key), `ConfigurationCustomItemRead` (adds `id`, `configuration_id`, `custom_key`, and `AuditSchemaMixin`). Exported from `app/schemas/__init__.py`. `quantity > 0` and `unit_price >= 0` are enforced at both the DB level (named CHECK constraints from Phase B1: `ck_cci_quantity_positive`, `ck_cci_unit_price_nonnegative`) and the Pydantic layer — neither is bypassable alone.
+
+Router in [app/routers/configuration_custom_items.py](../app/routers/configuration_custom_items.py) with prefix `/configurations/{config_id}/custom-items` and tag `Configuration Custom Items`. Reuses existing helpers from `app.routers.configurations`: `get_configuration_or_404` (404 + ownership 403) and `require_draft_status` (409 on FINALIZED). `_generate_custom_key()` is a private helper returning `f"CUSTOM-{uuid.uuid4().hex[:8]}"`. Create sets `created_by_id`; update sets `updated_by_id`. List orders by `sequence, id` for deterministic secondary ordering. Router registered in [app/main.py](../app/main.py) alphabetically between `catalog_items` and the existing configuration routes.
+
+API tests at [tests/api/test_configuration_custom_items.py](../tests/api/test_configuration_custom_items.py) — 46 tests across 6 classes:
+- `TestCreateCustomItemHappyPath` (7 tests): happy-path create, key format (15 chars total, lowercase hex), three creates producing distinct keys, client-provided `custom_key` silently ignored, `unit_price=0` accepted, `unit_of_measure` optional, `created_by_id` persisted.
+- `TestCreateCustomItemValidation` (10 tests): parametrized over `quantity ∈ {"0", "-1", "-0.0001"}` → 422, `unit_price ∈ {"-0.01", "-1", "-100"}` → 422, missing description → 422, parametrized over `description ∈ {"", "   ", "\t\n"}` → 422, missing `quantity` / `unit_price` → 422.
+- `TestCreateCustomItemAccessControl` (6 tests): FINALIZED → 409, USER on other user's config → 403, ADMIN on any config → 201, owner USER → 201, unauthenticated → 401, missing config → 404.
+- `TestListCustomItems` (5 tests): sequence ordering (three items sorted 0→5→10 in output), empty config returns `[]`, USER on other user's config → 403, ADMIN on any config → 200, unauthenticated → 401.
+- `TestUpdateCustomItem` (9 tests): full-field update (with `custom_key` unchanged), partial update keeps other fields, `custom_key` in payload → 422, `quantity=0` → 422, `unit_price=-1` → 422, whitespace description → 422, update on FINALIZED → 409 (flipped via direct DB), missing item → 404, USER on other user's item → 403, empty patch returns current state.
+- `TestDeleteCustomItem` (6 tests): happy-path 204 with DB verification, FINALIZED → 409, missing → 404, USER on other user's item → 403, unauthenticated → 401, cascade delete on parent configuration removes custom items (verifies `ondelete="CASCADE"` + ORM `cascade="all, delete-orphan"`).
+
+Implementation notes:
+- The `_drop_custom_key` validator on `ConfigurationCustomItemCreate` uses `dict.pop(..., None)` to silently ignore client-supplied values, per §6.3.
+- The `_reject_custom_key` validator on `ConfigurationCustomItemUpdate` raises `ValueError` (→ 422) because mutating an immutable key should be an explicit error, not a silent no-op, consistent with `CatalogItemUpdate`'s `part_number` rejection.
+- FINALIZED-gating tests use `admin_owned_draft_configuration` and flip the status directly via DB update before the assertion, avoiding the full finalize path (which would require an engine calculation with matching fields). The guard being tested is `require_draft_status`, not the finalization flow itself.
+
+`ruff check .` clean. `ruff format` reformatted both new files (whitespace/line-length); `ruff format --check .` then clean. `mypy app/` — Success: no issues found in 56 source files (+2 from B1's 54: the new router and schema modules). Full test suite ran once at the end: **1174 passed, 1 warning** in 1016.16s. Net suite growth over B1's 1128 baseline: +46 tests (matches the new file).
+
+No deviations from plan. Ready to start B3 pending user approval.
+
+### 2026-04-19 — Phase B1
+
+Completed Phase B1. Added the `ConfigurationCustomItem` SQLAlchemy model and the Alembic migration that creates the `configuration_custom_items` table. No code references the new table yet — the API surface arrives in B2, the engine integration in B3 — so the suite count stays at 1128, matching A6.
+
+Model in [app/models/domain.py](../app/models/domain.py): `ConfigurationCustomItem` inherits `Base` and `AuditMixin`. Columns match §6.1 — `id` integer PK, `configuration_id` `String(36)` FK to `configurations.id` with `ondelete="CASCADE"`, `custom_key` `String(20)` non-nullable (uniqueness declared as a named `UniqueConstraint("custom_key", name="uq_cci_custom_key")` in `__table_args__` rather than `unique=True` on the column, matching the `CatalogItem` pattern for stable autogenerate diffs), `description` `Text` non-nullable, `quantity` and `unit_price` `Numeric(12, 4)` non-nullable, `unit_of_measure` `String(20)` nullable, `sequence` `Integer` non-nullable with `server_default="0"`. `__table_args__` also carries both named CHECK constraints (`ck_cci_quantity_positive` / `ck_cci_unit_price_nonnegative`) and the regular `ix_cci_configuration` index. `Configuration` gained a `custom_items: Mapped[list["ConfigurationCustomItem"]] = relationship(back_populates="configuration", cascade="all, delete-orphan")` backref. `__repr__` and `__str__` on the new model follow the project style (`<ConfigurationCustomItem id=… custom_key='…' configuration_id=…>` and `"{custom_key}: {description}"`).
+
+Migration [alembic/versions/0d7707c387f6_add_configuration_custom_items_table.py](../alembic/versions/0d7707c387f6_add_configuration_custom_items_table.py) (down_revision `e7e71e4e3229`): single `op.create_table` with all columns, both named `sa.CheckConstraint` entries, the FK to `configurations.id` with `ondelete="CASCADE"`, the FKs to `users.id` for the audit columns, the PK, and the named `UniqueConstraint("custom_key", name="uq_cci_custom_key")`. Two indexes: `ix_cci_configuration` on `configuration_id` for list-by-configuration queries, and the standard `ix_configuration_custom_items_id` on the PK. Downgrade drops the indexes then the table. Hand-edited the autogen output to match the repo style — `from collections.abc import Sequence`, `str | Sequence[str] | None` type hints, and removal of the `# ### auto generated ###` markers — consistent with the earlier catalog revisions.
+
+Verified migration round-trip on a throwaway `b1_test` database created inside the running `rule_engine_db` container. `alembic upgrade head` runs cleanly through all six revisions. `psql \d configuration_custom_items` confirms the shipped shape: all columns nullable/not-nullable correctly, both named CHECK constraints present, `uq_cci_custom_key` unique constraint present, `ix_cci_configuration` regular index present, cascading FK to `configurations(id)`. `alembic downgrade -1` drops the table cleanly. Re-running `alembic upgrade head` followed by `alembic revision --autogenerate --splice` on the upgraded DB produced an empty revision (both `upgrade` and `downgrade` bodies are just `pass`), confirming the model and the migration are exactly in sync — deleted that verification revision and dropped the throwaway DB.
+
+`ruff check .` clean. `ruff format --check .` reformatted [app/models/domain.py](../app/models/domain.py) (one whitespace nit from the insertion) — `ruff format --check .` then clean. `mypy app/` — Success: no issues found in 54 source files. Full test suite ran once at the end: **1128 passed, 1 warning** in 959.84s. Suite count unchanged from A6's 1128 baseline, matching the phase spec ("the new table is unreferenced by any test yet").
+
+No deviations from plan. Ready to start B2 pending user approval.
 
 ### 2026-04-19 — Phase A6
 
