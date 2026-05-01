@@ -14,6 +14,7 @@ from app.routers import (
     catalog_items,
     configuration_custom_items,
     configurations,
+    engineering_template_items,
     entities,
     fields,
     price_list_items,
@@ -78,6 +79,7 @@ app.include_router(configurations.router)
 app.include_router(price_lists.router)
 app.include_router(price_list_items.router)
 app.include_router(catalog_items.router)
+app.include_router(engineering_template_items.router)
 app.include_router(configuration_custom_items.router)
 
 

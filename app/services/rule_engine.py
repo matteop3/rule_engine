@@ -26,6 +26,7 @@ from app.models.domain import (
     VersionStatus,
 )
 from app.schemas.engine import (
+    BOMFlatLineItem,
     BOMLineItem,
     BOMOutput,
     CalculationRequest,
@@ -1279,40 +1280,61 @@ class RuleEngineService:
 
         Items sharing the same part_number, parent context, and BOM type are
         merged into a single representative item (the first by sequence order).
-        Quantities are summed. TECHNICAL and COMMERCIAL items with the same
-        part_number remain separate.
+        Quantities are summed across the group. TECHNICAL and COMMERCIAL items
+        with the same part_number remain separate.
 
-        Returns a deduplicated item list and updated resolved_quantities map.
+        Children of every non-representative member of a group are re-parented
+        under the surviving representative and re-aggregated recursively, so
+        identical children of merged siblings collapse into a single line with
+        summed quantity. Re-parenting builds new `CachedBOMItem` instances via
+        `dataclasses.replace`; the cache itself is untouched.
+
+        Returns a deduplicated item list and updated resolved_quantities map,
+        ordered depth-first so that `_build_bom_output` attaches children to
+        parents in sequence order.
         """
         from collections import OrderedDict
+        from dataclasses import replace
 
-        # Group by (part_number, parent_bom_item_id, bom_type) preserving sequence order
-        groups: OrderedDict[tuple[str, int | None, str], list[CachedBOMItem]] = OrderedDict()
+        children_of: dict[int | None, list[CachedBOMItem]] = {}
         for item in bom_items:
             if item.id not in included_set:
                 continue
-            key = (item.part_number, item.parent_bom_item_id, item.bom_type)
-            groups.setdefault(key, []).append(item)
+            children_of.setdefault(item.parent_bom_item_id, []).append(item)
 
-        new_included: set[int] = set()
+        new_items: list[CachedBOMItem] = []
         new_quantities: dict[int, Decimal] = {}
-        deduplicated: list[CachedBOMItem] = []
 
-        for group in groups.values():
-            representative = group[0]
-            total_quantity = Decimal(sum(resolved_quantities[item.id] for item in group))
+        def _walk_level(level_items: list[CachedBOMItem]) -> None:
+            level_sorted = sorted(level_items, key=lambda x: x.sequence)
+            groups: OrderedDict[tuple[str, str], list[CachedBOMItem]] = OrderedDict()
+            for sib in level_sorted:
+                groups.setdefault((sib.part_number, sib.bom_type), []).append(sib)
 
-            deduplicated.append(representative)
-            new_included.add(representative.id)
-            new_quantities[representative.id] = total_quantity
+            for group in groups.values():
+                representative = group[0]
+                total_quantity = sum((resolved_quantities[item.id] for item in group), Decimal("0"))
 
-        # Update the sets in place
+                merged_children: list[CachedBOMItem] = []
+                for member in group:
+                    for kid in children_of.get(member.id, []):
+                        if kid.parent_bom_item_id != representative.id:
+                            kid = replace(kid, parent_bom_item_id=representative.id)
+                        merged_children.append(kid)
+
+                new_items.append(representative)
+                new_quantities[representative.id] = Decimal(total_quantity)
+
+                _walk_level(merged_children)
+
+        _walk_level(children_of.get(None, []))
+
         included_set.clear()
-        included_set.update(new_included)
+        included_set.update(item.id for item in new_items)
         resolved_quantities.clear()
         resolved_quantities.update(new_quantities)
 
-        return deduplicated
+        return new_items
 
     def _build_bom_output(
         self,
@@ -1406,12 +1428,56 @@ class RuleEngineService:
         # Compute commercial total (partial sum of non-null line_totals)
         commercial_total = self._sum_line_totals(commercial)
 
+        technical_flat = self._build_technical_flat(technical, catalog)
+
         return BOMOutput(
             technical=technical,
             commercial=commercial,
+            technical_flat=technical_flat,
             commercial_total=commercial_total,
             warnings=warnings,
         )
+
+    def _build_technical_flat(
+        self,
+        technical_tree: list[BOMLineItem],
+        catalog_map: dict[str, "CatalogItem"],
+    ) -> list[BOMFlatLineItem]:
+        """
+        Cascade-aggregate the technical sub-tree into an alphabetic flat list.
+
+        For each node, the contribution is `ancestor_product × node.quantity`,
+        where `ancestor_product` is the running product of all ancestor
+        quantities from the root down to the parent (1 at the roots). Same
+        `part_number` appearing in multiple branches is summed across them.
+
+        Returns one `BOMFlatLineItem` per distinct `part_number`, sorted by
+        `part_number` ascending. Empty when the technical tree is empty.
+        """
+        totals: dict[str, Decimal] = {}
+
+        def _walk(nodes: list[BOMLineItem], ancestor_product: Decimal) -> None:
+            for node in nodes:
+                contribution = ancestor_product * node.quantity
+                totals[node.part_number] = totals.get(node.part_number, Decimal("0")) + contribution
+                if node.children:
+                    _walk(node.children, contribution)
+
+        _walk(technical_tree, Decimal("1"))
+
+        flat: list[BOMFlatLineItem] = []
+        for part_number in sorted(totals):
+            catalog_entry = catalog_map.get(part_number)
+            flat.append(
+                BOMFlatLineItem(
+                    part_number=part_number,
+                    description=catalog_entry.description if catalog_entry is not None else None,
+                    category=catalog_entry.category if catalog_entry is not None else None,
+                    unit_of_measure=catalog_entry.unit_of_measure if catalog_entry is not None else None,
+                    total_quantity=totals[part_number],
+                )
+            )
+        return flat
 
     def _sum_line_totals(self, items: list[BOMLineItem]) -> Decimal | None:
         """Recursively sums line_total across a list of BOMLineItems and their children."""

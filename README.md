@@ -69,6 +69,18 @@ A **domain-agnostic rule engine** that separates *what* can be configured from *
 - **Conditional inclusion**: BOM items included/excluded based on field conditions (OR logic across rules)
 - **Dynamic quantities**: Resolve from numeric field values or use static defaults
 - **Line totals & aggregation**: Auto-computed `line_total` and `commercial_total` with part-number aggregation
+- **Aggregated `technical_flat` view**: Every calculation carries an alphabetically sorted, cross-branch aggregated technical material list with cascade-multiplied total quantities (`ancestor_product × node.quantity`), answering "what materials does one configuration consume?". Empty when the technical tree is empty; frozen into `Configuration.snapshot` automatically at finalization.
+
+### Engineering BOM Templates
+- **Composite-part authoring on the catalog**: A catalog item becomes a "composite part" the moment any `EngineeringTemplateItem` row references it as `parent_part_number` — no header table, no `is_composite` flag. Removing all template rows returns the part to leaf status. Inspired by SAP's separation of `Material Master` and `Reference BOM`.
+- **Snap-detach materialization**: `POST /bom-items` with `explode_from_template=true` reads the template, recursively expands it down to leaves (subject to depth and node-count limits), and writes ordinary `BOMItem` rows on a target DRAFT `EntityVersion` in one transaction. The produced rows lose the link to the template — subsequent template edits do not propagate to already-materialized versions, which is the correct semantics for an authoring-time tool.
+- **DAG enforcement**: Cycle detection runs on every template POST (`would_create_cycle` DFS) and a PostgreSQL transactional advisory lock (`pg_advisory_xact_lock`) serializes mutations cluster-wide. HTTP 409 with `cycle_path: [parent, ..., parent]` on cycle, HTTP 409 on duplicate `(parent, child)` pair (UNIQUE), HTTP 422 on attempted edits to immutable graph endpoints (`parent_part_number` / `child_part_number` are immutable on PATCH).
+- **Per-edge and per-instance opt-out**: `EngineeringTemplateItem.suppress_child_explosion` lets a template author treat a child as opaque ("don't expand its own template here"); the materialized child gets `BOMItem.suppress_auto_explode=true` automatically. The `suppress_auto_explode` flag also exists for future re-explode endpoints to skip rows the author flagged as leaves.
+- **Operational limits**: `MAX_BOM_EXPLOSION_DEPTH=32` and `MAX_BOM_EXPLOSION_NODES=500` (both env-overridable). Breaches return HTTP 413 with `{"limit", "max", "reached"}`. The check is a runtime safety net — it fires even if the cycle detector were ever bypassed.
+- **OBSOLETE rejection at materialization**: A template can reference an OBSOLETE part (authoring is not gated by lifecycle) but materialization rejects the request with HTTP 409 listing every offending part number, computed by walking the full expansion before raising.
+- **Preview-explosion endpoint**: `GET /catalog-items/{p}/preview-explosion` (any authenticated) performs a dry-run that returns `{tree: [<root with descendants>], flat: [...], total_nodes, max_depth_reached}` with catalog metadata joined onto every entry — same payload shape as materialization, no DB writes.
+- **Catalog usage endpoint**: `GET /catalog-items/{p}/usage` (ADMIN/AUTHOR) returns `templates_as_parent`, `templates_as_child`, and `bom_items` — the where-used graph for impact assessment before catalog mutations.
+- **Extended DELETE protection**: `DELETE /catalog-items/{id}` now also blocks on `EngineeringTemplateItem` references (parent or child). The 409 message names every reference source: `"... referenced by N BOM item(s), M price list item(s), and K engineering template item(s)"`.
 
 ### Catalog Management
 - **Single source of truth for part identity**: `CatalogItem` holds canonical `description`, `category`, and `unit_of_measure` for every part referenced by BOM items and price list items. Inspired by SAP Material Master / Oracle Item Master: a part number is an entity, not a free string.
@@ -312,6 +324,8 @@ erDiagram
     BOMItem ||--o{ BOMItemRule : "has rules"
     BOMItem }o--o| Field : "quantity from"
     BOMItem }o--|| CatalogItem : "part_number FK"
+    EngineeringTemplateItem }o--|| CatalogItem : "parent_part_number FK"
+    EngineeringTemplateItem }o--|| CatalogItem : "child_part_number FK"
     PriceList ||--o{ PriceListItem : "contains"
     PriceListItem }o--|| CatalogItem : "part_number FK"
     Configuration }o--o| PriceList : "uses"
@@ -380,6 +394,16 @@ erDiagram
         decimal quantity
         int quantity_from_field_id FK "nullable"
         int sequence
+        bool suppress_auto_explode "default false"
+    }
+
+    EngineeringTemplateItem {
+        int id PK
+        string parent_part_number FK "catalog_items.part_number"
+        string child_part_number FK "catalog_items.part_number"
+        decimal quantity "CHECK > 0"
+        int sequence "default 0, CHECK >= 0"
+        bool suppress_child_explosion "default false"
     }
 
     CatalogItem {
@@ -598,14 +622,24 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 | POST | `/catalog-items` | Create catalog item (ADMIN/AUTHOR; 409 on duplicate `part_number`) |
 | GET | `/catalog-items/{id}` | Get catalog item by surrogate id |
 | GET | `/catalog-items/by-part-number/{part_number}` | Get catalog item by business key |
+| GET | `/catalog-items/{part_number}/usage` | Where-used graph: `templates_as_parent`, `templates_as_child`, `bom_items` (ADMIN/AUTHOR) |
+| GET | `/catalog-items/{part_number}/preview-explosion` | Dry-run materialization: tree + flat + metrics, no DB writes (any authenticated; 413 on limit overflow, 409 on OBSOLETE) |
 | PATCH | `/catalog-items/{id}` | Update description, unit_of_measure, category, status, notes (422 if `part_number` in payload) |
-| DELETE | `/catalog-items/{id}` | Delete (409 if referenced by BOM or price list items) |
+| DELETE | `/catalog-items/{id}` | Delete (409 if referenced by BOM, price list, or engineering template items) |
+
+### Engineering Template
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/catalog-items/{part_number}/template` | List direct-child template rows ordered by `(sequence, child_part_number)` (any authenticated) |
+| POST | `/catalog-items/{part_number}/template/items` | Add a child to the template (ADMIN/AUTHOR; 409 on cycle with `cycle_path`, 409 on duplicate `(parent, child)`, 409 on missing child catalog item) |
+| PATCH | `/catalog-items/{part_number}/template/items/{item_id}` | Update `quantity`, `sequence`, `suppress_child_explosion` only (ADMIN/AUTHOR; 422 if `parent_part_number` or `child_part_number` in payload) |
+| DELETE | `/catalog-items/{part_number}/template/items/{item_id}` | Remove a single child from the template (ADMIN/AUTHOR) |
 
 ### BOM Items & BOM Item Rules
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/bom-items?entity_version_id={id}` | List BOM items |
-| POST | `/bom-items` | Create BOM item (DRAFT only; rejects unknown or OBSOLETE `part_number` with 409) |
+| POST | `/bom-items` | Create BOM item (DRAFT only; rejects unknown or OBSOLETE `part_number` with 409). With `explode_from_template=true` (TECHNICAL only): materializes the engineering template into a hierarchy of BOMItems and returns the root with nested `children`. 422 if no template, 413 on limit overflow, 409 on OBSOLETE in expansion |
 | PATCH | `/bom-items/{id}` | Update BOM item (DRAFT only; same catalog validation as create) |
 | DELETE | `/bom-items/{id}` | Delete BOM item (DRAFT only) |
 | GET | `/bom-item-rules?entity_version_id={id}` | List BOM item rules |
@@ -658,13 +692,14 @@ Full interactive documentation available at `/docs` (Swagger UI) or `/redoc` whe
 
 ## Testing
 
-The project includes 1193+ tests across multiple categories:
+The project includes 1340+ tests across multiple categories:
 
 | Category | Location | Description |
 |----------|----------|-------------|
-| API Tests | `tests/api/` | CRUD operations, RBAC, lifecycle, input validation |
-| Engine Tests | `tests/engine/` | Rule evaluation, operators, SKU, BOM edge cases, mutation kills |
-| Integration | `tests/integration/` | End-to-end workflows, BOM lifecycle |
+| API Tests | `tests/api/` | CRUD operations, RBAC, lifecycle, input validation, engineering template CRUD, catalog usage, preview-explosion, BOM materialization |
+| Engine Tests | `tests/engine/` | Rule evaluation, operators, SKU, BOM edge cases, BOM aggregation siblings fix, BOMOutput.technical_flat, mutation kills |
+| Service Tests | `tests/services/` | Engineering template service: cycle detection, advisory lock, recursive explosion, materialization |
+| Integration | `tests/integration/` | End-to-end workflows, BOM lifecycle, engineering BOM workflow (preview → materialize → finalize → clone → upgrade) |
 | Performance | `tests/performance/` | Benchmarks |
 | Stress | `tests/stress/` | Concurrency, race conditions |
 
@@ -770,6 +805,7 @@ rule_engine/
 - [ADR: Price List](docs/ADR_PRICE_LIST.md) - Centralized pricing with temporal validity, graceful resolution, and finalize-time lock
 - [ADR: Catalog Item](docs/ADR_CATALOG_ITEM.md) - Canonical part identity and metadata; supersedes `description`/`category`/`unit_of_measure` on BOMItem and `description` on PriceListItem
 - [ADR: Configuration Custom Items](docs/ADR_CUSTOM_ITEMS.md) - Per-configuration commercial-only escape-hatch lines with server-generated `CUSTOM-<uuid8>` keys
+- [ADR: Engineering BOM](docs/ADR_ENGINEERING_BOM.md) - Engineering BOM templates attached to catalog items, snap-detach materialization with depth/node limits and OBSOLETE rejection, `technical_flat` cascade-aggregated view, and the corrected aggregation algorithm for duplicated sibling representatives
 
 ---
 

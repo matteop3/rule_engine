@@ -45,6 +45,8 @@ TECHNICAL BOM items support hierarchical nesting via a self-referential `parent_
 
 **Rationale**: In ERP/CPQ standards (SAP, Oracle, Tacton), the technical BOM represents the manufacturing structure (which naturally nests), while the commercial BOM represents the pricing structure (a flat list of priced line items on a quote or invoice). Enforcing COMMERCIAL-is-root at the CRUD layer eliminates an entire class of output ambiguity.
 
+The hierarchy is authored two ways: hand-written `BOMItem` rows on a DRAFT `EntityVersion`, or **materialization from an engineering template** attached to the part's `CatalogItem` — see [ADR: Engineering BOM](ADR_ENGINEERING_BOM.md). Both paths produce the same `BOMItem` shape; the calculation engine cannot tell them apart.
+
 ### 5. Two-enum model without BOTH
 
 A component that appears in both the technical and commercial BOM is modeled as **two separate BOM items** with the same `part_number` but different `bom_type` values, rather than a single item with `bom_type = BOTH`.
@@ -56,6 +58,8 @@ A component that appears in both the technical and commercial BOM is modeled as 
 When multiple BOM items share the same `part_number` and parent, the engine aggregates them by summing quantities. The aggregation key is `(part_number, parent_bom_item_id, bom_type)`, ensuring TECHNICAL and COMMERCIAL items with the same part number remain separate.
 
 **Rationale**: A TECHNICAL item "BOLT-M8" (no pricing) and a COMMERCIAL item "BOLT-M8" ($0.50 each) represent different concerns and must not be merged.
+
+Aggregation also re-parents the children of every non-representative member of a merged sibling group under the surviving representative, then recurses so identical children of merged parents collapse into one line with summed quantity. Without re-parenting, those children kept their original `parent_bom_item_id` (pointing to a now-excluded sibling) and surfaced as spurious roots in `technical`. See [ADR: Engineering BOM](ADR_ENGINEERING_BOM.md) decision 15 for the full algorithm.
 
 ### 7. ~~COMMERCIAL price consistency validation~~ (Superseded)
 
@@ -69,7 +73,19 @@ When multiple BOM items share the same `part_number` and parent, the engine aggr
 
 See [ADR: Catalog Item](ADR_CATALOG_ITEM.md) for the full design.
 
-### 9. Position in the evaluation waterfall
+### 9. Cascade-aggregated `technical_flat` view
+
+Every `BOMOutput` carries a `technical_flat: list[BOMFlatLineItem]` field alongside the indented `technical` tree. It is an alphabetically sorted, cross-branch aggregated view computed by the engine on every calculation:
+
+- For each technical node, the contribution is `ancestor_product × node.quantity`, where `ancestor_product` is `1` at the roots and `ancestor_product × parent.quantity` at descendants.
+- Same `part_number` reachable through multiple branches sums into a single row.
+- The output is sorted by `part_number`; the field is empty when the technical tree is empty.
+
+`BOMFlatLineItem` carries the same metadata as `BOMLineItem` minus pricing and hierarchy: `part_number`, `description`, `category`, `unit_of_measure`, `total_quantity`. Catalog metadata is sourced from the in-memory `catalog_map` already loaded for the indented tree — no extra DB roundtrip.
+
+**Rationale**: The indented tree intentionally records `BOMItem.quantity` as **stoichiometric, per unit of parent** (preserving the existing semantics and avoiding invasive engine changes). That representation answers "how many of this child go into one parent?" but not "how many of this leaf does one configuration consume?". The flat view answers the procurement question in O(tree size) at calculation time, with snapshot immunity inheriting from the existing `Configuration.snapshot` mechanism — `technical_flat` survives finalization automatically.
+
+### 10. Position in the evaluation waterfall
 
 BOM evaluation runs **after** SKU generation and **after** all field states are resolved. It is a post-calculation output layer that reads the resolved field states but does not modify them.
 
@@ -102,3 +118,4 @@ BOM evaluation runs **after** SKU generation and **after** all field states are 
 - [ADR: Re-hydration](ADR_REHYDRATION.md) — Why configurations store raw inputs and recalculate on read
 - [ADR: Price List](ADR_PRICE_LIST.md) — Centralized pricing via price list (supersedes per-item `unit_price` on BOM items)
 - [ADR: Catalog Item](ADR_CATALOG_ITEM.md) — Canonical part identity and metadata (supersedes `description`, `category`, `unit_of_measure` on BOM items)
+- [ADR: Engineering BOM](ADR_ENGINEERING_BOM.md) — Engineering templates as the authoring path for hierarchical TECHNICAL BOMs, the corrected aggregation algorithm, and the `technical_flat` view

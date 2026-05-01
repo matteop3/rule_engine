@@ -1945,7 +1945,7 @@
           "BOM Items"
         ],
         "summary": "Create Bom Item",
-        "description": "Create a BOM item attached to a specific entity version.\n\nRestrictions:\n    - The version must be DRAFT\n    - quantity must be > 0\n    - quantity_from_field_id must reference a NUMBER field in the same version\n    - parent_bom_item_id must reference an item in the same version\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create BOM items",
+        "description": "Create a BOM item attached to a specific entity version.\n\nWhen `explode_from_template=true`, the part is required to be\n`bom_type=TECHNICAL` with a non-empty engineering template; the server\nmaterializes the full sub-tree of `BOMItem` rows in a single\ntransaction and returns the root with its descendants nested in\n`children`.\n\nRestrictions:\n    - The version must be DRAFT\n    - quantity must be > 0\n    - quantity_from_field_id must reference a NUMBER field in the same version\n    - parent_bom_item_id must reference an item in the same version\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create BOM items",
         "operationId": "create_bom_item_bom_items__post",
         "security": [
           {
@@ -1968,7 +1968,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BOMItemRead"
+                  "$ref": "#/components/schemas/BOMItemReadWithChildren"
                 }
               }
             }
@@ -3554,6 +3554,874 @@
         }
       }
     },
+    "/catalog-items/": {
+      "get": {
+        "tags": [
+          "Catalog Items"
+        ],
+        "summary": "List Catalog Items",
+        "description": "List catalog items, optionally filtered by `status`.\n\nOrdered by `part_number` ASC.\n\nAccess Control:\n    - Any authenticated user can list catalog items",
+        "operationId": "list_catalog_items_catalog_items__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CatalogItemStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by lifecycle status",
+              "title": "Status"
+            },
+            "description": "Filter by lifecycle status"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "Maximum number of records to return",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogItemRead"
+                  },
+                  "title": "Response List Catalog Items Catalog Items  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Catalog Items"
+        ],
+        "summary": "Create Catalog Item",
+        "description": "Create a new catalog item.\n\nValidation:\n    - `part_number` must be unique (HTTP 409 on duplicate)\n\nAccess Control:\n    - Only ADMIN and AUTHOR can create catalog items",
+        "operationId": "create_catalog_item_catalog_items__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogItemCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog-items/{item_id}": {
+      "get": {
+        "tags": [
+          "Catalog Items"
+        ],
+        "summary": "Read Catalog Item",
+        "description": "Retrieve a single catalog item by its surrogate id.\n\nAccess Control:\n    - Any authenticated user can read catalog items",
+        "operationId": "read_catalog_item_catalog_items__item_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Catalog Items"
+        ],
+        "summary": "Update Catalog Item",
+        "description": "Update a catalog item.\n\nThe `part_number` field is the immutable business key and cannot be\nmodified; any payload containing `part_number` is rejected with\nHTTP 422 at the schema layer. To retire a part, set `status` to\nOBSOLETE and create a new entry with the desired number.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update catalog items",
+        "operationId": "update_catalog_item_catalog_items__item_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogItemUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Catalog Items"
+        ],
+        "summary": "Delete Catalog Item",
+        "description": "Delete a catalog item.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can delete catalog items",
+        "operationId": "delete_catalog_item_catalog_items__item_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog-items/{part_number}/usage": {
+      "get": {
+        "tags": [
+          "Catalog Items"
+        ],
+        "summary": "Read Catalog Item Usage",
+        "description": "Where-used view for a catalog item.\n\nReturns the engineering template rows in which the part appears as parent\nor as child, plus the `BOMItem` rows that reference it (each with its\n`entity_version_id`). Used by authors to assess the blast radius of a\ncatalog mutation before acting.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can read usage data.",
+        "operationId": "read_catalog_item_usage_catalog_items__part_number__usage_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "part_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Part Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemUsageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog-items/by-part-number/{part_number}": {
+      "get": {
+        "tags": [
+          "Catalog Items"
+        ],
+        "summary": "Read Catalog Item By Part Number",
+        "description": "Retrieve a single catalog item by its business key (`part_number`).\n\nAccess Control:\n    - Any authenticated user can read catalog items",
+        "operationId": "read_catalog_item_by_part_number_catalog_items_by_part_number__part_number__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "part_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Part Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog-items/{part_number}/template": {
+      "get": {
+        "tags": [
+          "Engineering Template"
+        ],
+        "summary": "List Template Items",
+        "description": "Return every direct-child template row attached to a catalog item.\n\nResults are ordered by `(sequence, child_part_number)` so siblings appear\nin the order the author intended, with alphabetic tie-breaking. An empty\nlist is returned when the part has no template.\n\nAccess Control:\n    - Any authenticated user can read template items.",
+        "operationId": "list_template_items_catalog_items__part_number__template_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "part_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Part Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EngineeringTemplateItemRead"
+                  },
+                  "title": "Response List Template Items Catalog Items  Part Number  Template Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog-items/{part_number}/template/items": {
+      "post": {
+        "tags": [
+          "Engineering Template"
+        ],
+        "summary": "Create Template Item",
+        "description": "Attach a child to the engineering template of a catalog item.\n\nValidation:\n    - Parent catalog item must exist (HTTP 404).\n    - Child catalog item must exist (HTTP 409).\n    - Edge must not close a cycle in the template graph (HTTP 409).\n    - Pair `(parent_part_number, child_part_number)` must be unique (HTTP 409).\n\nConcurrency:\n    Acquires the engineering-template-graph advisory lock so that two\n    concurrent edge insertions cannot together construct a cycle that\n    each would have considered safe in isolation.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can attach template items.",
+        "operationId": "create_template_item_catalog_items__part_number__template_items_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "part_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Part Number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EngineeringTemplateItemCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineeringTemplateItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog-items/{part_number}/template/items/{item_id}": {
+      "patch": {
+        "tags": [
+          "Engineering Template"
+        ],
+        "summary": "Update Template Item",
+        "description": "Update the mutable fields of a template item.\n\nMutable: `quantity`, `sequence`, `suppress_child_explosion`. Any payload\nthat includes `parent_part_number` or `child_part_number` is rejected\nwith HTTP 422 at the schema layer.\n\nConcurrency:\n    Acquires the engineering-template-graph advisory lock for symmetry\n    with POST/DELETE even though the mutable fields cannot change graph\n    topology.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can update template items.",
+        "operationId": "update_template_item_catalog_items__part_number__template_items__item_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "part_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Part Number"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EngineeringTemplateItemUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineeringTemplateItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Engineering Template"
+        ],
+        "summary": "Delete Template Item",
+        "description": "Remove a single child from the engineering template of a catalog item.\n\nConcurrency:\n    Acquires the engineering-template-graph advisory lock for symmetry\n    with POST/PATCH.\n\nAccess Control:\n    - Only ADMIN and AUTHOR can remove template items.",
+        "operationId": "delete_template_item_catalog_items__part_number__template_items__item_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "part_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Part Number"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog-items/{part_number}/preview-explosion": {
+      "get": {
+        "tags": [
+          "Engineering Template"
+        ],
+        "summary": "Preview Explosion",
+        "description": "Dry-run materialization of a catalog part's engineering template.\n\nReturns the indented expansion (`tree`, a single root inside a list),\nthe cascade-aggregated descendant material list (`flat`, alphabetic by\n`part_number`), and the metrics `total_nodes` / `max_depth_reached`.\nCatalog metadata (`description`, `category`, `unit_of_measure`) is\njoined onto every entry of both `tree` and `flat`.\n\nA part with no template returns a single root node, an empty `flat`,\n`total_nodes=1`, `max_depth_reached=0`. Limit overflow returns HTTP 413\nand OBSOLETE-part presence returns HTTP 409, mirroring the\nmaterialization endpoint.\n\nAccess Control:\n    - Any authenticated user can preview.",
+        "operationId": "preview_explosion_catalog_items__part_number__preview_explosion_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "part_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Part Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewExplosionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configurations/{config_id}/custom-items/": {
+      "get": {
+        "tags": [
+          "Configuration Custom Items"
+        ],
+        "summary": "List Custom Items",
+        "description": "List custom items on a configuration, ordered by ``sequence``.\n\nAccess Control:\n    - Only the configuration owner or ADMIN can list its custom items.",
+        "operationId": "list_custom_items_configurations__config_id__custom_items__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConfigurationCustomItemRead"
+                  },
+                  "title": "Response List Custom Items Configurations  Config Id  Custom Items  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Configuration Custom Items"
+        ],
+        "summary": "Create Custom Item",
+        "description": "Create a custom item on a DRAFT configuration.\n\nThe server generates `custom_key` as ``CUSTOM-<uuid8>`` and ignores\nany value supplied by the client. Custom items are commercial-only\nlines \u2014 they have no technical BOM equivalent.\n\nRestrictions:\n    - Configuration must be in DRAFT status (HTTP 409 on FINALIZED).\n    - `quantity` must be > 0 and `unit_price` must be >= 0.\n\nAccess Control:\n    - Only the configuration owner or ADMIN can create custom items.",
+        "operationId": "create_custom_item_configurations__config_id__custom_items__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationCustomItemCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationCustomItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configurations/{config_id}/custom-items/{custom_item_id}": {
+      "patch": {
+        "tags": [
+          "Configuration Custom Items"
+        ],
+        "summary": "Update Custom Item",
+        "description": "Update a custom item on a DRAFT configuration.\n\nThe `custom_key` is immutable and cannot be changed; any payload\ncontaining `custom_key` is rejected at the schema layer.\n\nRestrictions:\n    - Configuration must be in DRAFT status (HTTP 409 on FINALIZED).\n\nAccess Control:\n    - Only the configuration owner or ADMIN can update custom items.",
+        "operationId": "update_custom_item_configurations__config_id__custom_items__custom_item_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          },
+          {
+            "name": "custom_item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Custom Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationCustomItemUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationCustomItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Configuration Custom Items"
+        ],
+        "summary": "Delete Custom Item",
+        "description": "Delete a custom item from a DRAFT configuration.\n\nRestrictions:\n    - Configuration must be in DRAFT status (HTTP 409 on FINALIZED).\n\nAccess Control:\n    - Only the configuration owner or ADMIN can delete custom items.",
+        "operationId": "delete_custom_item_configurations__config_id__custom_items__custom_item_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          },
+          {
+            "name": "custom_item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Custom Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/": {
       "get": {
         "summary": "Health Check",
@@ -3579,14 +4447,10 @@
   },
   "components": {
     "schemas": {
-      "BOMItemCreate": {
+      "BOMFlatLineItem": {
         "properties": {
-          "bom_type": {
-            "$ref": "#/components/schemas/BOMType"
-          },
           "part_number": {
             "type": "string",
-            "maxLength": 100,
             "title": "Part Number"
           },
           "description": {
@@ -3603,14 +4467,48 @@
           "category": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 100
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Category"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "total_quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Quantity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part_number",
+          "total_quantity"
+        ],
+        "title": "BOMFlatLineItem",
+        "description": "Aggregated technical line, alphabetically sorted with cascade-multiplied\ntotal quantity.\n\nComputed by the engine on every calculation as a top-down view of the\nmaterials a single configuration consumes; mirrors the structure of\n`BOMLineItem` minus pricing and hierarchy."
+      },
+      "BOMItemCreate": {
+        "properties": {
+          "bom_type": {
+            "$ref": "#/components/schemas/BOMType"
+          },
+          "part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Part Number"
           },
           "quantity": {
             "anyOf": [
@@ -3636,18 +4534,6 @@
             ],
             "title": "Quantity From Field Id"
           },
-          "unit_of_measure": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 20
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Of Measure"
-          },
           "sequence": {
             "type": "integer",
             "title": "Sequence",
@@ -3667,6 +4553,11 @@
               }
             ],
             "title": "Parent Bom Item Id"
+          },
+          "explode_from_template": {
+            "type": "boolean",
+            "title": "Explode From Template",
+            "default": false
           }
         },
         "type": "object",
@@ -3676,7 +4567,7 @@
           "entity_version_id"
         ],
         "title": "BOMItemCreate",
-        "description": "Schema for creating a BOM item (POST)."
+        "description": "Schema for creating a BOM item (POST).\n\n`explode_from_template=true` instructs the server to materialize the\nengineering template of `part_number` into a hierarchy of BOMItems with\nthis row as the root. Requires `bom_type=TECHNICAL` and a non-empty\ntemplate on the part. The response is the root with its full sub-tree."
       },
       "BOMItemRead": {
         "properties": {
@@ -3687,29 +4578,6 @@
             "type": "string",
             "maxLength": 100,
             "title": "Part Number"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "category": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Category"
           },
           "quantity": {
             "type": "string",
@@ -3727,18 +4595,6 @@
               }
             ],
             "title": "Quantity From Field Id"
-          },
-          "unit_of_measure": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 20
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Of Measure"
           },
           "sequence": {
             "type": "integer",
@@ -3763,6 +4619,11 @@
               }
             ],
             "title": "Parent Bom Item Id"
+          },
+          "suppress_auto_explode": {
+            "type": "boolean",
+            "title": "Suppress Auto Explode",
+            "default": false
           }
         },
         "type": "object",
@@ -3774,6 +4635,80 @@
         ],
         "title": "BOMItemRead",
         "description": "Schema for reading BOM item data (GET responses)."
+      },
+      "BOMItemReadWithChildren": {
+        "properties": {
+          "bom_type": {
+            "$ref": "#/components/schemas/BOMType"
+          },
+          "part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Part Number"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity",
+            "default": "1"
+          },
+          "quantity_from_field_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity From Field Id"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence",
+            "default": 0
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          },
+          "parent_bom_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Bom Item Id"
+          },
+          "suppress_auto_explode": {
+            "type": "boolean",
+            "title": "Suppress Auto Explode",
+            "default": false
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/BOMItemReadWithChildren"
+            },
+            "type": "array",
+            "title": "Children"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bom_type",
+          "part_number",
+          "id",
+          "entity_version_id"
+        ],
+        "title": "BOMItemReadWithChildren",
+        "description": "Read schema that nests the recursive `children` sub-tree.\n\nReturned by `POST /bom-items` when `explode_from_template=true` so the\ncaller receives the entire materialized hierarchy in one response."
       },
       "BOMItemRuleCreate": {
         "properties": {
@@ -3911,29 +4846,6 @@
             ],
             "title": "Part Number"
           },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "category": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Category"
-          },
           "quantity": {
             "anyOf": [
               {
@@ -3960,18 +4872,6 @@
             ],
             "title": "Quantity From Field Id"
           },
-          "unit_of_measure": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 20
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Of Measure"
-          },
           "sequence": {
             "anyOf": [
               {
@@ -3982,6 +4882,17 @@
               }
             ],
             "title": "Sequence"
+          },
+          "suppress_auto_explode": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suppress Auto Explode"
           }
         },
         "type": "object",
@@ -3991,7 +4902,14 @@
       "BOMLineItem": {
         "properties": {
           "bom_item_id": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Bom Item Id"
           },
           "bom_type": {
@@ -4064,6 +4982,11 @@
             ],
             "title": "Line Total"
           },
+          "is_custom": {
+            "type": "boolean",
+            "title": "Is Custom",
+            "default": false
+          },
           "children": {
             "items": {
               "$ref": "#/components/schemas/BOMLineItem"
@@ -4075,7 +4998,6 @@
         },
         "type": "object",
         "required": [
-          "bom_item_id",
           "bom_type",
           "part_number",
           "quantity"
@@ -4098,6 +5020,14 @@
             },
             "type": "array",
             "title": "Commercial"
+          },
+          "technical_flat": {
+            "items": {
+              "$ref": "#/components/schemas/BOMFlatLineItem"
+            },
+            "type": "array",
+            "title": "Technical Flat",
+            "default": []
           },
           "commercial_total": {
             "anyOf": [
@@ -4242,6 +5172,17 @@
               }
             ],
             "title": "Price Date"
+          },
+          "configuration_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Id"
           }
         },
         "type": "object",
@@ -4299,6 +5240,294 @@
         ],
         "title": "CalculationResponse",
         "description": "Complete response with the status of all fields in the entity."
+      },
+      "CatalogItemBOMReference": {
+        "properties": {
+          "bom_item_id": {
+            "type": "integer",
+            "title": "Bom Item Id"
+          },
+          "entity_version_id": {
+            "type": "integer",
+            "title": "Entity Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bom_item_id",
+          "entity_version_id"
+        ],
+        "title": "CatalogItemBOMReference",
+        "description": "A single `BOMItem` reference to a catalog item."
+      },
+      "CatalogItemCreate": {
+        "properties": {
+          "part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Part Number"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Description"
+          },
+          "unit_of_measure": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Unit Of Measure",
+            "default": "PC"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CatalogItemStatus",
+            "default": "ACTIVE"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part_number",
+          "description"
+        ],
+        "title": "CatalogItemCreate",
+        "description": "Schema for creating a catalog item (POST)."
+      },
+      "CatalogItemRead": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Part Number"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Description"
+          },
+          "unit_of_measure": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Unit Of Measure",
+            "default": "PC"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CatalogItemStatus",
+            "default": "ACTIVE"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "part_number",
+          "description",
+          "id"
+        ],
+        "title": "CatalogItemRead",
+        "description": "Schema for reading catalog item data (GET responses)."
+      },
+      "CatalogItemStatus": {
+        "type": "string",
+        "enum": [
+          "ACTIVE",
+          "OBSOLETE"
+        ],
+        "title": "CatalogItemStatus",
+        "description": "Lifecycle status for CatalogItem.\n\n- ACTIVE: Can be referenced by new BOM items and price list items.\n- OBSOLETE: Existing references keep working, but new references are blocked."
+      },
+      "CatalogItemUpdate": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogItemStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "title": "CatalogItemUpdate",
+        "description": "Schema for partially updating a catalog item (PATCH).\n\nThe `part_number` field is the immutable business key and cannot be\nmodified; to retire a part, set `status` to OBSOLETE and create a new\nentry with the desired number."
+      },
+      "CatalogItemUsageResponse": {
+        "properties": {
+          "part_number": {
+            "type": "string",
+            "title": "Part Number"
+          },
+          "templates_as_parent": {
+            "items": {
+              "$ref": "#/components/schemas/EngineeringTemplateItemRead"
+            },
+            "type": "array",
+            "title": "Templates As Parent"
+          },
+          "templates_as_child": {
+            "items": {
+              "$ref": "#/components/schemas/EngineeringTemplateItemRead"
+            },
+            "type": "array",
+            "title": "Templates As Child"
+          },
+          "bom_items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemBOMReference"
+            },
+            "type": "array",
+            "title": "Bom Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part_number",
+          "templates_as_parent",
+          "templates_as_child",
+          "bom_items"
+        ],
+        "title": "CatalogItemUsageResponse",
+        "description": "Where-used view of a catalog item.\n\nReturned by `GET /catalog-items/{part_number}/usage`. Lets authors assess\nthe impact of a catalog mutation (status change, deletion) before acting."
       },
       "ConfigurationCloneResponse": {
         "properties": {
@@ -4480,6 +5709,239 @@
         ],
         "title": "ConfigurationCreate",
         "description": "Schema for creating a new Configuration (POST).\n\nNote: status is automatically set to DRAFT on creation."
+      },
+      "ConfigurationCustomItemCreate": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Description"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "description",
+          "quantity",
+          "unit_price"
+        ],
+        "title": "ConfigurationCustomItemCreate",
+        "description": "Schema for creating a custom item (POST).\n\nThe `custom_key` is server-generated; any value provided by the\nclient is ignored silently."
+      },
+      "ConfigurationCustomItemRead": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Description"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "unit_price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unit Price"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence",
+            "default": 0
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "configuration_id": {
+            "type": "string",
+            "title": "Configuration Id"
+          },
+          "custom_key": {
+            "type": "string",
+            "title": "Custom Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "description",
+          "quantity",
+          "unit_price",
+          "id",
+          "configuration_id",
+          "custom_key"
+        ],
+        "title": "ConfigurationCustomItemRead",
+        "description": "Schema for reading custom item data (GET responses)."
+      },
+      "ConfigurationCustomItemUpdate": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence"
+          }
+        },
+        "type": "object",
+        "title": "ConfigurationCustomItemUpdate",
+        "description": "Schema for partially updating a custom item (PATCH).\n\nThe `custom_key` is immutable and any payload containing it is\nrejected at the schema layer."
       },
       "ConfigurationRead": {
         "properties": {
@@ -4670,6 +6132,176 @@
         "type": "object",
         "title": "ConfigurationUpdate",
         "description": "Schema for updating a Configuration (PATCH).\n\nAllows updating name or data, but not the version linkage or status.\nStatus can only be changed via the /finalize endpoint.\n\nNote: Updates are only allowed on DRAFT configurations.\nFINALIZED configurations will return HTTP 409 Conflict."
+      },
+      "EngineeringTemplateItemCreate": {
+        "properties": {
+          "child_part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Child Part Number"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sequence",
+            "default": 0
+          },
+          "suppress_child_explosion": {
+            "type": "boolean",
+            "title": "Suppress Child Explosion",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "child_part_number",
+          "quantity"
+        ],
+        "title": "EngineeringTemplateItemCreate",
+        "description": "Schema for creating a template item (POST)."
+      },
+      "EngineeringTemplateItemRead": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "child_part_number": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Child Part Number"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sequence",
+            "default": 0
+          },
+          "suppress_child_explosion": {
+            "type": "boolean",
+            "title": "Suppress Child Explosion",
+            "default": false
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "parent_part_number": {
+            "type": "string",
+            "title": "Parent Part Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "child_part_number",
+          "quantity",
+          "id",
+          "parent_part_number"
+        ],
+        "title": "EngineeringTemplateItemRead",
+        "description": "Schema for reading template item data (GET responses)."
+      },
+      "EngineeringTemplateItemUpdate": {
+        "properties": {
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence"
+          },
+          "suppress_child_explosion": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suppress Child Explosion"
+          }
+        },
+        "type": "object",
+        "title": "EngineeringTemplateItemUpdate",
+        "description": "Schema for partially updating a template item (PATCH).\n\nOnly `quantity`, `sequence`, and `suppress_child_explosion` are mutable.\nThe graph endpoints (`parent_part_number`, `child_part_number`) are\nimmutable: changing them would require re-validating the DAG, which is\nindistinguishable from deleting the row and creating a new one."
       },
       "EntityCreate": {
         "properties": {
@@ -5235,6 +6867,164 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "PreviewExplosionResponse": {
+        "properties": {
+          "tree": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewTreeNode"
+            },
+            "type": "array",
+            "title": "Tree"
+          },
+          "flat": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewFlatItem"
+            },
+            "type": "array",
+            "title": "Flat"
+          },
+          "total_nodes": {
+            "type": "integer",
+            "title": "Total Nodes"
+          },
+          "max_depth_reached": {
+            "type": "integer",
+            "title": "Max Depth Reached"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tree",
+          "flat",
+          "total_nodes",
+          "max_depth_reached"
+        ],
+        "title": "PreviewExplosionResponse",
+        "description": "Dry-run materialization of a catalog part's engineering template.\n\n`tree` is the indented expansion (a single root inside a list).\n`flat` is the cascade-aggregated material list, alphabetically sorted by\n`part_number`. `total_nodes` and `max_depth_reached` mirror the metrics\na real materialization would report."
+      },
+      "PreviewFlatItem": {
+        "properties": {
+          "part_number": {
+            "type": "string",
+            "title": "Part Number"
+          },
+          "total_quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Quantity"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part_number",
+          "total_quantity"
+        ],
+        "title": "PreviewFlatItem",
+        "description": "A single row of the preview-explosion flat list, cascade-aggregated."
+      },
+      "PreviewTreeNode": {
+        "properties": {
+          "part_number": {
+            "type": "string",
+            "title": "Part Number"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "suppress_auto_explode": {
+            "type": "boolean",
+            "title": "Suppress Auto Explode"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "unit_of_measure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Of Measure"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewTreeNode"
+            },
+            "type": "array",
+            "title": "Children"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part_number",
+          "quantity",
+          "sequence",
+          "suppress_auto_explode"
+        ],
+        "title": "PreviewTreeNode",
+        "description": "A single node of the preview-explosion tree, with catalog metadata."
+      },
       "PriceListCreate": {
         "properties": {
           "name": {
@@ -5280,17 +7070,6 @@
             "type": "string",
             "maxLength": 100,
             "title": "Part Number"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
           },
           "unit_price": {
             "anyOf": [
@@ -5388,17 +7167,6 @@
             "maxLength": 100,
             "title": "Part Number"
           },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
           "unit_price": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -5449,17 +7217,6 @@
               }
             ],
             "title": "Part Number"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
           },
           "unit_price": {
             "anyOf": [

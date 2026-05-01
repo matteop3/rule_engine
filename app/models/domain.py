@@ -45,6 +45,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -606,6 +607,14 @@ class BOMItem(Base):
         comment="Ordering among siblings",
     )
 
+    suppress_auto_explode: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        comment="If true, future re-explode operations skip this row",
+    )
+
     # Relationships
     entity_version: Mapped["EntityVersion"] = relationship(back_populates="bom_items")
     parent: Mapped["BOMItem | None"] = relationship(back_populates="children", remote_side="BOMItem.id")
@@ -661,6 +670,84 @@ class BOMItemRule(Base):
 
     def __str__(self) -> str:
         return self.description or f"BOMItemRule {self.id}"
+
+
+class EngineeringTemplateItem(Base, AuditMixin):
+    """
+    EngineeringTemplateItem: One direct-child relationship within an engineering template.
+
+    A "template" is the set of all `EngineeringTemplateItem` rows sharing a
+    `parent_part_number`; there is no separate header table. Templates describe
+    the canonical engineering structure of composite parts and are exploded
+    recursively when materializing a TECHNICAL `BOMItem` sub-tree.
+
+    The pair `(parent_part_number, child_part_number)` is unique within the
+    template; longer cycles are blocked at the application layer by the cycle
+    detector. The `suppress_child_explosion` flag instructs the materialization
+    service to treat the resulting `BOMItem` as a leaf even when the child part
+    has its own template.
+
+    Relationships:
+        - parent_catalog_item: Many-to-one with CatalogItem (parent_part_number)
+        - child_catalog_item: Many-to-one with CatalogItem (child_part_number)
+    """
+
+    __tablename__ = "engineering_template_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "parent_part_number",
+            "child_part_number",
+            name="uq_eti_parent_child",
+        ),
+        CheckConstraint(
+            "parent_part_number <> child_part_number",
+            name="ck_eti_no_self_loop",
+        ),
+        CheckConstraint("quantity > 0", name="ck_eti_quantity_positive"),
+        CheckConstraint("sequence >= 0", name="ck_eti_sequence_nonnegative"),
+        Index("ix_eti_parent", "parent_part_number"),
+        Index("ix_eti_child", "child_part_number"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    parent_part_number: Mapped[str] = mapped_column(
+        String(100),
+        ForeignKey("catalog_items.part_number"),
+        nullable=False,
+    )
+    child_part_number: Mapped[str] = mapped_column(
+        String(100),
+        ForeignKey("catalog_items.part_number"),
+        nullable=False,
+    )
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    sequence: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+        comment="Ordering among siblings within a template",
+    )
+    suppress_child_explosion: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        comment="If true, the materialized child BOMItem is treated as a leaf",
+    )
+
+    # Relationships
+    parent_catalog_item: Mapped["CatalogItem"] = relationship(foreign_keys=[parent_part_number])
+    child_catalog_item: Mapped["CatalogItem"] = relationship(foreign_keys=[child_part_number])
+
+    def __repr__(self) -> str:
+        return (
+            f"<EngineeringTemplateItem id={self.id} "
+            f"parent='{self.parent_part_number}' child='{self.child_part_number}' "
+            f"quantity={self.quantity} sequence={self.sequence}>"
+        )
+
+    def __str__(self) -> str:
+        return f"{self.parent_part_number} -> {self.child_part_number} x{self.quantity}"
 
 
 class PriceList(Base, AuditMixin):

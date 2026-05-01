@@ -17,6 +17,7 @@ from app.models.domain import (
     Configuration,
     ConfigurationCustomItem,
     ConfigurationStatus,
+    EngineeringTemplateItem,
     Entity,
     EntityVersion,
     Field,
@@ -31,6 +32,7 @@ from app.models.domain import (
     Value,
     VersionStatus,
 )
+from app.services.engineering_template import materialize
 
 
 def seed_db():
@@ -46,6 +48,7 @@ def seed_db():
         db.query(Configuration).delete()
         db.query(BOMItemRule).delete()
         db.query(BOMItem).delete()
+        db.query(EngineeringTemplateItem).delete()
         db.query(Rule).delete()
         db.query(Value).delete()
         db.query(Field).delete()
@@ -724,6 +727,60 @@ def seed_db():
             status=CatalogItemStatus.ACTIVE.value,
         )
 
+        # --- Composite welcome kit: a multi-level engineering template demo ---
+        # KIT-WELCOME is a composite catalog item whose engineering template
+        # explodes into a hierarchy of leaves (BROCHURE, PEN, CARD-WELCOME)
+        # plus a nested composite (BOX-COMPOSITE → LABEL-A + LABEL-B).
+        cat_kit_welcome = CatalogItem(
+            part_number="KIT-WELCOME",
+            description="Welcome packet kit (composite assembly)",
+            category="Kit",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_brochure = CatalogItem(
+            part_number="BROCHURE-WELCOME",
+            description="Welcome brochure",
+            category="Print",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_pen = CatalogItem(
+            part_number="PEN-DEMO",
+            description="Branded pen",
+            category="Promo",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_card_welcome = CatalogItem(
+            part_number="CARD-WELCOME",
+            description="Welcome card with embedded inserts (treated as opaque in this kit)",
+            category="Print",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_box_composite = CatalogItem(
+            part_number="BOX-COMPOSITE",
+            description="Sub-assembly box (composite)",
+            category="Packaging",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_label_a = CatalogItem(
+            part_number="LABEL-A",
+            description="Front label",
+            category="Print",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+        cat_label_b = CatalogItem(
+            part_number="LABEL-B",
+            description="Back label",
+            category="Print",
+            unit_of_measure="pcs",
+            status=CatalogItemStatus.ACTIVE.value,
+        )
+
         all_catalog_items = [
             cat_pol_base,
             cat_mod_liability,
@@ -732,10 +789,82 @@ def seed_db():
             cat_cert_inspect,
             cat_prem_base,
             cat_addon_theft,
+            cat_kit_welcome,
+            cat_brochure,
+            cat_pen,
+            cat_card_welcome,
+            cat_box_composite,
+            cat_label_a,
+            cat_label_b,
         ]
         db.add_all(all_catalog_items)
         db.commit()
         print(f"[7/12] Catalog items created: {len(all_catalog_items)} parts (ACTIVE status)")
+
+        # --- Engineering template: KIT-WELCOME composition ---
+        # KIT-WELCOME (composite root)
+        #   ├── BROCHURE-WELCOME × 2   (sequence=0)
+        #   ├── PEN-DEMO × 1           (sequence=1)
+        #   ├── BOX-COMPOSITE × 1      (sequence=2) ── nested composite, expands recursively
+        #   │     ├── LABEL-A × 1
+        #   │     └── LABEL-B × 1
+        #   └── CARD-WELCOME × 1       (sequence=3, suppress_child_explosion=true)
+        #         └── (LABEL-A) — present in CARD-WELCOME's own template, but suppressed here.
+        engineering_templates = [
+            EngineeringTemplateItem(
+                parent_part_number="KIT-WELCOME",
+                child_part_number="BROCHURE-WELCOME",
+                quantity=2,
+                sequence=0,
+            ),
+            EngineeringTemplateItem(
+                parent_part_number="KIT-WELCOME",
+                child_part_number="PEN-DEMO",
+                quantity=1,
+                sequence=1,
+            ),
+            EngineeringTemplateItem(
+                parent_part_number="KIT-WELCOME",
+                child_part_number="BOX-COMPOSITE",
+                quantity=1,
+                sequence=2,
+            ),
+            EngineeringTemplateItem(
+                parent_part_number="KIT-WELCOME",
+                child_part_number="CARD-WELCOME",
+                quantity=1,
+                sequence=3,
+                suppress_child_explosion=True,
+            ),
+            EngineeringTemplateItem(
+                parent_part_number="BOX-COMPOSITE",
+                child_part_number="LABEL-A",
+                quantity=1,
+                sequence=0,
+            ),
+            EngineeringTemplateItem(
+                parent_part_number="BOX-COMPOSITE",
+                child_part_number="LABEL-B",
+                quantity=1,
+                sequence=1,
+            ),
+            # CARD-WELCOME has its own template — but the suppress_child_explosion
+            # flag on the (KIT-WELCOME → CARD-WELCOME) edge above makes the
+            # materialized CARD-WELCOME row a leaf, so this template is not
+            # exploded as part of KIT-WELCOME's expansion.
+            EngineeringTemplateItem(
+                parent_part_number="CARD-WELCOME",
+                child_part_number="LABEL-A",
+                quantity=1,
+                sequence=0,
+            ),
+        ]
+        db.add_all(engineering_templates)
+        db.commit()
+        print(
+            f"[7/12] Engineering templates created: {len(engineering_templates)} edges "
+            "(KIT-WELCOME composite, depth 2 + suppress_child_explosion demo)"
+        )
 
         # ============================================================
         # 8. BOM ITEMS AND RULES
@@ -877,11 +1006,66 @@ def seed_db():
         db.add_all(all_bom_rules)
         db.commit()
 
+        # --- Materialize the KIT-WELCOME engineering template ---
+        # Drives the full explode → insert hierarchy path. The materialized
+        # rows are ordinary BOMItems (TECHNICAL); they keep no link to the
+        # template. Subsequent template edits do not propagate to this version.
+        materialized_root = materialize(
+            db,
+            entity_version_id=version.id,
+            root_part_number="KIT-WELCOME",
+            parent_bom_item_id=None,
+            root_quantity=1,
+            root_quantity_from_field_id=None,
+            root_sequence=100,
+            root_suppress_auto_explode=False,
+        )
+        db.commit()
+
+        # --- Demonstrate suppress_auto_explode set post-materialization ---
+        # The author flags BROCHURE-WELCOME as "stay a leaf" so a future
+        # re-explode endpoint would not reach into its (hypothetical) template.
+        brochure_row = (
+            db.query(BOMItem)
+            .filter(
+                BOMItem.entity_version_id == version.id,
+                BOMItem.part_number == "BROCHURE-WELCOME",
+            )
+            .first()
+        )
+        if brochure_row is not None:
+            brochure_row.suppress_auto_explode = True
+            db.commit()
+
+        materialized_count = (
+            db.query(BOMItem)
+            .filter(
+                BOMItem.entity_version_id == version.id,
+                BOMItem.parent_bom_item_id.isnot(None) | (BOMItem.id == materialized_root.id),
+            )
+            .filter(
+                BOMItem.part_number.in_(
+                    [
+                        "KIT-WELCOME",
+                        "BROCHURE-WELCOME",
+                        "PEN-DEMO",
+                        "BOX-COMPOSITE",
+                        "CARD-WELCOME",
+                        "LABEL-A",
+                        "LABEL-B",
+                    ]
+                )
+            )
+            .count()
+        )
+
         print(
             f"[8/12] BOM created: {len(all_bom_items)} items "
             f"({sum(1 for b in all_bom_items if b.bom_type == BOMType.TECHNICAL.value)} TECHNICAL, "
             f"{sum(1 for b in all_bom_items if b.bom_type == BOMType.COMMERCIAL.value)} COMMERCIAL), "
-            f"{len(all_bom_rules)} rules"
+            f"{len(all_bom_rules)} rules; "
+            f"+ {materialized_count} TECHNICAL items materialized from KIT-WELCOME template "
+            "(suppress_child_explosion on CARD-WELCOME edge; suppress_auto_explode on BROCHURE-WELCOME row)"
         )
 
         # ============================================================
@@ -1070,7 +1254,8 @@ SUMMARY:
   Values:         {len(all_values)}
   Rules:          {len(all_rules)}
   Catalog Items:  {len(all_catalog_items)}
-  BOM Items:      {len(all_bom_items)}
+  Eng Templates:  {len(engineering_templates)}
+  BOM Items:      {len(all_bom_items)} hand-authored + {materialized_count} materialized
   BOM Rules:      {len(all_bom_rules)}
   Price Lists:    1
   Price Items:    {len(all_price_list_items)}
@@ -1101,7 +1286,13 @@ FEATURE COVERAGE:
   BOM types:      2/2 (TECHNICAL, COMMERCIAL)
   BOM features:   hierarchy (nested sub-assembly), dynamic quantity,
                   conditional inclusion, OR logic (multiple rules),
-                  same part_number in TECHNICAL + COMMERCIAL
+                  same part_number in TECHNICAL + COMMERCIAL,
+                  technical_flat (cascade-aggregated alphabetic view)
+  Eng. BOM:       composite catalog (KIT-WELCOME), depth-2 template
+                  (KIT-WELCOME → BOX-COMPOSITE → LABEL-*), recursive
+                  materialization, suppress_child_explosion (template
+                  edge to CARD-WELCOME), suppress_auto_explode
+                  (post-materialization, on BROCHURE-WELCOME)
   Price list:     temporal validity, price resolution at calculation time
 
 CALCULATION (engine-derived dropdown):

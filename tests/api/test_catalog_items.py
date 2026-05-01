@@ -16,6 +16,7 @@ from app.models.domain import (
     BOMType,
     CatalogItem,
     CatalogItemStatus,
+    EngineeringTemplateItem,
     EntityVersion,
     PriceList,
     PriceListItem,
@@ -481,7 +482,9 @@ class TestDeleteCatalogItem:
         response = client.delete(f"/catalog-items/{catalog.id}", headers=admin_headers)
         assert response.status_code == 409
         assert response.json()["detail"] == (
-            "Catalog item 'BOM-REF-DEL' cannot be deleted: referenced by 1 BOM item(s) and 0 price list item(s)"
+            "Catalog item 'BOM-REF-DEL' cannot be deleted: "
+            "referenced by 1 BOM item(s), 0 price list item(s), "
+            "and 0 engineering template item(s)"
         )
 
     def test_delete_blocked_by_price_list_item_reference(
@@ -514,7 +517,9 @@ class TestDeleteCatalogItem:
         response = client.delete(f"/catalog-items/{catalog.id}", headers=admin_headers)
         assert response.status_code == 409
         assert response.json()["detail"] == (
-            "Catalog item 'PLI-REF-DEL' cannot be deleted: referenced by 0 BOM item(s) and 1 price list item(s)"
+            "Catalog item 'PLI-REF-DEL' cannot be deleted: "
+            "referenced by 0 BOM item(s), 1 price list item(s), "
+            "and 0 engineering template item(s)"
         )
 
     def test_delete_blocked_by_both_references(
@@ -554,5 +559,107 @@ class TestDeleteCatalogItem:
         response = client.delete(f"/catalog-items/{catalog.id}", headers=admin_headers)
         assert response.status_code == 409
         assert response.json()["detail"] == (
-            "Catalog item 'BOTH-REF-DEL' cannot be deleted: referenced by 1 BOM item(s) and 1 price list item(s)"
+            "Catalog item 'BOTH-REF-DEL' cannot be deleted: "
+            "referenced by 1 BOM item(s), 1 price list item(s), "
+            "and 0 engineering template item(s)"
+        )
+
+    def test_delete_blocked_when_part_is_template_parent(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        strict_catalog_validation,
+    ):
+        catalog = create_catalog_item(db_session, "KIT-PARENT-DEL")
+        create_catalog_item(db_session, "KIT-PARENT-CHILD")
+        db_session.add(
+            EngineeringTemplateItem(
+                parent_part_number="KIT-PARENT-DEL",
+                child_part_number="KIT-PARENT-CHILD",
+                quantity=Decimal("1"),
+            )
+        )
+        db_session.commit()
+
+        response = client.delete(f"/catalog-items/{catalog.id}", headers=admin_headers)
+        assert response.status_code == 409
+        assert response.json()["detail"] == (
+            "Catalog item 'KIT-PARENT-DEL' cannot be deleted: "
+            "referenced by 0 BOM item(s), 0 price list item(s), "
+            "and 1 engineering template item(s)"
+        )
+
+    def test_delete_blocked_when_part_is_template_child(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        strict_catalog_validation,
+    ):
+        create_catalog_item(db_session, "KIT-CHILD-PARENT")
+        catalog = create_catalog_item(db_session, "KIT-CHILD-DEL")
+        db_session.add(
+            EngineeringTemplateItem(
+                parent_part_number="KIT-CHILD-PARENT",
+                child_part_number="KIT-CHILD-DEL",
+                quantity=Decimal("1"),
+            )
+        )
+        db_session.commit()
+
+        response = client.delete(f"/catalog-items/{catalog.id}", headers=admin_headers)
+        assert response.status_code == 409
+        assert response.json()["detail"] == (
+            "Catalog item 'KIT-CHILD-DEL' cannot be deleted: "
+            "referenced by 0 BOM item(s), 0 price list item(s), "
+            "and 1 engineering template item(s)"
+        )
+
+    def test_delete_blocked_when_references_span_all_sources(
+        self,
+        client: TestClient,
+        admin_headers,
+        db_session,
+        draft_version: EntityVersion,
+        strict_catalog_validation,
+    ):
+        catalog = create_catalog_item(db_session, "MULTI-REF-DEL")
+        create_catalog_item(db_session, "MULTI-REF-CHILD")
+
+        bom = BOMItem(
+            entity_version_id=draft_version.id,
+            bom_type=BOMType.TECHNICAL.value,
+            part_number="MULTI-REF-DEL",
+            quantity=Decimal("1"),
+        )
+        price_list = PriceList(
+            name="Multi Ref PL",
+            valid_from=dt.date(2020, 1, 1),
+            valid_to=dt.date(9999, 12, 31),
+        )
+        db_session.add_all([bom, price_list])
+        db_session.flush()
+
+        pli = PriceListItem(
+            price_list_id=price_list.id,
+            part_number="MULTI-REF-DEL",
+            unit_price=Decimal("10.00"),
+            valid_from=dt.date(2020, 1, 1),
+            valid_to=dt.date(9999, 12, 31),
+        )
+        template_edge = EngineeringTemplateItem(
+            parent_part_number="MULTI-REF-DEL",
+            child_part_number="MULTI-REF-CHILD",
+            quantity=Decimal("1"),
+        )
+        db_session.add_all([pli, template_edge])
+        db_session.commit()
+
+        response = client.delete(f"/catalog-items/{catalog.id}", headers=admin_headers)
+        assert response.status_code == 409
+        assert response.json()["detail"] == (
+            "Catalog item 'MULTI-REF-DEL' cannot be deleted: "
+            "referenced by 1 BOM item(s), 1 price list item(s), "
+            "and 1 engineering template item(s)"
         )

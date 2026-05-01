@@ -5,8 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import db_transaction, get_current_user, require_admin_or_author, validate_catalog_not_referenced
-from app.models.domain import CatalogItem, CatalogItemStatus, User
-from app.schemas.catalog_item import CatalogItemCreate, CatalogItemRead, CatalogItemUpdate
+from app.models.domain import BOMItem, CatalogItem, CatalogItemStatus, EngineeringTemplateItem, User
+from app.schemas.catalog_item import (
+    CatalogItemBOMReference,
+    CatalogItemCreate,
+    CatalogItemRead,
+    CatalogItemUpdate,
+    CatalogItemUsageResponse,
+)
 
 # ============================================================
 # LOGGING SETUP
@@ -119,6 +125,70 @@ def read_catalog_item(
     """
     logger.debug(f"Reading catalog item {item.id} by user {current_user.id}")
     return item
+
+
+@router.get("/{part_number}/usage", response_model=CatalogItemUsageResponse)
+def read_catalog_item_usage(
+    part_number: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_author),
+):
+    """
+    Where-used view for a catalog item.
+
+    Returns the engineering template rows in which the part appears as parent
+    or as child, plus the `BOMItem` rows that reference it (each with its
+    `entity_version_id`). Used by authors to assess the blast radius of a
+    catalog mutation before acting.
+
+    Access Control:
+        - Only ADMIN and AUTHOR can read usage data.
+    """
+    logger.debug(f"Reading usage for catalog item '{part_number}' by user {current_user.id}")
+
+    catalog_item = db.query(CatalogItem).filter(CatalogItem.part_number == part_number).first()
+    if catalog_item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Catalog item with part_number '{part_number}' not found.",
+        )
+
+    templates_as_parent = (
+        db.query(EngineeringTemplateItem)
+        .filter(EngineeringTemplateItem.parent_part_number == part_number)
+        .order_by(EngineeringTemplateItem.sequence, EngineeringTemplateItem.child_part_number)
+        .all()
+    )
+    templates_as_child = (
+        db.query(EngineeringTemplateItem)
+        .filter(EngineeringTemplateItem.child_part_number == part_number)
+        .order_by(EngineeringTemplateItem.parent_part_number, EngineeringTemplateItem.sequence)
+        .all()
+    )
+    bom_item_rows = (
+        db.query(BOMItem.id, BOMItem.entity_version_id)
+        .filter(BOMItem.part_number == part_number)
+        .order_by(BOMItem.entity_version_id, BOMItem.id)
+        .all()
+    )
+    bom_items = [
+        CatalogItemBOMReference(bom_item_id=bom_id, entity_version_id=version_id)
+        for bom_id, version_id in bom_item_rows
+    ]
+
+    logger.info(
+        f"Returning usage for '{part_number}': "
+        f"templates_as_parent={len(templates_as_parent)} "
+        f"templates_as_child={len(templates_as_child)} "
+        f"bom_items={len(bom_items)}"
+    )
+
+    return CatalogItemUsageResponse(
+        part_number=part_number,
+        templates_as_parent=templates_as_parent,
+        templates_as_child=templates_as_child,
+        bom_items=bom_items,
+    )
 
 
 @router.get("/by-part-number/{part_number}", response_model=CatalogItemRead)

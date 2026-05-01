@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 300
     CACHE_MAX_SIZE: int = 100
 
+    # BOM Explosion Limits
+    MAX_BOM_EXPLOSION_DEPTH: int = 32
+    MAX_BOM_EXPLOSION_NODES: int = 500
+
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_LOGIN_ATTEMPTS: int = 5

@@ -74,13 +74,16 @@ Canonical metadata lives on the catalog and nowhere else:
 
 ### 6. Deletion governed by referential integrity, not by FINALIZED state
 
-`DELETE /catalog-items/{id}` succeeds (HTTP 204) only when no live `BOMItem` and no live `PriceListItem` references the entry. It is blocked with HTTP 409 and an explicit count otherwise.
+`DELETE /catalog-items/{id}` succeeds (HTTP 204) only when no live `BOMItem`, no live `PriceListItem`, and no live `EngineeringTemplateItem` references the entry. It is blocked with HTTP 409 and explicit per-source counts otherwise.
 
-- A live reference is a row in `bom_items` or `price_list_items` — regardless of whether it lives on a DRAFT EntityVersion, a PUBLISHED EntityVersion, or a price list of any status.
+- A live reference is a row in `bom_items`, `price_list_items`, or `engineering_template_items` — regardless of whether it lives on a DRAFT EntityVersion, a PUBLISHED EntityVersion, or a price list of any status.
+- For `engineering_template_items`, the part counts as referenced when it appears as `parent_part_number` *or* as `child_part_number`. Either role keeps the catalog entry alive.
 - In practice a catalog entry referenced by a BOM item on a PUBLISHED EntityVersion is de facto undeletable, because the DRAFT-only editing rule prevents removing the BOM item. This is the correct behavior.
 - The FINALIZED snapshot is self-contained JSON with no FK to the catalog, so deleting a catalog entry after its references are cleared does not corrupt historical configurations. The snapshot continues to describe the part as it was at finalization time.
 
-Error message: `"Catalog item '<part_number>' cannot be deleted: referenced by N BOM item(s) and M price list item(s)"`.
+Error message: `"Catalog item '<part_number>' cannot be deleted: referenced by N BOM item(s), M price list item(s), and K engineering template item(s)"`.
+
+The `GET /catalog-items/{part_number}/usage` endpoint (ADMIN/AUTHOR) gives the AUTHOR a way to see the where-used graph before acting on a delete or status change — see `ADR_ENGINEERING_BOM` decision 19.
 
 ### 7. CRUD endpoint surface and RBAC
 
@@ -122,7 +125,15 @@ Both `POST /bom-items` / `PATCH /bom-items/{id}` and `POST /price-list-items` / 
 
 The FK constraint at the database level catches integrity violations, but the application-layer validation is what produces the meaningful error responses and handles the OBSOLETE gating (which the FK alone cannot express).
 
-### 11. Test fixtures auto-seed the catalog for BOM and price list rows
+### 11. Engineering templates attach to the catalog without changing the catalog row
+
+A composite catalog item is one that has at least one `EngineeringTemplateItem` row referencing it as `parent_part_number`. There is no `is_composite` flag on `CatalogItem`, no header table, and no schema change to `catalog_items`. Removing all template rows under a part returns it to leaf status.
+
+The catalog stays oblivious to composition; identity ("does this part exist?") and composition ("what is it typically built from?") remain separate concerns. Materialization (the act of exploding a template into ordinary `BOMItem` rows on a DRAFT `EntityVersion`) reads the template at request time and does not write back to the catalog. Subsequent template edits do not propagate to already-materialized versions — see `ADR_ENGINEERING_BOM` for the snap-detach semantics.
+
+The endpoint surface for templates lives under `/catalog-items/{part_number}/template`; the preview-explosion endpoint at `/catalog-items/{part_number}/preview-explosion` performs a dry-run materialization without writing to the database. Both are covered in detail in `ADR_ENGINEERING_BOM`.
+
+### 12. Test fixtures auto-seed the catalog for BOM and price list rows
 
 The test suite needed a refactor when the FK landed. Rather than rewriting every fixture that constructs a `BOMItem` or `PriceListItem`, a SQLAlchemy `before_flush` session event listener inspects pending rows and upserts matching `CatalogItem` entries with neutral defaults (description = part_number, unit = `'PC'`, status = `ACTIVE`). A module-level monkeypatch replaces `validate_catalog_reference` with a lenient no-op in the default test environment. Tests that need to exercise the real CRUD validation opt in via the `strict_catalog_validation` fixture, which restores the real validator.
 
@@ -143,26 +154,18 @@ This keeps the fixture call sites unchanged while making the new FK invariant in
 | Feature | Rationale |
 |---|---|
 | Revision tracking on catalog items | No `rev_A` / `rev_B`. Part identity today is the `part_number`. |
-| `replaced_by` auto-rerouting | `OBSOLETE` gates new references; automatic forwarding of existing references is a workflow concern. |
+| `replaced_by` auto-rerouting | `OBSOLETE` gates new references; automatic forwarding of existing references is a workflow concern. The engineering BOM feature inherits this gap — templates that reference an obsoleted part have no built-in way to point users to the successor. Future work could add `CatalogItem.replaced_by` (FK to another `CatalogItem`) plus `GET /catalog-items/{p}/history` walking the chain; orthogonal to the current scope. |
 | PLM / ERP synchronization | The catalog is locally managed. External sync can be added additively later. |
 | Multi-currency on the catalog | Pricing stays on the price list and on custom items. Catalog entries carry no price. |
 | Bulk import endpoints | Single-row CRUD is enough for the first release. Bulk import is a follow-up. |
 | Optimistic locking (ETags) | Cross-cutting gap, noted in `ADR_PRICE_LIST.md`, not addressed here. |
-| Engineering BOM / auto-explosion on catalog insert | See `CatalogTemplate` follow-up below. |
+| Auto-explosion on catalog insert | Templates explode on demand at materialization time, not implicitly when the catalog row is created. See `ADR_ENGINEERING_BOM`. |
 
 ## Known Gaps and Follow-ups
 
-### CatalogTemplate (reference BOM / auto-explosion)
+### Engineering templates ship as a separate ADR
 
-**Scenario.** When an AUTHOR adds a composite catalog item — say `MOUSE-PRO` — to a technical BOM, it would be useful for its typical sub-components (cable, connector, housing) to appear automatically rather than being entered by hand.
-
-**What it would be.** A separate pair of tables (`CatalogTemplate` + `CatalogTemplateItem`) that stores one or more "typical compositions" per catalog root, with its own internal parent-child hierarchy. At design time, an action "explode template" creates BOMItem rows in the current EntityVersion DRAFT. The resulting BOMItems are detached from the template: later updates to the template do not propagate to already-exploded BOMItems.
-
-**Why this keeps the catalog flat.** The catalog answers "what exists". The template is a separate layer above the catalog that answers "how is it typically composed". This preserves the invariant that EntityVersion is the sole runtime source of truth for product structure — matching SAP's separation of Material Master and Reference BOM.
-
-**Principle of the future solution.** The template is a **boilerplate generator** invoked on demand, not a live composition that the engine dereferences at calculation time. The current flat catalog remains load-bearing; adding templates later is additive. No migration of existing catalog rows is needed when this lands.
-
-**Why postponed.** Dedicated chapter, not on the critical path of the current scope. The catalog is a prerequisite for the template, but not vice versa. Add it when concrete need emerges from AUTHOR workflows.
+The "reference BOM / auto-explosion" feature is implemented as `EngineeringTemplateItem` rows attached to `CatalogItem` via `parent_part_number` / `child_part_number` foreign keys, with snap-detach semantics (materialization produces ordinary `BOMItem` rows that lose the link to the template). The full design — recursive expansion, cycle detection, advisory locking, OBSOLETE rejection at materialization, the `technical_flat` view — lives in `ADR_ENGINEERING_BOM.md`. The catalog stays flat: composition is an additive layer above the catalog, not a column on `CatalogItem`.
 
 ### Bulk import of catalog items
 
@@ -173,3 +176,4 @@ Real catalogs contain hundreds or thousands of parts. The current CRUD surface i
 - [ADR: BOM Generation](ADR_BOM.md) — BOM structure; the catalog supersedes the per-BOMItem metadata columns.
 - [ADR: Price List](ADR_PRICE_LIST.md) — Pricing still lives on the price list; the catalog supersedes `PriceListItem.description`.
 - [ADR: Re-hydration](ADR_REHYDRATION.md) — FINALIZED snapshot immunity to catalog mutation follows the same mechanism as price list immunity.
+- [ADR: Engineering BOM](ADR_ENGINEERING_BOM.md) — Engineering templates as data attached to catalog items, the extended DELETE protection, and the materialization service.

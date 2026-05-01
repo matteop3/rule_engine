@@ -18,10 +18,17 @@ class BOMItemBase(BaseSchema):
 
 
 class BOMItemCreate(BOMItemBase):
-    """Schema for creating a BOM item (POST)."""
+    """Schema for creating a BOM item (POST).
+
+    `explode_from_template=true` instructs the server to materialize the
+    engineering template of `part_number` into a hierarchy of BOMItems with
+    this row as the root. Requires `bom_type=TECHNICAL` and a non-empty
+    template on the part. The response is the root with its full sub-tree.
+    """
 
     entity_version_id: int
     parent_bom_item_id: int | None = None
+    explode_from_template: bool = False
 
 
 class BOMItemUpdate(BaseSchema):
@@ -33,6 +40,7 @@ class BOMItemUpdate(BaseSchema):
     quantity: Decimal | None = None
     quantity_from_field_id: int | None = None
     sequence: int | None = None
+    suppress_auto_explode: bool | None = None
 
 
 class BOMItemRead(BOMItemBase):
@@ -41,3 +49,14 @@ class BOMItemRead(BOMItemBase):
     id: int
     entity_version_id: int
     parent_bom_item_id: int | None = None
+    suppress_auto_explode: bool = False
+
+
+class BOMItemReadWithChildren(BOMItemRead):
+    """Read schema that nests the recursive `children` sub-tree.
+
+    Returned by `POST /bom-items` when `explode_from_template=true` so the
+    caller receives the entire materialized hierarchy in one response.
+    """
+
+    children: list["BOMItemReadWithChildren"] = Field(default_factory=list)

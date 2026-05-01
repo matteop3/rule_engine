@@ -3,6 +3,7 @@ from pydantic import Field, model_validator
 from app.models.domain import CatalogItemStatus
 
 from .base_schema import AuditSchemaMixin, BaseSchema
+from .engineering_template_item import EngineeringTemplateItemRead
 
 
 class CatalogItemBase(BaseSchema):
@@ -46,3 +47,24 @@ class CatalogItemUpdate(BaseSchema):
         if isinstance(data, dict) and "part_number" in data:
             raise ValueError("part_number cannot be modified; obsolete the entry and create a new one instead")
         return data
+
+
+class CatalogItemBOMReference(BaseSchema):
+    """A single `BOMItem` reference to a catalog item."""
+
+    bom_item_id: int
+    entity_version_id: int
+
+
+class CatalogItemUsageResponse(BaseSchema):
+    """
+    Where-used view of a catalog item.
+
+    Returned by `GET /catalog-items/{part_number}/usage`. Lets authors assess
+    the impact of a catalog mutation (status change, deletion) before acting.
+    """
+
+    part_number: str
+    templates_as_parent: list[EngineeringTemplateItemRead]
+    templates_as_child: list[EngineeringTemplateItemRead]
+    bom_items: list[CatalogItemBOMReference]

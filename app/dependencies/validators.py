@@ -18,6 +18,7 @@ from app.models.domain import (
     BOMItemRule,
     CatalogItem,
     CatalogItemStatus,
+    EngineeringTemplateItem,
     EntityVersion,
     Field,
     PriceListItem,
@@ -183,19 +184,30 @@ def validate_catalog_reference(db: Session, part_number: str, *, on_create: bool
 
 def validate_catalog_not_referenced(db: Session, catalog_item: CatalogItem) -> None:
     """
-    Blocks catalog deletion when live BOMItem or PriceListItem rows reference it.
+    Blocks catalog deletion when any live row references the part: BOMItem,
+    PriceListItem, or EngineeringTemplateItem (as parent or as child).
 
     Raises:
-        HTTPException(409): With message listing reference counts per §4.5.
+        HTTPException(409): With message listing reference counts per source.
     """
     bom_count = db.query(BOMItem).filter(BOMItem.part_number == catalog_item.part_number).count()
     pli_count = db.query(PriceListItem).filter(PriceListItem.part_number == catalog_item.part_number).count()
-    if bom_count > 0 or pli_count > 0:
+    template_count = (
+        db.query(EngineeringTemplateItem)
+        .filter(
+            (EngineeringTemplateItem.parent_part_number == catalog_item.part_number)
+            | (EngineeringTemplateItem.child_part_number == catalog_item.part_number)
+        )
+        .count()
+    )
+    if bom_count > 0 or pli_count > 0 or template_count > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"Catalog item '{catalog_item.part_number}' cannot be deleted: "
-                f"referenced by {bom_count} BOM item(s) and {pli_count} price list item(s)"
+                f"referenced by {bom_count} BOM item(s), "
+                f"{pli_count} price list item(s), "
+                f"and {template_count} engineering template item(s)"
             ),
         )
 

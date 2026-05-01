@@ -43,6 +43,10 @@ tests/
 │   ├── test_catalog_items.py               # CatalogItem CRUD, RBAC, duplicate/part_number rejection, delete-blocking on live references
 │   ├── test_configuration_custom_items.py  # ConfigurationCustomItem CRUD (list/create/update/delete), key auto-generation, DRAFT gating, ownership, value validation
 │   ├── test_engine_bom.py                  # BOM engine integration (calculate, persist bom_total_price)
+│   ├── test_engineering_template_crud.py   # Engineering template CRUD under /catalog-items/{p}/template/items: RBAC, cycle detection (lengths 1/2/3), UNIQUE pair, immutable graph endpoints
+│   ├── test_catalog_item_usage.py          # GET /catalog-items/{p}/usage: where-used graph (templates_as_parent / _as_child / bom_items), RBAC, 404
+│   ├── test_preview_explosion.py           # GET /catalog-items/{p}/preview-explosion: tree+flat shape, leaf-only, multi-level cascade, diamond aggregation, depth/node 413, OBSOLETE 409
+│   ├── test_bom_items_explode.py           # POST /bom-items with explode_from_template=true: happy paths, suppress propagation, COMMERCIAL/no-template/OBSOLETE/PUBLISHED rejections, RBAC
 │   ├── test_price_lists.py                 # PriceList CRUD, RBAC, deletion protection
 │   ├── test_price_list_items.py            # PriceListItem CRUD, date defaulting, overlap/bounding box validation, catalog FK validation
 │   ├── test_configurations_snapshot.py     # FINALIZED snapshot/rehydration behavior
@@ -54,8 +58,10 @@ tests/
 │   ├── __init__.py
 │   ├── test_api.py              # Engine calculation endpoint
 │   ├── test_bom_aggregation.py   # BOM line aggregation (grouping, quantity summing)
+│   ├── test_bom_aggregation_siblings_fix.py  # Aggregation re-parents children of merged sibling representatives (depth-1 / depth-2 / depth-3 merging, no orphaned children)
 │   ├── test_bom_evaluation.py   # BOM inclusion/exclusion, OR/AND logic, type filtering
 │   ├── test_bom_quantity.py     # BOM quantity resolution (static, field ref, fallback)
+│   ├── test_bom_technical_flat.py  # BOMOutput.technical_flat: cascade arithmetic, alphabetic sort, cross-branch aggregation, quantity_from_field cascade, hidden-field fallback, snapshot capture at finalization
 │   ├── test_bom_tree.py         # BOM tree pruning, nesting, sequence ordering
 │   ├── test_cache.py            # TTLCache unit tests + engine caching integration tests
 │   ├── test_catalog_metadata.py # BOMLineItem description/category/UoM sourced from catalog, catalog mutation visibility, OBSOLETE tolerance, snapshot immunity, mutation-kill
@@ -79,12 +85,18 @@ tests/
 │   ├── test_bom_workflow.py                      # End-to-end BOM lifecycle and configuration integration
 │   ├── test_clone_bom.py                        # BOM data integrity during version clone
 │   ├── test_custom_items_lifecycle.py           # End-to-end ConfigurationCustomItem lifecycle: create → calculate → finalize (snapshot), snapshot immunity under DB mutation, clone with fresh keys, upgrade preservation
+│   ├── test_engineering_bom_workflow.py         # End-to-end engineering BOM: define templates (depth ≥ 2) → preview → materialize → calculate → finalize-snapshot capture of technical_flat → clone (no re-materialization) → upgrade reflects new structure
 │   ├── test_price_list_workflow.py              # End-to-end price list workflow (create → attach → calculate → finalize)
 │   ├── test_integration_cascade.py              # Cascade delete/update operations
 │   ├── test_integration_complex_rules.py        # Complex rule interaction scenarios
 │   ├── test_integration_cross_router.py         # Cross-router data consistency
 │   ├── test_integration_entity_lifecycle.py     # Complete entity lifecycle workflows
 │   └── test_integration_rbac.py                 # End-to-end RBAC scenarios
+│
+├── services/                    # Service-layer unit tests (no HTTP)
+│   ├── __init__.py
+│   ├── test_engineering_template_service.py        # would_create_cycle (self-loop, multi-node cycles, diamond, disconnected) and acquire_template_graph_lock
+│   └── test_engineering_template_materialization.py # explode + materialize: tree shape, suppress propagation, depth/node limits, OBSOLETE rejection, idempotency
 │
 ├── performance/                 # Performance and benchmark tests
 │   ├── __init__.py
@@ -206,12 +218,13 @@ pytest tests/api/test_auth.py::TestLoginEndpoint::test_success -v
 
 | Category      | Files | Approx. Tests | Purpose                          |
 |---------------|-------|---------------|----------------------------------|
-| API           | 30    | ~690          | Endpoint CRUD, lifecycle, middleware, BOM, price lists, catalog, configuration custom items, snapshots, input validation |
-| Engine        | 16    | ~220          | Business logic, rules, SKU, cache, BOM edge cases, price resolution, catalog metadata, custom items, mutation kills |
-| Integration   | 16    | ~63           | End-to-end workflows, BOM clone, BOM lifecycle, price list workflow, custom items lifecycle |
+| API           | 34    | ~780          | Endpoint CRUD, lifecycle, middleware, BOM, price lists, catalog, engineering template CRUD, catalog usage, preview-explosion, BOM materialization, configuration custom items, snapshots, input validation |
+| Engine        | 18    | ~250          | Business logic, rules, SKU, cache, BOM edge cases, BOM aggregation siblings fix, BOMOutput.technical_flat, price resolution, catalog metadata, custom items, mutation kills |
+| Services      | 2     | ~38           | Service-layer unit tests for the engineering template module: cycle detection, advisory lock, recursive explosion, materialization, OBSOLETE rejection, limit enforcement |
+| Integration   | 17    | ~70           | End-to-end workflows: BOM clone, BOM lifecycle, price list workflow, custom items lifecycle, engineering BOM workflow (preview → materialize → finalize → clone → upgrade) |
 | Performance   | 1     | ~15           | Benchmarks and throughput        |
 | Stress        | 3     | ~54           | Concurrency and edge cases       |
-| **Total**     | **66**| **~1193**     |                                  |
+| **Total**     | **75**| **~1340**     |                                  |
 
 ## Test Coverage
 
@@ -377,6 +390,7 @@ The SKU generation feature is comprehensively tested across multiple scenarios:
 - **Configuration Lifecycle Flows**: Complete workflows (create → update → finalize → clone → modify), upgrade-then-finalize blocked when incompatible
 - **Price List Workflow**: End-to-end scenarios — create price list, attach to configuration, calculate with warnings, finalize with snapshot, verify immunity to subsequent price list edits
 - **Custom Items Lifecycle**: End-to-end scenarios — create DRAFT, add custom items via API, calculate, finalize with snapshot capturing custom lines, verify snapshot immunity after direct-DB mutation and deletion of underlying rows, clone FINALIZED configuration and verify the clone's custom items have disjoint keys, upgrade archived-version DRAFT and verify custom items survive
+- **Engineering BOM Workflow**: Define catalog items + multi-level templates (depth ≥ 2) via API → preview-explosion (assert tree, flat, total_nodes, max_depth_reached) → materialize via `POST /bom-items` with `explode_from_template=true` → calculate against a Configuration (assert indented `technical` and cascade-aggregated `technical_flat`) → finalize and assert `technical_flat` is captured in `Configuration.snapshot` → clone the source `EntityVersion` and assert no re-materialization (structural copy preserved) → upgrade a Configuration to a newer `EntityVersion` with a different materialization and assert recalculation reflects the new structure
 
 ### Performance & Stress (~66 tests)
 - **Benchmarks**: Throughput measurements, response time analysis

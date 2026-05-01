@@ -67,11 +67,29 @@ class BOMLineItem(BaseModel):
     children: list["BOMLineItem"] = []
 
 
+class BOMFlatLineItem(BaseModel):
+    """
+    Aggregated technical line, alphabetically sorted with cascade-multiplied
+    total quantity.
+
+    Computed by the engine on every calculation as a top-down view of the
+    materials a single configuration consumes; mirrors the structure of
+    `BOMLineItem` minus pricing and hierarchy.
+    """
+
+    part_number: str
+    description: str | None = None
+    category: str | None = None
+    unit_of_measure: str | None = None
+    total_quantity: Decimal
+
+
 class BOMOutput(BaseModel):
     """BOM evaluation result split by type with commercial total."""
 
     technical: list[BOMLineItem]
     commercial: list[BOMLineItem]
+    technical_flat: list[BOMFlatLineItem] = []
     commercial_total: Decimal | None = None
     warnings: list[str] = []
 

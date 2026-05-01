@@ -2,6 +2,7 @@ import logging
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -14,8 +15,13 @@ from app.dependencies import (
     validate_catalog_reference,
     validate_version_is_draft,
 )
-from app.models.domain import BOMItem, BOMType, Field, FieldType, User
-from app.schemas.bom_item import BOMItemCreate, BOMItemRead, BOMItemUpdate
+from app.models.domain import BOMItem, BOMType, EngineeringTemplateItem, EntityVersion, Field, FieldType, User
+from app.schemas.bom_item import BOMItemCreate, BOMItemRead, BOMItemReadWithChildren, BOMItemUpdate
+from app.services.engineering_template import (
+    ExplosionContainsObsoletePartsError,
+    ExplosionLimitExceededError,
+    materialize,
+)
 
 # ============================================================
 # LOGGING SETUP
@@ -142,7 +148,7 @@ def read_bom_item(
     return bom_item
 
 
-@router.post("/", response_model=BOMItemRead, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=BOMItemReadWithChildren, status_code=status.HTTP_201_CREATED)
 def create_bom_item(
     bom_data: BOMItemCreate,
     db: Session = Depends(get_db),
@@ -150,6 +156,12 @@ def create_bom_item(
 ):
     """
     Create a BOM item attached to a specific entity version.
+
+    When `explode_from_template=true`, the part is required to be
+    `bom_type=TECHNICAL` with a non-empty engineering template; the server
+    materializes the full sub-tree of `BOMItem` rows in a single
+    transaction and returns the root with its descendants nested in
+    `children`.
 
     Restrictions:
         - The version must be DRAFT
@@ -161,13 +173,20 @@ def create_bom_item(
         - Only ADMIN and AUTHOR can create BOM items
     """
     logger.info(
-        f"Creating BOM item '{bom_data.part_number}' for version {bom_data.entity_version_id} by user {current_user.id}"
+        f"Creating BOM item '{bom_data.part_number}' for version {bom_data.entity_version_id} "
+        f"(explode_from_template={bom_data.explode_from_template}) by user {current_user.id}"
     )
 
     version = fetch_version_by_id(db, bom_data.entity_version_id)
     validate_version_is_draft(version)
 
-    # Validations
+    if bom_data.explode_from_template:
+        return _create_bom_item_with_explosion(db, bom_data, version)
+
+    return _create_bom_item_simple(db, bom_data, version)
+
+
+def _create_bom_item_simple(db: Session, bom_data: BOMItemCreate, version: EntityVersion) -> BOMItem:
     validate_catalog_reference(db, bom_data.part_number, on_create=True)
     _validate_quantity(bom_data.quantity)
 
@@ -179,8 +198,10 @@ def create_bom_item(
     if bom_data.parent_bom_item_id is not None:
         _validate_parent_bom_item(db, bom_data.parent_bom_item_id, bom_data.entity_version_id)
 
+    payload = bom_data.model_dump(exclude={"explode_from_template"})
+
     with db_transaction(db, f"create_bom_item '{bom_data.part_number}' for version {version.id}"):
-        new_item = BOMItem(**bom_data.model_dump())
+        new_item = BOMItem(**payload)
         db.add(new_item)
         db.flush()
 
@@ -188,6 +209,84 @@ def create_bom_item(
 
     db.refresh(new_item)
     return new_item
+
+
+def _create_bom_item_with_explosion(db: Session, bom_data: BOMItemCreate, version: EntityVersion) -> BOMItem:
+    bom_type_value = bom_data.bom_type.value if isinstance(bom_data.bom_type, BOMType) else bom_data.bom_type
+    if bom_type_value != BOMType.TECHNICAL.value:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="explode_from_template requires bom_type=TECHNICAL.",
+        )
+
+    validate_catalog_reference(db, bom_data.part_number, on_create=True)
+    _validate_quantity(bom_data.quantity)
+
+    if bom_data.quantity_from_field_id is not None:
+        _validate_quantity_from_field(db, bom_data.quantity_from_field_id, bom_data.entity_version_id)
+
+    if bom_data.parent_bom_item_id is not None:
+        _validate_parent_bom_item(db, bom_data.parent_bom_item_id, bom_data.entity_version_id)
+
+    template_exists = (
+        db.query(EngineeringTemplateItem.id)
+        .filter(EngineeringTemplateItem.parent_part_number == bom_data.part_number)
+        .first()
+    )
+    if template_exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Catalog item '{bom_data.part_number}' has no engineering template; "
+                "explode_from_template requires one."
+            ),
+        )
+
+    try:
+        root = materialize(
+            db,
+            entity_version_id=bom_data.entity_version_id,
+            root_part_number=bom_data.part_number,
+            parent_bom_item_id=bom_data.parent_bom_item_id,
+            root_quantity=bom_data.quantity,
+            root_quantity_from_field_id=bom_data.quantity_from_field_id,
+            root_sequence=bom_data.sequence,
+            root_suppress_auto_explode=False,
+        )
+        db.commit()
+    except ExplosionLimitExceededError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={
+                "limit": exc.limit_name,
+                "max": exc.max_value,
+                "reached": exc.reached,
+            },
+        ) from None
+    except ExplosionContainsObsoletePartsError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Engineering BOM explosion encountered OBSOLETE parts.",
+                "obsolete_parts": exc.obsolete_parts,
+            },
+        ) from None
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error(
+            f"Database error during materialization of '{bom_data.part_number}': {exc}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {exc}",
+        ) from None
+
+    db.refresh(root)
+    logger.info(f"BOM item {root.id} materialized successfully: part_number='{bom_data.part_number}'")
+    return root
 
 
 @router.patch("/{bom_item_id}", response_model=BOMItemRead)
