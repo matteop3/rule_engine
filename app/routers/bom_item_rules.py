@@ -17,21 +17,9 @@ from app.dependencies import (
 from app.models.domain import BOMItemRule, User
 from app.schemas.bom_item_rule import BOMItemRuleCreate, BOMItemRuleRead, BOMItemRuleUpdate
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/bom-item-rules", tags=["BOM Item Rules"])
-
-# ============================================================
-# VALIDATION HELPERS
-# ============================================================
 
 
 def _validate_bom_item_belongs_to_version(db: Session, bom_item_id: int, entity_version_id: int) -> None:
@@ -53,11 +41,6 @@ def _validate_conditions_field_ids(db: Session, conditions: dict, entity_version
             validate_field_belongs_to_version(db, field_id, entity_version_id)
 
 
-# ============================================================
-# ENDPOINTS
-# ============================================================
-
-
 @router.get("/", response_model=list[BOMItemRuleRead])
 def list_bom_item_rules(
     bom_item_id: int | None = None,
@@ -67,14 +50,7 @@ def list_bom_item_rules(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieve BOM item rules filtered by bom_item_id or entity_version_id.
-
-    At least one filter parameter must be provided.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view BOM item rules
-    """
+    """List BOM item rules; requires at least one of `bom_item_id` or `entity_version_id`. ADMIN/AUTHOR only."""
     logger.info(
         f"Listing BOM item rules by user {current_user.id}: "
         f"bom_item_id={bom_item_id}, entity_version_id={entity_version_id}"
@@ -105,12 +81,7 @@ def read_bom_item_rule(
     bom_item_rule: BOMItemRule = Depends(get_bom_item_rule_or_404),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieve a single BOM item rule.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view BOM item rule details
-    """
+    """Get a BOM item rule by id. ADMIN/AUTHOR only."""
     logger.debug(f"Reading BOM item rule {bom_item_rule.id} by user {current_user.id}")
     return bom_item_rule
 
@@ -121,16 +92,10 @@ def create_bom_item_rule(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Create a BOM item rule attached to a specific BOM item.
+    """Create a BOM item rule on a DRAFT version. ADMIN/AUTHOR only.
 
-    Restrictions:
-        - The version must be DRAFT
-        - bom_item_id must belong to the specified entity_version_id
-        - All field_id values in conditions.criteria must belong to the same entity_version_id
-
-    Access Control:
-        - Only ADMIN and AUTHOR can create BOM item rules
+    Validates that `bom_item_id` and every `criteria[].field_id` belong to the
+    target version.
     """
     logger.info(
         f"Creating BOM item rule for bom_item {rule_data.bom_item_id} "
@@ -166,22 +131,11 @@ def update_bom_item_rule(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Update a BOM item rule.
-
-    Restrictions:
-        - The version must be DRAFT
-        - Updated conditions.criteria field_id values must belong to the same version
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update BOM item rules
-    """
-    logger.info(f"Updating BOM item rule {bom_item_rule.id} by user {current_user.id}")
+    """Update a BOM item rule on a DRAFT version; revalidates `criteria[].field_id`. ADMIN/AUTHOR only."""
 
     update_data = rule_update.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for BOM item rule {bom_item_rule.id}")
         return bom_item_rule
 
     if "conditions" in update_data:
@@ -203,16 +157,7 @@ def delete_bom_item_rule(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Delete a BOM item rule.
-
-    Restrictions:
-        - The version must be DRAFT
-
-    Access Control:
-        - Only ADMIN and AUTHOR can delete BOM item rules
-    """
-    logger.info(f"Deleting BOM item rule {bom_item_rule.id} by user {current_user.id}")
+    """Delete a BOM item rule on a DRAFT version. ADMIN/AUTHOR only."""
 
     with db_transaction(db, f"delete_bom_item_rule {bom_item_rule.id}"):
         db.delete(bom_item_rule)

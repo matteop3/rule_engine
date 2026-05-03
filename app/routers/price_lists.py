@@ -9,21 +9,9 @@ from app.dependencies import db_transaction, require_admin_or_author
 from app.models.domain import Configuration, ConfigurationStatus, PriceList, PriceListItem, User
 from app.schemas.price_list import PriceListCreate, PriceListRead, PriceListUpdate
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/price-lists", tags=["Price Lists"])
-
-# ============================================================
-# HELPERS
-# ============================================================
 
 
 def _get_price_list_or_404(price_list_id: int, db: Session = Depends(get_db)) -> PriceList:
@@ -37,11 +25,6 @@ def _get_price_list_or_404(price_list_id: int, db: Session = Depends(get_db)) ->
     return price_list
 
 
-# ============================================================
-# ENDPOINTS
-# ============================================================
-
-
 @router.get("/", response_model=list[PriceListRead])
 def list_price_lists(
     valid_at: dt.date | None = Query(default=None, description="Filter by validity date (default: today)"),
@@ -50,17 +33,8 @@ def list_price_lists(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    List price lists, optionally filtered by validity at a given date.
-
-    If `valid_at` is not provided, defaults to today.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view price lists
-    """
+    """List price lists valid at `valid_at` (default today). ADMIN/AUTHOR only."""
     effective_date = valid_at if valid_at is not None else dt.date.today()
-
-    logger.info(f"Listing price lists valid at {effective_date} by user {current_user.id}")
 
     items = (
         db.query(PriceList)
@@ -81,17 +55,7 @@ def create_price_list(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Create a new price list.
-
-    Validation:
-        - valid_from must be strictly less than valid_to (enforced by schema)
-        - name must be unique (DB constraint)
-
-    Access Control:
-        - Only ADMIN and AUTHOR can create price lists
-    """
-    logger.info(f"Creating price list '{payload.name}' by user {current_user.id}")
+    """Create a price list (ADMIN/AUTHOR); duplicate `name` returns 409."""
 
     # Check unique name
     existing = db.query(PriceList).filter(PriceList.name == payload.name).first()
@@ -117,12 +81,7 @@ def read_price_list(
     price_list: PriceList = Depends(_get_price_list_or_404),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieve a single price list by ID.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view price list details
-    """
+    """Get a price list by id. ADMIN/AUTHOR only."""
     logger.debug(f"Reading price list {price_list.id} by user {current_user.id}")
     return price_list
 
@@ -134,22 +93,15 @@ def update_price_list(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Update a price list header.
+    """Update a price list header (ADMIN/AUTHOR).
 
-    Validation:
-        - valid_from must be strictly less than valid_to (considering current + new values)
-        - If changing dates, all existing items must still fit within the new bounding box
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update price lists
+    `valid_from < valid_to` is enforced; narrowing the bounding box that
+    excludes any existing item returns 409.
     """
-    logger.info(f"Updating price list {price_list.id} by user {current_user.id}")
 
     update_data = payload.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for price list {price_list.id}")
         return price_list
 
     # Check unique name if being changed
@@ -208,17 +160,7 @@ def delete_price_list(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Delete a price list.
-
-    Restrictions:
-        - Cannot delete if referenced by any FINALIZED configuration (HTTP 409)
-        - DRAFT configurations using this price list will have price_list_id set to NULL (FK SET NULL)
-
-    Access Control:
-        - Only ADMIN and AUTHOR can delete price lists
-    """
-    logger.info(f"Deleting price list {price_list.id} by user {current_user.id}")
+    """Delete a price list (ADMIN/AUTHOR); blocked with 409 if any FINALIZED configuration references it."""
 
     finalized_count = (
         db.query(Configuration)

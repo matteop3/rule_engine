@@ -17,23 +17,9 @@ from app.dependencies import (
 from app.models.domain import Rule, RuleType, User, Value
 from app.schemas import ValueCreate, ValueRead, ValueUpdate
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/values", tags=["Values"])
-
-
-# ============================================================
-# ENDPOINTS
-# ============================================================
 
 
 @router.get("/", response_model=list[ValueRead])
@@ -44,28 +30,9 @@ def list_values(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieve Values for a specific Field.
+    """List Values, optionally filtered by `field_id`. ADMIN/AUTHOR only."""
 
-    Access Control:
-        - Only ADMIN and AUTHOR can view values
-
-    Query Parameters:
-        field_id: Filter by field (optional)
-        skip: Pagination offset
-        limit: Maximum results (max 100)
-
-    Returns:
-        List[ValueRead]: List of values
-    """
-    logger.info(f"Listing values by user {current_user.id}: field={field_id}, skip={skip}, limit={limit}")
-
-    # Cap limit to prevent abuse
-    original_limit = limit
     limit = min(limit, 100)
-
-    if original_limit > 100:
-        logger.warning(f"Limit capped from {original_limit} to 100")
 
     query = db.query(Value)
 
@@ -81,15 +48,7 @@ def list_values(
 
 @router.get("/{value_id}", response_model=ValueRead)
 def read_value(value: Value = Depends(get_value_or_404), current_user: User = Depends(require_admin_or_author)):
-    """
-    Retrieve a single Value.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view value details
-
-    Returns:
-        ValueRead: The requested value
-    """
+    """Get a Value by id. ADMIN/AUTHOR only."""
     logger.debug(f"Reading value {value.id} by user {current_user.id}")
     return value
 
@@ -98,19 +57,9 @@ def read_value(value: Value = Depends(get_value_or_404), current_user: User = De
 def create_value(
     value_data: ValueCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_author)
 ):
-    """
-    Create a new Value related to a Field.
+    """Create a Value on a DRAFT version's option-based Field. ADMIN/AUTHOR only.
 
-    Restrictions:
-        - The version must be DRAFT
-        - Parent Field must exist
-        - Cannot create values for free-value Fields
-
-    Access Control:
-        - Only ADMIN and AUTHOR can create values
-
-    Returns:
-        ValueRead: The created value
+    Rejects free-value parent Fields with 400.
     """
     logger.info(
         f"Creating value for field {value_data.field_id} by user {current_user.id} (role: {current_user.role_display})"
@@ -125,7 +74,6 @@ def create_value(
 
     # Prevent creation of Value for free-value Fields
     if field.is_free_value:
-        logger.warning(f"Value creation failed: field {field.id} ('{field.name}') is free-value")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -153,21 +101,11 @@ def update_value(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
+    """Update a Value on a DRAFT version. ADMIN/AUTHOR only.
+
+    Cannot move a Value to a different version, to a free-value Field, or
+    rename its `value` string while a CALCULATION rule references it.
     """
-    Updates an existing Value.
-
-    Restrictions:
-        - The version must be DRAFT
-        - Cannot move value to a different version (must belong to same version)
-        - Cannot move value to a free-value Field
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update values
-
-    Returns:
-        ValueRead: The updated value
-    """
-    logger.info(f"Updating value {value.id} by user {current_user.id} (role: {current_user.role_display})")
 
     parent_field = value.field
     if not parent_field:
@@ -184,17 +122,12 @@ def update_value(
 
         # Check integrity: cannot move value to a Free Field
         if new_field.is_free_value:
-            logger.warning(f"Update value {value.id} failed: cannot move to free-value field {new_field.id}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot assign Value to a Field with free value."
             )
 
         # If new_field does not belong to the same version -> Error
         if new_field.entity_version_id != parent_field.entity_version_id:
-            logger.warning(
-                f"Update value {value.id} failed: version mismatch "
-                f"({parent_field.entity_version_id} vs {new_field.entity_version_id})"
-            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -216,10 +149,6 @@ def update_value(
             .count()
         )
         if calc_rules_count > 0:
-            logger.warning(
-                f"Update value {value.id} failed: value string '{value.value}' "
-                f"is referenced by {calc_rules_count} CALCULATION rule(s)"
-            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -233,7 +162,6 @@ def update_value(
     update_data = value_update.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for value {value.id}")
         return value
 
     # Update fields
@@ -253,21 +181,7 @@ def delete_value(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Delete a Value.
-
-    Strict Policy:
-        - Cannot delete if it is the explicit target of a Rule
-        - Cannot delete if it is used as a condition criteria in any Rule (deep scan)
-        - The version must be DRAFT
-
-    Access Control:
-        - Only ADMIN and AUTHOR can delete values
-
-    Returns:
-        204 No Content on success
-    """
-    logger.info(f"Deleting value {value.id} by user {current_user.id} (role: {current_user.role_display})")
+    """Delete a Value on a DRAFT version (blocked if referenced by any Rule). ADMIN/AUTHOR only."""
 
     # Validate value is not used in any rules (explicit or implicit)
     validate_value_not_used_in_rules(db, value)

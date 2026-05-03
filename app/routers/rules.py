@@ -17,23 +17,9 @@ from app.dependencies import (
 from app.models.domain import Field, Rule, RuleType, User, Value
 from app.schemas import RuleCreate, RuleRead, RuleUpdate
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/rules", tags=["Rules"])
-
-
-# ============================================================
-# ENDPOINTS
-# ============================================================
 
 
 @router.get("/", response_model=list[RuleRead])
@@ -44,28 +30,9 @@ def list_rules(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieve a list of Rules.
+    """List Rules, optionally filtered by `entity_version_id`. ADMIN/AUTHOR only."""
 
-    Access Control:
-        - Only ADMIN and AUTHOR can view rules
-
-    Query Parameters:
-        entity_version_id: Filter by version (optional but recommended)
-        skip: Pagination offset
-        limit: Maximum results (max 100)
-
-    Returns:
-        List[RuleRead]: List of rules
-    """
-    logger.info(f"Listing rules by user {current_user.id}: version={entity_version_id}, skip={skip}, limit={limit}")
-
-    # Cap limit to prevent abuse
-    original_limit = limit
     limit = min(limit, 100)
-
-    if original_limit > 100:
-        logger.warning(f"Limit capped from {original_limit} to 100")
 
     query = db.query(Rule)
     if entity_version_id:
@@ -80,15 +47,7 @@ def list_rules(
 
 @router.get("/{rule_id}", response_model=RuleRead)
 def read_rule(rule: Rule = Depends(get_rule_or_404), current_user: User = Depends(require_admin_or_author)):
-    """
-    Retrieve a single Rule.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view rule details
-
-    Returns:
-        RuleRead: The requested rule
-    """
+    """Get a Rule by id. ADMIN/AUTHOR only."""
     logger.debug(f"Reading rule {rule.id} by user {current_user.id}")
     return rule
 
@@ -97,19 +56,11 @@ def read_rule(rule: Rule = Depends(get_rule_or_404), current_user: User = Depend
 def create_rule(
     rule_data: RuleCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_author)
 ):
-    """
-    Creates a new Rule in a DRAFT version.
+    """Create a Rule on a DRAFT version. ADMIN/AUTHOR only.
 
-    Restrictions:
-        - The version must be DRAFT
-        - Target Field must belong to the specified Version
-        - Target Value (if specified) must belong to the Target Field
-
-    Access Control:
-        - Only ADMIN and AUTHOR can create rules
-
-    Returns:
-        RuleRead: The created rule
+    Validates that the target Field belongs to the version, the target Value
+    (if any) belongs to the Field, and that CALCULATION `set_value` matches a
+    defined `Value` for option-based fields.
     """
     logger.info(
         f"Creating rule for version {rule_data.entity_version_id} "
@@ -165,22 +116,12 @@ def update_rule(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
+    """Update a Rule on a DRAFT version. ADMIN/AUTHOR only.
+
+    `entity_version_id` is immutable; target Field/Value changes are
+    re-validated; `error_message` is only valid for VALIDATION rules and
+    `set_value` only for CALCULATION rules.
     """
-    Updates an existing Rule.
-
-    Restrictions:
-        - The version must be DRAFT
-        - Cannot change entity_version_id (rules belong strictly to their creation version)
-        - New target Field must belong to the same Version
-        - New target Value must belong to the new target Field
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update rules
-
-    Returns:
-        RuleRead: The updated rule
-    """
-    logger.info(f"Updating rule {rule.id} by user {current_user.id} (role: {current_user.role_display})")
 
     # The Version must be immutable
     final_version_id = rule.entity_version_id
@@ -252,7 +193,6 @@ def update_rule(
     update_data = rule_update.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for rule {rule.id}")
         return rule
 
     # Update fields
@@ -272,19 +212,7 @@ def delete_rule(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Delete a Rule.
-
-    Restrictions:
-        - The version must be DRAFT
-
-    Access Control:
-        - Only ADMIN and AUTHOR can delete rules
-
-    Returns:
-        204 No Content on success
-    """
-    logger.info(f"Deleting rule {rule.id} by user {current_user.id} (role: {current_user.role_display})")
+    """Delete a Rule on a DRAFT version. ADMIN/AUTHOR only."""
 
     # Delete rule
     with db_transaction(db, f"delete_rule {rule.id}"):

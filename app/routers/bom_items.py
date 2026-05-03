@@ -23,21 +23,9 @@ from app.services.engineering_template import (
     materialize,
 )
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/bom-items", tags=["BOM Items"])
-
-# ============================================================
-# VALIDATION HELPERS
-# ============================================================
 
 
 def _validate_quantity(quantity: Decimal) -> None:
@@ -99,11 +87,6 @@ def _validate_parent_bom_item(db: Session, parent_id: int, version_id: int, excl
             )
 
 
-# ============================================================
-# ENDPOINTS
-# ============================================================
-
-
 @router.get("/", response_model=list[BOMItemRead])
 def list_bom_items(
     entity_version_id: int,
@@ -112,13 +95,7 @@ def list_bom_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieve BOM items for a specific version.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view BOM items
-    """
-    logger.info(f"Listing BOM items for version {entity_version_id} by user {current_user.id}")
+    """List BOM items of a version, ordered by `sequence`. ADMIN/AUTHOR only."""
 
     items = (
         db.query(BOMItem)
@@ -138,12 +115,7 @@ def read_bom_item(
     bom_item: BOMItem = Depends(get_bom_item_or_404),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieve a single BOM item.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view BOM item details
-    """
+    """Get a BOM item by id. ADMIN/AUTHOR only."""
     logger.debug(f"Reading BOM item {bom_item.id} by user {current_user.id}")
     return bom_item
 
@@ -154,23 +126,11 @@ def create_bom_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Create a BOM item attached to a specific entity version.
+    """Create a BOM item on a DRAFT version. ADMIN/AUTHOR only.
 
-    When `explode_from_template=true`, the part is required to be
-    `bom_type=TECHNICAL` with a non-empty engineering template; the server
-    materializes the full sub-tree of `BOMItem` rows in a single
-    transaction and returns the root with its descendants nested in
-    `children`.
-
-    Restrictions:
-        - The version must be DRAFT
-        - quantity must be > 0
-        - quantity_from_field_id must reference a NUMBER field in the same version
-        - parent_bom_item_id must reference an item in the same version
-
-    Access Control:
-        - Only ADMIN and AUTHOR can create BOM items
+    With `explode_from_template=true` (TECHNICAL only) the engineering
+    template is materialized as a `BOMItem` sub-tree in one transaction;
+    the response includes the descendants nested in `children`.
     """
     logger.info(
         f"Creating BOM item '{bom_data.part_number}' for version {bom_data.entity_version_id} "
@@ -296,21 +256,11 @@ def update_bom_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Update a BOM item.
-
-    Restrictions:
-        - The version must be DRAFT
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update BOM items
-    """
-    logger.info(f"Updating BOM item {bom_item.id} by user {current_user.id}")
+    """Update a BOM item on a DRAFT version. ADMIN/AUTHOR only."""
 
     update_data = bom_update.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for BOM item {bom_item.id}")
         return bom_item
 
     effective_type = update_data.get("bom_type", bom_item.bom_type)
@@ -349,16 +299,7 @@ def delete_bom_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Delete a BOM item and its children (cascade).
-
-    Restrictions:
-        - The version must be DRAFT
-
-    Access Control:
-        - Only ADMIN and AUTHOR can delete BOM items
-    """
-    logger.info(f"Deleting BOM item {bom_item.id} by user {current_user.id}")
+    """Delete a BOM item (cascades to children) on a DRAFT version. ADMIN/AUTHOR only."""
 
     with db_transaction(db, f"delete_bom_item {bom_item.id}"):
         part_number = bom_item.part_number

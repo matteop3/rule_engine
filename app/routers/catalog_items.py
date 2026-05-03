@@ -13,22 +13,11 @@ from app.schemas.catalog_item import (
     CatalogItemUpdate,
     CatalogItemUsageResponse,
 )
-
-# ============================================================
-# LOGGING SETUP
-# ============================================================
+from app.schemas.engineering_template_item import EngineeringTemplateItemRead
 
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/catalog-items", tags=["Catalog Items"])
-
-# ============================================================
-# HELPERS
-# ============================================================
 
 
 def _get_catalog_item_or_404(item_id: int, db: Session = Depends(get_db)) -> CatalogItem:
@@ -42,11 +31,6 @@ def _get_catalog_item_or_404(item_id: int, db: Session = Depends(get_db)) -> Cat
     return item
 
 
-# ============================================================
-# ENDPOINTS
-# ============================================================
-
-
 @router.get("/", response_model=list[CatalogItemRead])
 def list_catalog_items(
     status_filter: CatalogItemStatus | None = Query(
@@ -57,15 +41,7 @@ def list_catalog_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    List catalog items, optionally filtered by `status`.
-
-    Ordered by `part_number` ASC.
-
-    Access Control:
-        - Any authenticated user can list catalog items
-    """
-    logger.info(f"Listing catalog items (status={status_filter}) by user {current_user.id}")
+    """List catalog items by `part_number` ASC, optionally filtered by `status` (any authenticated user)."""
 
     query = db.query(CatalogItem)
     if status_filter is not None:
@@ -83,16 +59,7 @@ def create_catalog_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Create a new catalog item.
-
-    Validation:
-        - `part_number` must be unique (HTTP 409 on duplicate)
-
-    Access Control:
-        - Only ADMIN and AUTHOR can create catalog items
-    """
-    logger.info(f"Creating catalog item '{payload.part_number}' by user {current_user.id}")
+    """Create a catalog item (ADMIN/AUTHOR); duplicate `part_number` returns 409."""
 
     existing = db.query(CatalogItem).filter(CatalogItem.part_number == payload.part_number).first()
     if existing:
@@ -117,12 +84,7 @@ def read_catalog_item(
     item: CatalogItem = Depends(_get_catalog_item_or_404),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Retrieve a single catalog item by its surrogate id.
-
-    Access Control:
-        - Any authenticated user can read catalog items
-    """
+    """Get a catalog item by surrogate id (any authenticated user)."""
     logger.debug(f"Reading catalog item {item.id} by user {current_user.id}")
     return item
 
@@ -133,17 +95,7 @@ def read_catalog_item_usage(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Where-used view for a catalog item.
-
-    Returns the engineering template rows in which the part appears as parent
-    or as child, plus the `BOMItem` rows that reference it (each with its
-    `entity_version_id`). Used by authors to assess the blast radius of a
-    catalog mutation before acting.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can read usage data.
-    """
+    """Where-used graph: template rows (parent/child) and `BOMItem` references. ADMIN/AUTHOR only."""
     logger.debug(f"Reading usage for catalog item '{part_number}' by user {current_user.id}")
 
     catalog_item = db.query(CatalogItem).filter(CatalogItem.part_number == part_number).first()
@@ -185,8 +137,8 @@ def read_catalog_item_usage(
 
     return CatalogItemUsageResponse(
         part_number=part_number,
-        templates_as_parent=templates_as_parent,
-        templates_as_child=templates_as_child,
+        templates_as_parent=[EngineeringTemplateItemRead.model_validate(t) for t in templates_as_parent],
+        templates_as_child=[EngineeringTemplateItemRead.model_validate(t) for t in templates_as_child],
         bom_items=bom_items,
     )
 
@@ -197,12 +149,7 @@ def read_catalog_item_by_part_number(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Retrieve a single catalog item by its business key (`part_number`).
-
-    Access Control:
-        - Any authenticated user can read catalog items
-    """
+    """Get a catalog item by business key `part_number` (any authenticated user)."""
     logger.debug(f"Reading catalog item by part_number '{part_number}' by user {current_user.id}")
     item = db.query(CatalogItem).filter(CatalogItem.part_number == part_number).first()
     if not item:
@@ -220,23 +167,11 @@ def update_catalog_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Update a catalog item.
-
-    The `part_number` field is the immutable business key and cannot be
-    modified; any payload containing `part_number` is rejected with
-    HTTP 422 at the schema layer. To retire a part, set `status` to
-    OBSOLETE and create a new entry with the desired number.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update catalog items
-    """
-    logger.info(f"Updating catalog item {item.id} by user {current_user.id}")
+    """Update a catalog item (ADMIN/AUTHOR); `part_number` is immutable and rejected with 422."""
 
     update_data = payload.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for catalog item {item.id}")
         return item
 
     with db_transaction(db, f"update_catalog_item {item.id}"):
@@ -255,13 +190,7 @@ def delete_catalog_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Delete a catalog item.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can delete catalog items
-    """
-    logger.info(f"Deleting catalog item {item.id} by user {current_user.id}")
+    """Delete a catalog item; blocked with 409 if any BOM, price-list, or template row references it."""
 
     validate_catalog_not_referenced(db, item)
 

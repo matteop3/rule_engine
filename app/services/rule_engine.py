@@ -39,11 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 class RuleEngineService:
-    """
-    CPQ Rule Engine: evaluates field states based on rules and user input.
-
-    Note: This service does NOT handle database commits.
-    """
+    """CPQ rule engine: evaluates field states from rules and user input. Does not commit."""
 
     def __init__(self):
         self._cache: TTLCache[VersionData] = TTLCache(
@@ -52,13 +48,7 @@ class RuleEngineService:
         )
 
     def calculate_state(self, db: Session, request: CalculationRequest) -> CalculationResponse:
-        """
-        CPQ core engine.
-        Finds the target Version (PUBLISHED or explicit) and executes waterfall logic.
-        """
-        logger.info(
-            f"Starting state calculation for entity_id={request.entity_id}, version_id={request.entity_version_id}"
-        )
+        """Resolve the target `EntityVersion` and run the full evaluation waterfall, BOM, and SKU."""
 
         # Resolve target version
         target_version = self._resolve_target_version(db, request)
@@ -72,8 +62,8 @@ class RuleEngineService:
 
         # Build indexing structures
         type_map = self._build_type_map(fields_db)
-        values_by_field = self._build_values_index(all_values)
-        rules_by_target_value = self._build_rules_index(all_rules)
+        values_by_field = self._index_values_by_field(all_values)
+        rules_by_target_value = self._index_rules_by_target_value(all_rules)
         user_input_map = self._normalize_user_input(request.current_state)
 
         # Execute waterfall
@@ -170,17 +160,11 @@ class RuleEngineService:
     # ============================================================
 
     def _resolve_target_version(self, db: Session, request: CalculationRequest) -> EntityVersion:
-        """
-        Resolves the target EntityVersion based on request parameters.
-
-        - If entity_version_id is provided: preview mode (explicit version)
-        - Otherwise: production mode (PUBLISHED version)
-        """
+        """Return the target version: explicit `entity_version_id` (preview) or the PUBLISHED one."""
         try:
             # Check entity existence
             entity = db.query(Entity).filter(Entity.id == request.entity_id).first()
             if not entity:
-                logger.warning(f"Entity {request.entity_id} not found")
                 raise ValueError(f"Entity {request.entity_id} not found.")
 
             # Preview mode
@@ -189,11 +173,9 @@ class RuleEngineService:
                 target_version = db.query(EntityVersion).filter(EntityVersion.id == request.entity_version_id).first()
 
                 if not target_version:
-                    logger.warning(f"Version {request.entity_version_id} not found")
                     raise ValueError(f"Version {request.entity_version_id} not found.")
 
                 if target_version.entity_id != request.entity_id:
-                    logger.warning(f"Version {request.entity_version_id} does not belong to entity {request.entity_id}")
                     raise ValueError(
                         f"Version {request.entity_version_id} does not belong to Entity {request.entity_id}."
                     )
@@ -209,7 +191,6 @@ class RuleEngineService:
             )
 
             if not target_version:
-                logger.warning(f"Entity {request.entity_id} has no PUBLISHED version")
                 raise ValueError(f"Entity {request.entity_id} has no PUBLISHED version ready for calculation.")
 
             return target_version
@@ -221,14 +202,9 @@ class RuleEngineService:
     def _load_version_data(
         self, db: Session, version_id: int, version_status: str
     ) -> tuple[list[CachedField], list[CachedValue], list[CachedRule], list[CachedBOMItem], list[CachedBOMItemRule]]:
-        """
-        Loads all Fields, Values, Rules, BOM Items, and BOM Item Rules for a given version.
+        """Batch-load fields, values, rules, BOM items, BOM rules for a version.
 
-        PUBLISHED versions are cached as frozen dataclasses (session-independent).
-        DRAFT versions always hit the database (mutable data).
-
-        Implementation: Batch loads with IN queries to avoid N+1 problem,
-        then builds in-memory indexes for O(1) lookups during rule evaluation.
+        PUBLISHED versions are cached as frozen dataclasses; DRAFT always hits the DB.
         """
         cache_key = str(version_id)
 
@@ -352,44 +328,34 @@ class RuleEngineService:
             raise
 
     def _build_type_map(self, fields: list[CachedField]) -> dict[int, str]:
-        """Creates a mapping of field_id -> data_type string."""
+        """Index fields by `field_id → data_type`."""
         return {f.id: f.data_type for f in fields}
 
-    def _build_index(self, items: list[Any], key_extractor: Callable[[Any], int | None]) -> dict[int, list[Any]]:
-        """
-        Generic index builder - DRY pattern for grouping items by key.
-
-        Args:
-            items: List of objects to index
-            key_extractor: Function to extract the grouping key from each item
-
-        Returns:
-            Dictionary mapping key -> list of items with that key
-        """
-        index: dict[int, list[Any]] = {}
-        for item in items:
-            key = key_extractor(item)
-            if key is not None:
-                if key not in index:
-                    index[key] = []
-                index[key].append(item)
+    def _index_values_by_field(self, values: list[CachedValue]) -> dict[int, list[CachedValue]]:
+        """Index values by `field_id → list[CachedValue]`."""
+        index: dict[int, list[CachedValue]] = {}
+        for value in values:
+            index.setdefault(value.field_id, []).append(value)
         return index
 
-    def _build_values_index(self, values: list[CachedValue]) -> dict[int, list[CachedValue]]:
-        """Creates a mapping of field_id -> list of Value objects."""
-        return self._build_index(values, lambda v: v.field_id)
+    def _index_rules_by_target_value(self, rules: list[CachedRule]) -> dict[int, list[CachedRule]]:
+        """Index rules by `target_value_id`; rules without one are skipped (only AVAILABILITY rules carry it)."""
+        index: dict[int, list[CachedRule]] = {}
+        for rule in rules:
+            if rule.target_value_id is None:
+                continue
+            index.setdefault(rule.target_value_id, []).append(rule)
+        return index
 
-    def _build_rules_index(self, rules: list[CachedRule]) -> dict[int, list[CachedRule]]:
-        """
-        Creates a mapping of target_value_id -> list of Rule objects.
-        Only indexes rules with a target_value_id (availability rules).
-        """
-        return self._build_index(rules, lambda r: r.target_value_id)
+    def _index_bom_rules_by_item(self, bom_rules: list[CachedBOMItemRule]) -> dict[int, list[CachedBOMItemRule]]:
+        """Index BOM item rules by `bom_item_id → list[CachedBOMItemRule]`."""
+        index: dict[int, list[CachedBOMItemRule]] = {}
+        for rule in bom_rules:
+            index.setdefault(rule.bom_item_id, []).append(rule)
+        return index
 
     def _normalize_user_input(self, current_state: list[Any]) -> dict[int, Any]:
-        """
-        Normalizes user input by stripping strings and converting empty to None.
-        """
+        """Map `field_id` → value, stripping strings and turning empty strings/lists into `None`."""
         user_input_map: dict[int, Any] = {}
         for item in current_state:
             val = item.value
@@ -417,22 +383,17 @@ class RuleEngineService:
         running_context: dict[int, Any],
         type_map: dict[int, str],
     ) -> FieldOutputState:
+        """Run the per-field evaluation waterfall and return its final `FieldOutputState`.
+
+        Order: Visibility → (early return if hidden) → Calculation → Editability →
+        Availability → Mandatory → Validation. Calculation short-circuits Editability
+        and Availability.
         """
-        Processes a single field through the waterfall logic:
-        1. Visibility    → if hidden, early return
-        2. Calculation   → if calculated, set value + readonly, skip to Mandatory
-        3. Editability   → skipped if calculated
-        4. Availability  → skipped if calculated
-        5. Mandatory
-        6. Validation
-        """
-        logger.debug(f"Processing field {field.name} (id={field.id})")
 
         # Layer 1: Visibility
         is_visible = self._evaluate_visibility(field, all_rules, running_context, type_map)
 
         if not is_visible:
-            logger.debug(f"Field {field.name} is hidden")
             return FieldOutputState(
                 field_id=field.id,
                 field_name=field.name,
@@ -449,8 +410,6 @@ class RuleEngineService:
         calculated_value = self._evaluate_calculation(field, all_rules, running_context, type_map)
 
         if calculated_value is not None:
-            logger.debug(f"Field {field.name} is calculated: value={calculated_value}")
-
             # Build available_options: single entry for non-free, empty for free
             calc_options: list[ValueOption] = []
             if not field.is_free_value:
@@ -481,9 +440,6 @@ class RuleEngineService:
                 type_map=type_map,
                 is_required=is_required,
             )
-
-            if validation_error:
-                logger.debug(f"Field {field.name} (calculated) has validation error: {validation_error}")
 
             return FieldOutputState(
                 field_id=field.id,
@@ -527,13 +483,6 @@ class RuleEngineService:
             is_required=is_required,
         )
 
-        if validation_error:
-            logger.debug(f"Field {field.name} has validation error: {validation_error}")
-
-        logger.debug(
-            f"Field {field.name} processed: value={final_value}, required={is_required}, readonly={is_readonly}"
-        )
-
         return FieldOutputState(
             field_id=field.id,
             field_name=field.name,
@@ -551,85 +500,31 @@ class RuleEngineService:
     # ============================================================
 
     def _get_rules_by_type(self, field_id: int, rule_type: RuleType, all_rules: list[CachedRule]) -> list[CachedRule]:
-        """
-        Helper to filter rules by field and type.
-        Eliminates repetitive list comprehensions.
-        """
+        """Filter rules by `(target_field_id, rule_type)`."""
         return [r for r in all_rules if r.target_field_id == field_id and r.rule_type == rule_type]
 
     def _any_rule_passes(
         self, rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
     ) -> bool:
-        """
-        DRY helper: checks if at least one rule passes (OR logic).
-
-        Returns True if any rule's conditions are satisfied.
-        """
+        """Return `True` if any rule's conditions are satisfied (OR logic)."""
         for rule in rules:
             if self._evaluate_rule(rule.conditions, running_context, type_map):
                 return True
         return False
 
-    def _evaluate_boolean_layer(
-        self,
-        field: CachedField,
-        all_rules: list[CachedRule],
-        running_context: dict[int, Any],
-        type_map: dict[int, str],
-        rule_type: RuleType,
-        default_when_no_rules: bool,
-        value_when_rule_passes: bool,
-    ) -> bool:
-        """
-        Generic boolean layer evaluation - DRY pattern for visibility/editability/mandatory.
-
-        Args:
-            field: The field being evaluated
-            all_rules: All rules for the version
-            running_context: Current field values
-            type_map: Field type mapping
-            rule_type: The type of rules to evaluate
-            default_when_no_rules: Value to return when no rules exist
-            value_when_rule_passes: Value to return when a rule passes
-
-        Returns:
-            Boolean result of the layer evaluation
-        """
-        rules = self._get_rules_by_type(field.id, rule_type, all_rules)
-
-        if not rules:
-            return default_when_no_rules
-
-        if self._any_rule_passes(rules, running_context, type_map):
-            return value_when_rule_passes
-
-        return not value_when_rule_passes
-
     def _evaluate_visibility(
         self, field: CachedField, all_rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
     ) -> bool:
-        """
-        Layer 1: Determines if field is visible.
-        Logic: Hidden unless a VISIBILITY rule passes.
-        """
-        return self._evaluate_boolean_layer(
-            field=field,
-            all_rules=all_rules,
-            running_context=running_context,
-            type_map=type_map,
-            rule_type=RuleType.VISIBILITY,
-            default_when_no_rules=not field.is_hidden,
-            value_when_rule_passes=True,  # Visible when rule passes
-        )
+        """Layer 1 — visible iff a VISIBILITY rule passes (defaults to `not field.is_hidden`)."""
+        rules = self._get_rules_by_type(field.id, RuleType.VISIBILITY, all_rules)
+        if not rules:
+            return not field.is_hidden
+        return self._any_rule_passes(rules, running_context, type_map)
 
     def _evaluate_calculation(
         self, field: CachedField, all_rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
     ) -> str | None:
-        """
-        Layer 2: Determines if a field's value is system-determined.
-        Returns the set_value if a CALCULATION rule passes, else None.
-        First passing rule wins.
-        """
+        """Layer 2 — return the `set_value` of the first passing CALCULATION rule, else `None`."""
         calc_rules = self._get_rules_by_type(field.id, RuleType.CALCULATION, all_rules)
         for rule in calc_rules:
             if self._evaluate_rule(rule.conditions, running_context, type_map):
@@ -639,38 +534,20 @@ class RuleEngineService:
     def _evaluate_editability(
         self, field: CachedField, all_rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
     ) -> bool:
-        """
-        Layer 2: Determines if field is readonly.
-        Logic: Readonly unless an EDITABILITY rule passes.
-        """
-        return self._evaluate_boolean_layer(
-            field=field,
-            all_rules=all_rules,
-            running_context=running_context,
-            type_map=type_map,
-            rule_type=RuleType.EDITABILITY,
-            default_when_no_rules=field.is_readonly,
-            value_when_rule_passes=False,  # Editable (not readonly) when rule passes
-        )
+        """Layer 3 — readonly unless an EDITABILITY rule passes (defaults to `field.is_readonly`)."""
+        rules = self._get_rules_by_type(field.id, RuleType.EDITABILITY, all_rules)
+        if not rules:
+            return field.is_readonly
+        return not self._any_rule_passes(rules, running_context, type_map)
 
     def _evaluate_mandatory(
         self, field: CachedField, all_rules: list[CachedRule], running_context: dict[int, Any], type_map: dict[int, str]
     ) -> bool:
-        """
-        Layer 3: Determines if field is required.
-        Logic: If no MANDATORY rules exist, uses field.is_required as default.
-        If MANDATORY rules exist, they fully govern the outcome:
-        rule passes = required, no rule passes = not required.
-        """
-        return self._evaluate_boolean_layer(
-            field=field,
-            all_rules=all_rules,
-            running_context=running_context,
-            type_map=type_map,
-            rule_type=RuleType.MANDATORY,
-            default_when_no_rules=field.is_required,
-            value_when_rule_passes=True,
-        )
+        """Layer 5 — required iff a MANDATORY rule passes (defaults to `field.is_required`)."""
+        rules = self._get_rules_by_type(field.id, RuleType.MANDATORY, all_rules)
+        if not rules:
+            return field.is_required
+        return self._any_rule_passes(rules, running_context, type_map)
 
     def _evaluate_availability(
         self,
@@ -682,11 +559,7 @@ class RuleEngineService:
         type_map: dict[int, str],
         is_required: bool,
     ) -> tuple[Any, list[ValueOption]]:
-        """
-        Layer 4: Determines available values and selects final value.
-
-        Returns Tuple of (final_value, available_options)
-        """
+        """Layer 4 — filter values by AVAILABILITY rules and pick a final value (input or auto-select)."""
 
         if field.is_free_value:
             return self._handle_free_value_field(field, user_input_map, is_required)
@@ -760,10 +633,7 @@ class RuleEngineService:
         running_context: dict[int, Any],
         type_map: dict[int, str],
     ) -> bool:
-        """
-        Determines if a specific Value is available based on AVAILABILITY rules.
-        Logic: Available unless explicit rules exist, then at least one must pass (OR).
-        """
+        """Available iff no AVAILABILITY rules target the value, or at least one passes."""
         rules_for_value = [r for r in rules_by_target_value.get(value.id, []) if r.rule_type == RuleType.AVAILABILITY]
 
         if not rules_for_value:
@@ -777,10 +647,7 @@ class RuleEngineService:
         return False  # Value not available
 
     def _auto_select_value(self, available_values: list[CachedValue]) -> Any | None:
-        """
-        Auto-selects a value for required fields.
-        Priority: single option > default value > None
-        """
+        """Pick a value for required fields: single option > default option > `None`."""
         if len(available_values) == 1:
             return available_values[0].value
 
@@ -796,10 +663,7 @@ class RuleEngineService:
         type_map: dict[int, str],
         is_required: bool,
     ) -> str | None:
-        """
-        Layer 5: Validates the final value.
-        Logic: If a VALIDATION rule passes, return error message (negative pattern).
-        """
+        """Layer 6 — return an error string if a VALIDATION rule passes or a required value is missing."""
 
         if final_value is not None:
             validation_rules = self._get_rules_by_type(field.id, RuleType.VALIDATION, all_rules)
@@ -819,10 +683,7 @@ class RuleEngineService:
     # ============================================================
 
     def _evaluate_rule(self, conditions: dict[str, Any], context: dict[int, Any], type_map: dict[int, str]) -> bool:
-        """
-        Evaluates a single rule.
-        Logic: All criteria are ANDed together.
-        """
+        """Evaluate one rule's `criteria` list with AND semantics; empty list passes."""
         criteria_list = conditions.get("criteria", [])
 
         if not criteria_list:
@@ -835,10 +696,7 @@ class RuleEngineService:
         return True
 
     def _check_criterion(self, criterion: dict[str, Any], context: dict[int, Any], type_map: dict[int, str]) -> bool:
-        """
-        Evaluates a single criterion within a rule.
-        Handles type-specific comparisons (string, number, date).
-        """
+        """Evaluate one criterion; dispatches to date/number/string comparison by target field type."""
         target_field_id = criterion.get("field_id")
         operator = criterion.get("operator")
         expected_val = criterion.get("value")
@@ -889,15 +747,7 @@ class RuleEngineService:
     }
 
     def _apply_operator(self, actual: Any, operator: str, expected: Any, convert_for_in: Callable[[Any], Any]) -> bool:
-        """
-        Generic operator application - DRY pattern for all comparisons.
-
-        Args:
-            actual: The actual value (already converted to target type)
-            operator: The comparison operator
-            expected: The expected value(s)
-            convert_for_in: Function to convert items for IN operator
-        """
+        """Apply a comparison operator; `convert_for_in` adapts list elements for the IN operator."""
         # Handle IN operator specially
         if operator == "IN":
             if isinstance(expected, list):
@@ -966,27 +816,10 @@ class RuleEngineService:
         field_states: dict[int, FieldOutputState],
         values_by_field: dict[int, list[CachedValue]],
     ) -> str | None:
-        """
-        Generates a Smart SKU by concatenating base + modifiers from selected values.
+        """Concatenate `sku_base` with the SKU modifiers of selected non-hidden values.
 
-        Algorithm:
-        1. Check if sku_base exists (otherwise return None)
-        2. Initialize: sku_parts = [sku_base]
-        3. Iterate fields (ordered by step, sequence):
-           - If hidden -> skip
-           - If no value selected -> skip
-           - If free-value field -> skip (no modifier possible)
-           - Lookup Value object, if has sku_modifier -> append
-        4. Join with delimiter and enforce max length
-
-        Args:
-            version: The EntityVersion with sku_base and sku_delimiter
-            fields: Ordered list of Fields
-            field_states: Map of field_id -> FieldOutputState
-            values_by_field: Map of field_id -> list of Values
-
-        Returns:
-            Generated SKU string or None if sku_base is not set
+        Returns `None` when `version.sku_base` is unset. The result is truncated to
+        `_MAX_SKU_LENGTH` if exceeded.
         """
         if not version.sku_base:
             return None
@@ -1042,15 +875,11 @@ class RuleEngineService:
         price_date: date,
         part_numbers: set[str],
     ) -> tuple[dict[str, Decimal], set[str]]:
-        """
-        Resolves prices from the price list for a set of part numbers at a given date.
+        """Look up prices valid at `price_date`.
 
-        Queries PriceListItem directly (no cache — decision #10).
-
-        Returns:
-            Tuple of (price_map, known_parts) where:
-            - price_map: dict mapping part_number → unit_price for items valid at price_date
-            - known_parts: set of part_numbers that exist in the price list (any date)
+        Returns `(price_map, known_parts)`: `price_map` holds the resolved prices,
+        `known_parts` lists parts present in the price list at any date but missing
+        from `price_map` (used to differentiate warnings).
         """
         # Get prices valid at the given date
         valid_items = (
@@ -1088,13 +917,10 @@ class RuleEngineService:
         configuration_id: str,
         bom_output: BOMOutput | None,
     ) -> BOMOutput | None:
-        """
-        Append configuration-scoped custom items to the commercial BOM output.
+        """Append `ConfigurationCustomItem` rows as `is_custom=True` commercial lines.
 
-        Custom items are emitted as commercial `BOMLineItem` rows with
-        ``is_custom=True``, ``part_number=custom_key``, and line totals from the
-        row itself. They never produce warnings and never influence completeness;
-        they contribute only to the commercial total.
+        Custom lines never produce warnings and never affect completeness; they
+        only contribute to `commercial_total`.
         """
         custom_rows = (
             db.query(ConfigurationCustomItem)
@@ -1163,24 +989,12 @@ class RuleEngineService:
         known_parts: set[str] | None = None,
         catalog_map: dict[str, CatalogItem] | None = None,
     ) -> BOMOutput | None:
-        """
-        Evaluates BOM items after the waterfall to produce technical and commercial line items.
-
-        Algorithm:
-        1. Build rules-by-bom-item index
-        2. Evaluate inclusion for each BOM item (OR logic across rules)
-        3. Resolve quantities (static or from field)
-        4. Prune tree (excluded parent → excluded subtree)
-        5. Aggregate by (part_number, parent_bom_item_id, bom_type) — sum quantities
-        6. Build output: nested tree for TECHNICAL, flat list for COMMERCIAL
-        """
+        """Run the full BOM pipeline: inclusion → quantities → tree prune → aggregate → output."""
         if not bom_items:
             return None
 
         # 1. Build index: bom_item_id → list of rules
-        rules_by_bom_item: dict[int, list[CachedBOMItemRule]] = self._build_index(
-            bom_item_rules, lambda r: r.bom_item_id
-        )
+        rules_by_bom_item = self._index_bom_rules_by_item(bom_item_rules)
 
         # 2. Evaluate inclusion (flat pass)
         included_set: set[int] = set()
@@ -1224,11 +1038,9 @@ class RuleEngineService:
         running_context: dict[int, Any],
         field_states: dict[int, FieldOutputState],
     ) -> Decimal | None:
-        """
-        Resolves the effective quantity for a BOM item.
+        """Return the effective quantity, or `None` when a referenced field value is `<= 0`.
 
-        Returns the resolved quantity, or None if the item should be excluded
-        (field value is zero or negative).
+        Falls back to the static `quantity` when the referenced field is hidden or unset.
         """
         if item.quantity_from_field_id is None:
             return item.quantity
@@ -1253,12 +1065,7 @@ class RuleEngineService:
         return decimal_value
 
     def _prune_bom_tree(self, bom_items: list[CachedBOMItem], included_set: set[int]) -> None:
-        """
-        Removes children whose parent has been excluded.
-
-        Iterates top-down (items are ordered by sequence). If a parent is not in
-        the included set, its children are removed as well.
-        """
+        """Remove from `included_set` any item whose ancestor chain contains an excluded parent."""
         changed = True
         while changed:
             changed = False
@@ -1275,23 +1082,12 @@ class RuleEngineService:
         included_set: set[int],
         resolved_quantities: dict[int, Decimal],
     ) -> list[CachedBOMItem]:
-        """
-        Aggregates included BOM items by (part_number, parent_bom_item_id, bom_type).
+        """Aggregate siblings by `(part_number, parent_bom_item_id, bom_type)`, summing quantities.
 
-        Items sharing the same part_number, parent context, and BOM type are
-        merged into a single representative item (the first by sequence order).
-        Quantities are summed across the group. TECHNICAL and COMMERCIAL items
-        with the same part_number remain separate.
-
-        Children of every non-representative member of a group are re-parented
-        under the surviving representative and re-aggregated recursively, so
-        identical children of merged siblings collapse into a single line with
-        summed quantity. Re-parenting builds new `CachedBOMItem` instances via
-        `dataclasses.replace`; the cache itself is untouched.
-
-        Returns a deduplicated item list and updated resolved_quantities map,
-        ordered depth-first so that `_build_bom_output` attaches children to
-        parents in sequence order.
+        The lowest-`sequence` member of each group is the representative; children
+        of merged-out members are re-parented under the representative (via
+        `dataclasses.replace`, leaving the cache untouched) and re-aggregated
+        recursively, so identical children of merged parents collapse into one line.
         """
         from collections import OrderedDict
         from dataclasses import replace
@@ -1347,14 +1143,10 @@ class RuleEngineService:
         known_parts: set[str] | None = None,
         catalog_map: dict[str, CatalogItem] | None = None,
     ) -> BOMOutput:
-        """
-        Constructs the BOM output: nested tree for TECHNICAL, flat list for COMMERCIAL.
+        """Build the `BOMOutput`: nested tree for TECHNICAL, flat list for COMMERCIAL.
 
-        TECHNICAL items support hierarchy (parent/child relationships).
-        COMMERCIAL items are always root-level (guaranteed by CRUD validation).
-
-        Price resolution: COMMERCIAL items get unit_price from price_map (if provided).
-        Missing prices generate warnings; line_total is null for unpriced items.
+        Missing prices on COMMERCIAL items leave `unit_price=None` and emit a
+        warning (differentiated by whether the part is in the price list at all).
         """
         warnings: list[str] = []
         catalog = catalog_map or {}
@@ -1443,16 +1235,10 @@ class RuleEngineService:
         technical_tree: list[BOMLineItem],
         catalog_map: dict[str, "CatalogItem"],
     ) -> list[BOMFlatLineItem]:
-        """
-        Cascade-aggregate the technical sub-tree into an alphabetic flat list.
+        """Cascade-aggregate the technical tree into an alphabetic flat list.
 
-        For each node, the contribution is `ancestor_product × node.quantity`,
-        where `ancestor_product` is the running product of all ancestor
-        quantities from the root down to the parent (1 at the roots). Same
-        `part_number` appearing in multiple branches is summed across them.
-
-        Returns one `BOMFlatLineItem` per distinct `part_number`, sorted by
-        `part_number` ascending. Empty when the technical tree is empty.
+        Each node contributes `ancestor_product × node.quantity` to its
+        `part_number`; same part across branches sums up. Empty in/empty out.
         """
         totals: dict[str, Decimal] = {}
 

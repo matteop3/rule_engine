@@ -1,12 +1,4 @@
-"""
-Configuration-scoped custom item endpoints.
-
-Custom items are one-off commercial lines attached to a single
-Configuration. They exist **only** in the commercial BOM output: if a
-part is not in the catalog, production does not know what to build, so
-the technical BOM has no room for them. The `custom_key` is server
-generated as ``CUSTOM-<uuid8>``; clients never supply it.
-"""
+"""CRUD for configuration-scoped, commercial-only `ConfigurationCustomItem` rows."""
 
 import logging
 import uuid
@@ -15,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import db_transaction, get_current_user
+from app.dependencies import db_transaction, get_current_user, require_draft_status
 from app.models.domain import Configuration, ConfigurationCustomItem, User
-from app.routers.configurations import get_configuration_or_404, require_draft_status
+from app.routers.configurations import get_configuration_or_404
 from app.schemas.configuration_custom_item import (
     ConfigurationCustomItemCreate,
     ConfigurationCustomItemRead,
@@ -58,13 +50,7 @@ def list_custom_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    List custom items on a configuration, ordered by ``sequence``.
-
-    Access Control:
-        - Only the configuration owner or ADMIN can list its custom items.
-    """
-    logger.info(f"Listing custom items for configuration {config_id} by user {current_user.id}")
+    """List custom items, ordered by `sequence`. Owner/ADMIN only."""
 
     configuration = get_configuration_or_404(db, config_id, current_user)
 
@@ -86,21 +72,11 @@ def create_custom_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Create a custom item on a DRAFT configuration (owner/ADMIN).
+
+    Server generates `custom_key` as `CUSTOM-<uuid8>`; any client-supplied
+    value is ignored. FINALIZED configurations return 409.
     """
-    Create a custom item on a DRAFT configuration.
-
-    The server generates `custom_key` as ``CUSTOM-<uuid8>`` and ignores
-    any value supplied by the client. Custom items are commercial-only
-    lines — they have no technical BOM equivalent.
-
-    Restrictions:
-        - Configuration must be in DRAFT status (HTTP 409 on FINALIZED).
-        - `quantity` must be > 0 and `unit_price` must be >= 0.
-
-    Access Control:
-        - Only the configuration owner or ADMIN can create custom items.
-    """
-    logger.info(f"Creating custom item on configuration {config_id} by user {current_user.id}")
 
     configuration = get_configuration_or_404(db, config_id, current_user)
     require_draft_status(configuration, "add custom items to")
@@ -133,19 +109,7 @@ def update_custom_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Update a custom item on a DRAFT configuration.
-
-    The `custom_key` is immutable and cannot be changed; any payload
-    containing `custom_key` is rejected at the schema layer.
-
-    Restrictions:
-        - Configuration must be in DRAFT status (HTTP 409 on FINALIZED).
-
-    Access Control:
-        - Only the configuration owner or ADMIN can update custom items.
-    """
-    logger.info(f"Updating custom item {custom_item_id} on configuration {config_id} by user {current_user.id}")
+    """Update a custom item on a DRAFT configuration (owner/ADMIN); `custom_key` is immutable."""
 
     configuration = get_configuration_or_404(db, config_id, current_user)
     require_draft_status(configuration, "update custom items on")
@@ -155,7 +119,6 @@ def update_custom_item(
     update_data = payload.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for custom item {custom_item_id}")
         return item
 
     with db_transaction(db, f"update_custom_item {custom_item_id} on configuration {config_id}"):
@@ -176,16 +139,7 @@ def delete_custom_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Delete a custom item from a DRAFT configuration.
-
-    Restrictions:
-        - Configuration must be in DRAFT status (HTTP 409 on FINALIZED).
-
-    Access Control:
-        - Only the configuration owner or ADMIN can delete custom items.
-    """
-    logger.info(f"Deleting custom item {custom_item_id} on configuration {config_id} by user {current_user.id}")
+    """Delete a custom item from a DRAFT configuration (owner/ADMIN)."""
 
     configuration = get_configuration_or_404(db, config_id, current_user)
     require_draft_status(configuration, "delete custom items from")

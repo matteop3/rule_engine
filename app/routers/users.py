@@ -10,23 +10,9 @@ from app.models.domain import User, UserRole
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.users import UserService
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/users", tags=["Users"])
-
-
-# ============================================================
-# ENDPOINTS
-# ============================================================
 
 
 @router.post("/", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -45,7 +31,6 @@ def create_user(
 
     # Check if email already exists
     if user_service.get_by_email(db, user_in.email):
-        logger.warning(f"User creation failed: email {user_in.email} already exists")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The user with this email already exists.",
@@ -79,11 +64,7 @@ def list_users(
     logger.info(f"Listing users by admin {current_user.id}: skip={skip}, limit={limit}")
     require_role(current_user, [UserRole.ADMIN])
 
-    original_limit = limit
     limit = min(limit, 100)
-
-    if original_limit > 100:
-        logger.warning(f"Limit capped from {original_limit} to 100")
 
     users = db.query(User).offset(skip).limit(limit).all()
 
@@ -136,7 +117,6 @@ def update_user(
 
     if user_in.email is not None and user_in.email != user.email:
         if user_service.get_by_email(db, user_in.email):
-            logger.warning(f"Update user {user.id} failed: email {user_in.email} already in use")
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Email already in use.")
 
     try:

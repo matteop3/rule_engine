@@ -10,21 +10,9 @@ from app.dependencies import db_transaction, require_admin_or_author, validate_c
 from app.models.domain import PriceList, PriceListItem, User
 from app.schemas.price_list_item import PriceListItemCreate, PriceListItemRead, PriceListItemUpdate
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/price-list-items", tags=["Price List Items"])
-
-# ============================================================
-# HELPERS
-# ============================================================
 
 
 def _get_price_list_or_404(db: Session, price_list_id: int) -> PriceList:
@@ -105,11 +93,6 @@ def _validate_unit_price(unit_price: Decimal) -> None:
         )
 
 
-# ============================================================
-# ENDPOINTS
-# ============================================================
-
-
 @router.get("/", response_model=list[PriceListItemRead])
 def list_price_list_items(
     price_list_id: int = Query(..., description="Filter by price list ID"),
@@ -118,13 +101,7 @@ def list_price_list_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    List items for a specific price list.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view price list items
-    """
-    logger.info(f"Listing price list items for price_list_id={price_list_id} by user {current_user.id}")
+    """List items of a price list, ordered by `(part_number, valid_from)`. ADMIN/AUTHOR only."""
 
     # Verify price list exists
     _get_price_list_or_404(db, price_list_id)
@@ -147,12 +124,7 @@ def read_price_list_item(
     item: PriceListItem = Depends(_get_item_or_404),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieve a single price list item by ID.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view price list item details
-    """
+    """Get a price list item by id. ADMIN/AUTHOR only."""
     logger.debug(f"Reading price list item {item.id} by user {current_user.id}")
     return item
 
@@ -163,17 +135,10 @@ def create_price_list_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Create a new price list item.
+    """Create a price list item (ADMIN/AUTHOR).
 
-    Validation:
-        - unit_price must be > 0
-        - Dates default to parent price list's dates if not provided
-        - Item dates must fall within the parent price list's bounding box
-        - No overlapping date ranges for the same (price_list_id, part_number)
-
-    Access Control:
-        - Only ADMIN and AUTHOR can create price list items
+    Dates default to the parent price list's bounding box; rejects overlaps
+    on `(price_list_id, part_number)` with 409 and out-of-box dates with 400.
     """
     logger.info(
         f"Creating price list item '{payload.part_number}' "
@@ -219,23 +184,11 @@ def update_price_list_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Update a price list item.
-
-    Validation:
-        - unit_price must be > 0 (if provided)
-        - Item dates must fall within the parent price list's bounding box
-        - No overlapping date ranges for the same (price_list_id, part_number)
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update price list items
-    """
-    logger.info(f"Updating price list item {item.id} by user {current_user.id}")
+    """Update a price list item (ADMIN/AUTHOR); revalidates bounding box and overlaps."""
 
     update_data = payload.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for price list item {item.id}")
         return item
 
     if "part_number" in update_data and update_data["part_number"] != item.part_number:
@@ -279,13 +232,7 @@ def delete_price_list_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Delete a price list item.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can delete price list items
-    """
-    logger.info(f"Deleting price list item {item.id} by user {current_user.id}")
+    """Delete a price list item. ADMIN/AUTHOR only."""
 
     with db_transaction(db, f"delete_price_list_item {item.id}"):
         part_number = item.part_number

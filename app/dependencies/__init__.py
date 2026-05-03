@@ -37,12 +37,15 @@ from app.dependencies.services import (
     get_versioning_service,
 )
 from app.dependencies.validators import (
+    _is_finalized,
     get_editable_bom_item,
     get_editable_bom_item_rule,
     get_editable_field,
     get_editable_rule,
     get_editable_value,
     get_editable_version,
+    require_complete_status,
+    require_draft_status,
     validate_catalog_not_referenced,
     validate_catalog_reference,
     validate_field_belongs_to_version,
@@ -81,6 +84,11 @@ __all__ = [
     "get_bom_item_or_404",
     "get_bom_item_rule_or_404",
     # validators
+    "_is_finalized",
+    "require_draft_status",
+    "require_complete_status",
+    "validate_catalog_not_referenced",
+    "validate_catalog_reference",
     "validate_field_belongs_to_version",
     "validate_value_belongs_to_field",
     "validate_value_not_used_in_rules",

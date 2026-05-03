@@ -14,26 +14,12 @@ from app.database import get_db
 from app.dependencies import get_auth_service
 from app.services.auth import AuthService
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
-
-
-# ============================================================
-# ROUTER SETUP
-# ============================================================
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # Security scheme for refresh token endpoint
 http_bearer = HTTPBearer()
-
-
-# ============================================================
-# ENDPOINTS
-# ============================================================
 
 
 @router.post("/token")
@@ -45,18 +31,7 @@ async def login_for_access_token(
     auth_service: AuthService = Depends(get_auth_service),
     user_agent: str | None = Header(None),
 ):
-    """
-    Standard OAuth2 endpoint to obtain the token.
-
-    Authenticates user with email/password and returns both access and refresh tokens.
-
-    Rate Limited: Maximum 5 attempts per 15 minutes per IP address.
-
-    Returns:
-        - access_token: Short-lived JWT (30 min default)
-        - refresh_token: Long-lived token (7 days default) for obtaining new access tokens
-        - token_type: "bearer"
-    """
+    """OAuth2 password-grant login; returns `access_token` and `refresh_token`. Rate-limited."""
     logger.info(f"Login attempt for email: {form_data.username}")
 
     # Invoke auth service
@@ -95,23 +70,10 @@ async def refresh_access_token(
     db: Session = Depends(get_db),
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    """
-    Refresh endpoint to obtain a new access token using a valid refresh token.
+    """Issue a new access token from a refresh token (sent as `Authorization: Bearer ...`).
 
-    Send the refresh token in the Authorization header:
-    Authorization: Bearer <refresh_token>
-
-    Rate Limited: Maximum 10 attempts per 5 minutes per IP address.
-
-    Returns:
-        - access_token: New short-lived JWT (30 min default)
-        - refresh_token: New refresh token (only if REFRESH_TOKEN_ROTATION=true)
-        - token_type: "bearer"
-
-    Token Rotation:
-        If REFRESH_TOKEN_ROTATION=true in .env, the old refresh token is revoked
-        and a new one is returned. This provides maximum security but requires
-        the client to store the new refresh token.
+    When `REFRESH_TOKEN_ROTATION=true` the old refresh token is revoked and a
+    new one is returned alongside the access token. Rate-limited.
     """
     refresh_token = credentials.credentials
 

@@ -9,43 +9,15 @@ from app.models.domain import User, UserRole, VersionStatus
 from app.schemas.engine import CalculationRequest, CalculationResponse
 from app.services.rule_engine import RuleEngineService
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/engine", tags=["Engine"])
-
-
-# ============================================================
-# HELPERS
-# ============================================================
 
 
 def validate_user_can_calculate_version(
     user: User, request: CalculationRequest, version_status: VersionStatus | None
 ) -> None:
-    """
-    Enforces access control for calculation requests.
-
-    Rules:
-    - USER: Can only calculate on PUBLISHED versions
-    - AUTHOR/ADMIN: Can calculate on any version (including DRAFT for testing)
-
-    Args:
-        user: Current authenticated user
-        request: Calculation request containing version info
-        version_status: Status of the version being calculated (if known)
-
-    Raises:
-        HTTPException(403): If user lacks permission
-    """
+    """Allow USERs only on PUBLISHED versions; ADMIN/AUTHOR can calculate on any version (raises 403)."""
     # If no specific version requested, it defaults to PUBLISHED (always allowed)
     if request.entity_version_id is None:
         return
@@ -63,14 +35,7 @@ def validate_user_can_calculate_version(
 
 
 def handle_calculation_error(e: ValueError) -> HTTPException:
-    """
-    Maps service ValueError to appropriate HTTP exception.
-
-    Business logic errors are categorized as:
-    - "not found" → 404
-    - "no PUBLISHED version" → 404 (entity exists but not ready)
-    - Other validation errors → 400
-    """
+    """Map an engine `ValueError` to 404 (`not found` / `no PUBLISHED version`) or 400 otherwise."""
     msg: str = str(e)
     msg_lower = msg.lower()
 
@@ -81,11 +46,6 @@ def handle_calculation_error(e: ValueError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
 
-# ============================================================
-# ENDPOINTS
-# ============================================================
-
-
 @router.post("/calculate", response_model=CalculationResponse)
 def calculate_state(
     request: CalculationRequest,
@@ -93,35 +53,9 @@ def calculate_state(
     current_user: User = Depends(get_current_user),  # Auth
     engine_service: RuleEngineService = Depends(get_rule_engine_service),
 ):
-    """
-    Triggers the Rule Engine calculation.
+    """Stateless rule-engine calculation against the requested (or PUBLISHED) version.
 
-    Workflow:
-    1. Resolves target version (explicit or PUBLISHED by default)
-    2. Evaluates all rules in waterfall sequence
-    3. Returns calculated field states with available options
-
-    Access Control:
-    - USER: Can only calculate on PUBLISHED versions
-    - AUTHOR/ADMIN: Can calculate on any version (including DRAFT for preview)
-
-    Request Body:
-        entity_id: The entity to calculate
-        entity_version_id (optional): Specific version to use (defaults to PUBLISHED)
-        current_state: List of field inputs (field_id + value)
-
-    Returns:
-        CalculationResponse: Full field states with:
-        - available_options (filtered by rules)
-        - is_required, is_readonly, is_hidden flags
-        - validation errors
-        - is_complete flag (all required fields filled and no validation errors)
-
-    Raises:
-        HTTPException(400): Invalid input data or business logic error
-        HTTPException(403): User lacks permission for requested version
-        HTTPException(404): Entity or version not found (via fetch_version_by_id)
-        HTTPException(500): Unexpected server error
+    USER role can only target PUBLISHED versions; ADMIN/AUTHOR can preview any version.
     """
     logger.info(
         f"Calculation request by user {current_user.id} (role: {current_user.role_display}): "
@@ -152,10 +86,6 @@ def calculate_state(
         return response
 
     except ValueError as e:
-        logger.warning(
-            f"Calculation failed for user {current_user.id}: {str(e)}",
-            extra={"entity_id": request.entity_id, "user_id": current_user.id},
-        )
         raise handle_calculation_error(e) from None
 
     except Exception:

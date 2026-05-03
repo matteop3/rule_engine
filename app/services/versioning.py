@@ -11,19 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class VersioningService:
-    """
-    Service for managing Entity versioning lifecycle.
-
-    Transaction Management:
-    This service does NOT handle database commits.
-    The caller is responsible for:
-    - db.commit() on success
-    - db.rollback() on exception
-    """
-
-    # ============================================================
-    # PUBLIC API
-    # ============================================================
+    """`EntityVersion` lifecycle (create draft, publish, clone). Caller owns the transaction."""
 
     def create_draft_version(
         self,
@@ -34,13 +22,7 @@ class VersioningService:
         sku_base: str | None = None,
         sku_delimiter: str | None = None,
     ) -> EntityVersion:
-        """
-        Creates a new DRAFT version.
-        Enforces:
-        - Entity existence check
-        - Single Draft Policy (only one draft per entity)
-        - Auto-increment version number
-        """
+        """Create a DRAFT version (one DRAFT per entity, auto-incremented `version_number`)."""
         logger.debug("Creating draft version", extra={"entity_id": entity_id, "user_id": user_id})
 
         self._check_entity_exists(db, entity_id)
@@ -65,13 +47,7 @@ class VersioningService:
         return new_version
 
     def publish_version(self, db: Session, version_id: int, user_id: str) -> EntityVersion:
-        """
-        Promotes a DRAFT to PUBLISHED.
-        Enforces:
-        - Existence check
-        - Status check (only DRAFT can be published)
-        - Single Published Policy (archives the previous one)
-        """
+        """Promote a DRAFT to PUBLISHED, archiving the currently PUBLISHED version (if any)."""
         logger.debug("Publishing version", extra={"version_id": version_id, "user_id": user_id})
 
         version = self._get_version_by_id(db, version_id)
@@ -119,14 +95,7 @@ class VersioningService:
     def clone_version(
         self, db: Session, source_version_id: int, user_id: str, new_changelog: str | None = None
     ) -> EntityVersion:
-        """
-        Performs a deep copy of a source version into a new DRAFT version.
-
-        Handles:
-        - ID remapping for Fields, Values, and Rules
-        - JSON criteria rewriting
-        - Eager loading to avoid N+1 queries
-        """
+        """Deep-copy a version into a new DRAFT, remapping IDs and JSON `criteria` references."""
         logger.debug("Cloning version", extra={"source_version_id": source_version_id, "user_id": user_id})
 
         # Fetch source version with eager loading (avoid N+1)
@@ -334,17 +303,7 @@ class VersioningService:
         return version
 
     def _rewrite_conditions(self, conditions: dict[str, Any], field_map: dict[int, int]) -> dict[str, Any]:
-        """
-        Helper to traverse the JSON structure and update field IDs.
-
-        Expected structure:
-        {
-            "criteria": [
-                {"field_id": 123, "operator": "==", "value": "x"},
-                ...
-            ]
-        }
-        """
+        """Deep-copy `conditions` and remap every `criteria[].field_id` through `field_map`."""
         new_cond = copy.deepcopy(conditions)  # Avoid modifying the original object in memory
 
         criteria_list = new_cond.get("criteria", [])
@@ -365,10 +324,7 @@ class VersioningService:
         return entity
 
     def _check_draft_constraint(self, db: Session, entity_id: int) -> None:
-        """
-        Enforces Single Draft Policy.
-        Raises ValueError if a DRAFT already exists.
-        """
+        """Raise `ValueError` if a DRAFT version already exists for `entity_id`."""
         existing_draft = (
             db.query(EntityVersion)
             .filter(EntityVersion.entity_id == entity_id, EntityVersion.status == VersionStatus.DRAFT)

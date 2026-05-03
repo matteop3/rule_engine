@@ -24,21 +24,9 @@ from app.services.engineering_template import (
     would_create_cycle,
 )
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/catalog-items", tags=["Engineering Template"])
-
-# ============================================================
-# HELPERS
-# ============================================================
 
 
 def _get_parent_catalog_or_404(part_number: str, db: Session) -> CatalogItem:
@@ -80,27 +68,13 @@ def _ensure_child_catalog_exists(db: Session, child_part_number: str) -> None:
         )
 
 
-# ============================================================
-# ENDPOINTS
-# ============================================================
-
-
 @router.get("/{part_number}/template", response_model=list[EngineeringTemplateItemRead])
 def list_template_items(
     part_number: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Return every direct-child template row attached to a catalog item.
-
-    Results are ordered by `(sequence, child_part_number)` so siblings appear
-    in the order the author intended, with alphabetic tie-breaking. An empty
-    list is returned when the part has no template.
-
-    Access Control:
-        - Any authenticated user can read template items.
-    """
+    """List the template's direct-child rows, ordered by `(sequence, child_part_number)` (any authenticated user)."""
     logger.debug(f"Listing template items for '{part_number}' by user {current_user.id}")
 
     _get_parent_catalog_or_404(part_number, db)
@@ -127,22 +101,10 @@ def create_template_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Attach a child to the engineering template of a catalog item.
+    """Attach a child to the template (ADMIN/AUTHOR).
 
-    Validation:
-        - Parent catalog item must exist (HTTP 404).
-        - Child catalog item must exist (HTTP 409).
-        - Edge must not close a cycle in the template graph (HTTP 409).
-        - Pair `(parent_part_number, child_part_number)` must be unique (HTTP 409).
-
-    Concurrency:
-        Acquires the engineering-template-graph advisory lock so that two
-        concurrent edge insertions cannot together construct a cycle that
-        each would have considered safe in isolation.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can attach template items.
+    Holds the template-graph advisory lock; rejects cycles, duplicate pairs,
+    and unknown child catalog rows with 409.
     """
     logger.info(
         f"Creating template item for parent '{part_number}' "
@@ -212,22 +174,11 @@ def update_template_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
+    """Update `quantity`, `sequence`, or `suppress_child_explosion` (ADMIN/AUTHOR).
+
+    `parent_part_number`/`child_part_number` are immutable (422). Holds the
+    template-graph advisory lock for symmetry with POST/DELETE.
     """
-    Update the mutable fields of a template item.
-
-    Mutable: `quantity`, `sequence`, `suppress_child_explosion`. Any payload
-    that includes `parent_part_number` or `child_part_number` is rejected
-    with HTTP 422 at the schema layer.
-
-    Concurrency:
-        Acquires the engineering-template-graph advisory lock for symmetry
-        with POST/DELETE even though the mutable fields cannot change graph
-        topology.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update template items.
-    """
-    logger.info(f"Updating template item {item_id} of '{part_number}' by user {current_user.id}")
 
     _get_parent_catalog_or_404(part_number, db)
     item = _get_template_item_or_404(db, part_number, item_id)
@@ -235,7 +186,6 @@ def update_template_item(
     update_data = payload.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for template item {item_id}")
         return item
 
     with db_transaction(db, f"update_template_item {item_id}"):
@@ -280,22 +230,10 @@ def preview_explosion(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Dry-run materialization of a catalog part's engineering template.
+    """Dry-run template explosion: returns `tree`, cascade-aggregated `flat`, and metrics.
 
-    Returns the indented expansion (`tree`, a single root inside a list),
-    the cascade-aggregated descendant material list (`flat`, alphabetic by
-    `part_number`), and the metrics `total_nodes` / `max_depth_reached`.
-    Catalog metadata (`description`, `category`, `unit_of_measure`) is
-    joined onto every entry of both `tree` and `flat`.
-
-    A part with no template returns a single root node, an empty `flat`,
-    `total_nodes=1`, `max_depth_reached=0`. Limit overflow returns HTTP 413
-    and OBSOLETE-part presence returns HTTP 409, mirroring the
-    materialization endpoint.
-
-    Access Control:
-        - Any authenticated user can preview.
+    Catalog metadata is joined onto every entry. Mirrors the materialization
+    endpoint's failure modes (413 on limit overflow, 409 on OBSOLETE parts).
     """
     logger.debug(f"Previewing explosion for '{part_number}' by user {current_user.id}")
 
@@ -368,17 +306,7 @@ def delete_template_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Remove a single child from the engineering template of a catalog item.
-
-    Concurrency:
-        Acquires the engineering-template-graph advisory lock for symmetry
-        with POST/PATCH.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can remove template items.
-    """
-    logger.info(f"Deleting template item {item_id} of '{part_number}' by user {current_user.id}")
+    """Remove a child edge from the template (ADMIN/AUTHOR). Holds the template-graph advisory lock."""
 
     _get_parent_catalog_or_404(part_number, db)
     item = _get_template_item_or_404(db, part_number, item_id)

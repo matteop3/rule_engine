@@ -1,28 +1,4 @@
-"""
-Domain Models for Rule Engine.
-
-This module defines the core SQLAlchemy ORM models for the rule engine system:
-
-Entities:
-    - Entity: Logical containers for versioned configurations
-    - EntityVersion: Versioned snapshots with Fields and Rules
-    - Field: Configurable properties of entities
-    - Value: Possible values for Fields
-    - Rule: Business logic rules that control field behavior
-    - User: System users with role-based access control
-    - Configuration: User-saved configuration snapshots
-    - PriceList: Global price catalogs with temporal validity
-    - PriceListItem: Priced components within a PriceList
-
-Enums:
-    - VersionStatus: Lifecycle states (DRAFT, PUBLISHED, ARCHIVED)
-    - UserRole: Access control roles (ADMIN, AUTHOR, USER)
-    - FieldType: Data types for fields (STRING, NUMBER, BOOLEAN, DATE)
-    - RuleType: Rule categories (VISIBILITY, AVAILABILITY, EDITABILITY, MANDATORY, VALIDATION)
-
-All models use SQLAlchemy 2.0 Mapped syntax with type hints for improved type safety.
-The AuditMixin provides automatic tracking of creation/update timestamps and users.
-"""
+"""SQLAlchemy ORM models and enums for the rule engine domain."""
 
 import datetime as dt
 import enum
@@ -57,12 +33,11 @@ from app.database import Base
 
 
 class VersionStatus(str, enum.Enum):
-    """
-    Lifecycle status for EntityVersion.
+    """Lifecycle status for `EntityVersion`.
 
-    - DRAFT: Work in progress, editable by ADMIN/AUTHOR
-    - PUBLISHED: Active version, read-only, used by rule engine
-    - ARCHIVED: Historical version, read-only, preserved for audit trail
+    - DRAFT: editable by ADMIN/AUTHOR.
+    - PUBLISHED: active, read-only, used by the rule engine.
+    - ARCHIVED: historical, read-only.
     """
 
     DRAFT = "DRAFT"
@@ -71,12 +46,11 @@ class VersionStatus(str, enum.Enum):
 
 
 class UserRole(str, enum.Enum):
-    """
-    Role-based access control levels.
+    """Role-based access control levels.
 
-    - ADMIN: Full system access (all permissions including user management)
-    - AUTHOR: Product manager (manage entities, versions, rules)
-    - USER: Regular user (use configurator and manage own configurations)
+    - ADMIN: full system access including user management.
+    - AUTHOR: manages entities, versions, rules.
+    - USER: uses the configurator and owns configurations.
     """
 
     ADMIN = "admin"
@@ -85,20 +59,10 @@ class UserRole(str, enum.Enum):
 
 
 class ConfigurationStatus(str, enum.Enum):
-    """
-    Lifecycle status for Configuration records.
+    """Mutability state of a `Configuration`.
 
-    This enum manages the technical mutability state of configurations,
-    focusing on data integrity rather than business workflow states.
-
-    - DRAFT: Work in progress (Sandbox). The configuration is mutable:
-             user can modify inputs, upgrade version, or delete the record.
-             Conceptually represents an open cart or a quote draft.
-
-    - FINALIZED: Consolidated snapshot (Read-Only). The configuration is
-                 immutable for legal and technical reproducibility.
-                 No modifications to inputs or version are allowed.
-                 Conceptually represents an issued quote or submitted order.
+    - DRAFT: mutable sandbox; inputs, version, and record are editable.
+    - FINALIZED: immutable snapshot; no edits allowed.
     """
 
     DRAFT = "DRAFT"
@@ -106,11 +70,7 @@ class ConfigurationStatus(str, enum.Enum):
 
 
 class FieldType(str, enum.Enum):
-    """
-    Data types for Field values.
-
-    Defines the expected type of user input for a field.
-    """
+    """Data type expected for a `Field` value."""
 
     STRING = "string"
     NUMBER = "number"
@@ -119,15 +79,14 @@ class FieldType(str, enum.Enum):
 
 
 class RuleType(str, enum.Enum):
-    """
-    Categories of business logic rules.
+    """Business-logic rule category.
 
-    - VISIBILITY: Controls whether a field is shown or hidden
-    - AVAILABILITY: Filters available options for multi-choice fields
-    - CALCULATION: Sets a field's value and makes it implicitly readonly
-    - EDITABILITY: Controls whether a field is read-only or writable
-    - MANDATORY: Controls whether a field is required or optional
-    - VALIDATION: Validates field content against business rules
+    - VISIBILITY: shows/hides the target field.
+    - AVAILABILITY: filters available options on a multi-choice field.
+    - CALCULATION: sets the field value and marks it readonly.
+    - EDITABILITY: toggles readonly state.
+    - MANDATORY: toggles required state.
+    - VALIDATION: rejects invalid combinations with an error message.
     """
 
     VISIBILITY = "visibility"
@@ -139,11 +98,10 @@ class RuleType(str, enum.Enum):
 
 
 class CatalogItemStatus(str, enum.Enum):
-    """
-    Lifecycle status for CatalogItem.
+    """Lifecycle status for `CatalogItem`.
 
-    - ACTIVE: Can be referenced by new BOM items and price list items.
-    - OBSOLETE: Existing references keep working, but new references are blocked.
+    - ACTIVE: can be referenced by new rows.
+    - OBSOLETE: existing references keep working; new references are blocked.
     """
 
     ACTIVE = "ACTIVE"
@@ -151,14 +109,10 @@ class CatalogItemStatus(str, enum.Enum):
 
 
 class BOMType(str, enum.Enum):
-    """
-    Bill of Materials item type classification.
+    """BOM item classification.
 
-    - TECHNICAL: Engineering/assembly BOM — no pricing, supports hierarchy (sub-assemblies)
-    - COMMERCIAL: Sales/pricing BOM — pricing resolved from price list, always root-level (flat list)
-
-    A component appearing in both lists is modeled as two separate BOM items
-    with the same part_number — one TECHNICAL and one COMMERCIAL.
+    - TECHNICAL: assembly structure, supports hierarchy.
+    - COMMERCIAL: priced line item, flat (root-level only).
     """
 
     TECHNICAL = "TECHNICAL"
@@ -171,16 +125,7 @@ class BOMType(str, enum.Enum):
 
 
 class AuditMixin:
-    """
-    Provides automatic audit trail tracking for models.
-
-    Adds timestamp fields (created_at, updated_at) and user tracking
-    (created_by_id, updated_by_id) to any model that inherits this mixin.
-
-    Timestamps are automatically managed by SQLAlchemy:
-    - created_at: Set on insert via server_default
-    - updated_at: Set on update via onupdate
-    """
+    """Adds `created_at`/`updated_at` timestamps and `created_by_id`/`updated_by_id` user FKs."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, comment="Timestamp when record was created"
@@ -202,15 +147,7 @@ class AuditMixin:
 
 
 class Entity(Base, AuditMixin):
-    """
-    Entity: Logical container for versioned configurations.
-
-    An Entity represents a configurable product or domain object (e.g., "Car", "Laptop").
-    Each Entity can have multiple versions to support iterative development and A/B testing.
-
-    Relationships:
-        - versions: One-to-many with EntityVersion (cascade delete)
-    """
+    """Logical container for versioned configurations (e.g., a configurable product)."""
 
     __tablename__ = "entities"
 
@@ -229,18 +166,9 @@ class Entity(Base, AuditMixin):
 
 
 class EntityVersion(Base, AuditMixin):
-    """
-    EntityVersion: A specific snapshot of an Entity's configuration.
+    """Versioned snapshot of an `Entity`.
 
-    Represents a version of an Entity with its associated Fields and Rules.
-    Supports versioning workflow: DRAFT → PUBLISHED → ARCHIVED.
-    Only one PUBLISHED version per Entity is allowed at a time.
-
-    Relationships:
-        - entity: Many-to-one with Entity
-        - fields: One-to-many with Field (cascade delete)
-        - rules: One-to-many with Rule (cascade delete)
-        - configurations: One-to-many with Configuration (cascade delete)
+    Lifecycle: DRAFT → PUBLISHED → ARCHIVED. At most one PUBLISHED per Entity.
     """
 
     __tablename__ = "entity_versions"
@@ -279,16 +207,10 @@ class EntityVersion(Base, AuditMixin):
 
 
 class Field(Base):
-    """
-    Field: Represents a configurable property of an Entity.
+    """Configurable property of an `Entity`.
 
-    A Field can be either:
-    - Free-value: User enters arbitrary text (default_value on Field)
-    - Option-based: User selects from predefined Values (default via Value.is_default)
-
-    Relationships:
-        - entity_version: Many-to-one with EntityVersion
-        - values: One-to-many with Value (cascade delete)
+    Free-value (`is_free_value=True`) accepts arbitrary text; option-based
+    fields select from predefined `Value` rows.
     """
 
     __tablename__ = "fields"
@@ -331,15 +253,7 @@ class Field(Base):
 
 
 class Value(Base):
-    """
-    Value: Represents a possible option for an option-based Field.
-
-    Values are only used when Field.is_free_value is False.
-    One Value can be marked as default via is_default flag.
-
-    Relationships:
-        - field: Many-to-one with Field
-    """
+    """One option of an option-based `Field` (only used when `Field.is_free_value` is `False`)."""
 
     __tablename__ = "values"
 
@@ -366,18 +280,10 @@ class Value(Base):
 
 
 class Rule(Base):
-    """
-    Rule: Business logic that controls Field and Value behavior.
+    """Conditional logic targeting a `Field` (and optionally a specific `Value`).
 
-    Rules define conditional logic to control field visibility, availability,
-    editability, mandatory state, or validation based on other field values.
-
-    Condition structure: {"criteria": [{"field_id": 1, "operator": "EQUALS", "value": "Red"}, ...]}
-
-    Relationships:
-        - entity_version: Many-to-one with EntityVersion
-        - target_field: Many-to-one with Field (the field this rule affects)
-        - target_value: Many-to-one with Value (optional, specific value this rule affects)
+    `conditions` JSON shape:
+    `{"criteria": [{"field_id": 1, "operator": "EQUALS", "value": "Red"}, ...]}`.
     """
 
     __tablename__ = "rules"
@@ -418,17 +324,7 @@ class Rule(Base):
 
 
 class User(Base, AuditMixin):
-    """
-    User: System user with role-based access control.
-
-    Users authenticate via email/password and have one of three roles:
-    ADMIN, AUTHOR, or USER (see UserRole enum for details).
-
-    Soft delete: is_active=False instead of actual deletion.
-
-    Relationships:
-        - configurations: One-to-many with Configuration (cascade delete)
-    """
+    """System user; soft-deleted via `is_active=False` rather than row removal."""
 
     __tablename__ = "users"
 
@@ -459,26 +355,11 @@ class User(Base, AuditMixin):
 
 
 class Configuration(Base, AuditMixin):
-    """
-    Configuration: User-saved configuration snapshot.
+    """User-saved input state for an `EntityVersion`. UUID PK for secure sharing.
 
-    Stores a user's input state for a specific EntityVersion.
-    Uses UUID for secure external access (shareable links).
-    Stores raw input data as JSON for re-hydration strategy.
-
-    Data format: [{"field_id": 1, "value": "Red"}, {"field_id": 2, "value": "Large"}, ...]
-
-    Status Lifecycle:
-        - DRAFT: Mutable sandbox state. User can modify inputs, upgrade version, or delete.
-        - FINALIZED: Immutable snapshot. Read-only for legal/technical reproducibility.
-
-    Soft Delete:
-        - is_deleted flag allows logical deletion without losing audit trail
-        - FINALIZED configurations can only be soft-deleted by ADMIN
-
-    Relationships:
-        - entity_version: Many-to-one with EntityVersion
-        - owner: Many-to-one with User
+    `data` is a JSON list `[{"field_id": ..., "value": ...}, ...]` re-hydrated
+    on every read. FINALIZED rows additionally store a full `CalculationResponse`
+    in `snapshot` and can only be soft-deleted (`is_deleted=True`) by ADMIN.
     """
 
     __tablename__ = "configurations"
@@ -560,20 +441,11 @@ class Configuration(Base, AuditMixin):
 
 
 class BOMItem(Base):
-    """
-    BOMItem: Bill of Materials line item for an EntityVersion.
+    """Bill of Materials line item.
 
-    Represents a component, part, or sub-assembly in the product structure.
-    Supports hierarchical nesting via self-referential parent relationship.
-    Quantity can be static or dynamically resolved from a field value at evaluation time.
-    Pricing is resolved at calculation time from the price list, not stored on the BOM item.
-
-    Relationships:
-        - entity_version: Many-to-one with EntityVersion (cascade delete from version)
-        - parent: Many-to-one self-referential (cascade delete children)
-        - children: One-to-many self-referential
-        - quantity_field: Many-to-one with Field (SET NULL on field deletion — falls back to static quantity)
-        - rules: One-to-many with BOMItemRule (cascade delete)
+    Hierarchy via self-referential `parent_bom_item_id` (TECHNICAL only;
+    COMMERCIAL is flat). Pricing and metadata are joined from `PriceList`
+    and `CatalogItem` at calculation time.
     """
 
     __tablename__ = "bom_items"
@@ -634,18 +506,10 @@ class BOMItem(Base):
 
 
 class BOMItemRule(Base):
-    """
-    BOMItemRule: Conditional inclusion rule for a BOM item.
+    """Conditional inclusion rule for a `BOMItem`.
 
-    Controls whether a BOM item is included in the output based on field conditions.
-    Multiple rules on the same BOM item use OR logic (item included if any rule passes).
-    BOM items with no rules are unconditionally included.
-
-    Condition structure: {"criteria": [{"field_id": 1, "operator": "EQUALS", "value": "Red"}, ...]}
-
-    Relationships:
-        - bom_item: Many-to-one with BOMItem (cascade delete)
-        - entity_version: Many-to-one with EntityVersion
+    Multiple rules on the same item use OR logic; an item with no rules is
+    unconditionally included. `conditions` JSON shape matches `Rule.conditions`.
     """
 
     __tablename__ = "bom_item_rules"
@@ -673,23 +537,12 @@ class BOMItemRule(Base):
 
 
 class EngineeringTemplateItem(Base, AuditMixin):
-    """
-    EngineeringTemplateItem: One direct-child relationship within an engineering template.
+    """One direct-child edge of an engineering template.
 
-    A "template" is the set of all `EngineeringTemplateItem` rows sharing a
-    `parent_part_number`; there is no separate header table. Templates describe
-    the canonical engineering structure of composite parts and are exploded
-    recursively when materializing a TECHNICAL `BOMItem` sub-tree.
-
-    The pair `(parent_part_number, child_part_number)` is unique within the
-    template; longer cycles are blocked at the application layer by the cycle
-    detector. The `suppress_child_explosion` flag instructs the materialization
-    service to treat the resulting `BOMItem` as a leaf even when the child part
-    has its own template.
-
-    Relationships:
-        - parent_catalog_item: Many-to-one with CatalogItem (parent_part_number)
-        - child_catalog_item: Many-to-one with CatalogItem (child_part_number)
+    A template is the set of rows sharing a `parent_part_number` (no header
+    table). Cycles are blocked by an application-layer detector;
+    `suppress_child_explosion=True` makes the materialized child a leaf even
+    if it has its own template.
     """
 
     __tablename__ = "engineering_template_items"
@@ -751,14 +604,9 @@ class EngineeringTemplateItem(Base, AuditMixin):
 
 
 class PriceList(Base, AuditMixin):
-    """
-    PriceList: Global price catalog with temporal validity.
+    """Global price catalog with temporal validity.
 
-    Price lists are standalone entities decoupled from any specific Entity or EntityVersion.
-    The header defines a validity bounding box; all items must fall within this range.
-
-    Relationships:
-        - items: One-to-many with PriceListItem (cascade delete)
+    Header defines a validity bounding box; all items must fall within it.
     """
 
     __tablename__ = "price_lists"
@@ -780,17 +628,10 @@ class PriceList(Base, AuditMixin):
 
 
 class PriceListItem(Base, AuditMixin):
-    """
-    PriceListItem: A priced component within a PriceList.
+    """Priced row inside a `PriceList`; temporal `valid_from`/`valid_to` instead of version numbers.
 
-    Uses temporal validity (valid_from/valid_to) for versioning instead of explicit
-    version numbers. For a given (price_list_id, part_number), no two items may have
-    overlapping date ranges.
-
-    Item dates must fall within the parent PriceList's bounding box.
-
-    Relationships:
-        - price_list: Many-to-one with PriceList
+    No overlapping date ranges per `(price_list_id, part_number)`; item dates
+    must fall within the parent `PriceList` bounding box.
     """
 
     __tablename__ = "price_list_items"
@@ -822,13 +663,10 @@ class PriceListItem(Base, AuditMixin):
 
 
 class CatalogItem(Base, AuditMixin):
-    """
-    Catalog of part identities referenced by BOM items and price list items.
+    """Canonical part identity referenced by BOM items, price-list items, and engineering templates.
 
-    Holds the canonical metadata for each part number: description,
-    unit of measure, category, lifecycle status, and free-form notes.
-    The `part_number` is the business key and is immutable after creation;
-    to retire a part, set its `status` to OBSOLETE rather than renaming it.
+    `part_number` is the immutable business key; retire a part via `status=OBSOLETE`
+    rather than renaming.
     """
 
     __tablename__ = "catalog_items"
@@ -850,14 +688,10 @@ class CatalogItem(Base, AuditMixin):
 
 
 class ConfigurationCustomItem(Base, AuditMixin):
-    """
-    Configuration-scoped, one-off commercial line item.
+    """Configuration-scoped, one-off commercial line; escape hatch for non-cataloged parts.
 
-    Exists outside the catalog as an escape hatch for parts that are not yet
-    coded. Tied to a single `Configuration` via FK with cascade delete.
-    The `custom_key` is server-generated as ``CUSTOM-<uuid8>`` and is stable
-    for the lifetime of the row, so future retroactive classification can
-    reference it. Appears only in the commercial BOM output.
+    `custom_key` is server-generated as `CUSTOM-<uuid8>` and immutable.
+    Appears only in the commercial BOM output.
     """
 
     __tablename__ = "configuration_custom_items"
@@ -891,15 +725,7 @@ class ConfigurationCustomItem(Base, AuditMixin):
 
 
 class RefreshToken(Base):
-    """
-    RefreshToken: Long-lived token for obtaining new access tokens.
-
-    Stores refresh tokens with expiration and revocation support.
-    Each token is unique and can be revoked individually for security.
-
-    Relationships:
-        - user: Many-to-one with User
-    """
+    """Long-lived token for issuing new access tokens; supports revocation."""
 
     __tablename__ = "refresh_tokens"
     __table_args__ = (

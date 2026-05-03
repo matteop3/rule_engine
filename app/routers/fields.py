@@ -15,23 +15,9 @@ from app.dependencies import (
 from app.models.domain import Field, Rule, RuleType, User, Value
 from app.schemas import FieldCreate, FieldRead, FieldUpdate
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
 
-
-# ============================================================
-# ROUTER SETUP
-# ============================================================
-
 router = APIRouter(prefix="/fields", tags=["Fields"])
-
-
-# ============================================================
-# ENDPOINTS
-# ============================================================
 
 
 @router.get("/", response_model=list[FieldRead])
@@ -42,28 +28,9 @@ def list_fields(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieve Fields for a specific Version.
+    """List Fields of a version, ordered by `(step, sequence)`. ADMIN/AUTHOR only."""
 
-    Access Control:
-        - Only ADMIN and AUTHOR can view fields
-
-    Query Parameters:
-        entity_version_id: The version to retrieve fields for (required)
-        skip: Pagination offset
-        limit: Maximum results (max 100)
-
-    Returns:
-        List[FieldRead]: Fields ordered by step and sequence
-    """
-    logger.info(f"Listing fields for version {entity_version_id} by user {current_user.id}: skip={skip}, limit={limit}")
-
-    # Cap limit to prevent abuse
-    original_limit = limit
     limit = min(limit, 100)
-
-    if original_limit > 100:
-        logger.warning(f"Limit capped from {original_limit} to 100")
 
     fields = (
         db.query(Field)
@@ -81,15 +48,7 @@ def list_fields(
 
 @router.get("/{field_id}", response_model=FieldRead)
 def read_field(field: Field = Depends(get_field_or_404), current_user: User = Depends(require_admin_or_author)):
-    """
-    Retrieve a single Field.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view field details
-
-    Returns:
-        FieldRead: The requested field
-    """
+    """Get a Field by id. ADMIN/AUTHOR only."""
     logger.debug(f"Reading field {field.id} by user {current_user.id}")
     return field
 
@@ -98,18 +57,10 @@ def read_field(field: Field = Depends(get_field_or_404), current_user: User = De
 def create_field(
     field_data: FieldCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_author)
 ):
-    """
-    Creates a new Field attached to a specific Entity Version.
+    """Create a Field on a DRAFT version. ADMIN/AUTHOR only.
 
-    Restrictions:
-        - The version must be DRAFT
-        - default_value on Field is allowed ONLY for free-text fields
-
-    Access Control:
-        - Only ADMIN and AUTHOR can create fields
-
-    Returns:
-        FieldRead: The created field
+    `default_value` is only allowed when `is_free_value=True`; for option-based
+    fields, set `is_default=True` on a `Value` instead.
     """
     logger.info(
         f"Creating field '{field_data.name}' for version {field_data.entity_version_id} "
@@ -122,7 +73,6 @@ def create_field(
 
     # Ensure data consistency: default_value on Field model is allowed ONLY for free-text fields
     if not field_data.is_free_value and field_data.default_value is not None:
-        logger.warning(f"Field creation failed: attempted to set default_value on non-free field '{field_data.name}'")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -153,21 +103,12 @@ def update_field(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
+    """Update a Field on a DRAFT version. ADMIN/AUTHOR only.
+
+    Switching `is_free_value` is constrained: blocked if Values exist, or if
+    CALCULATION rules target the field; `default_value` is reset when leaving
+    free-value mode.
     """
-    Update a Field.
-
-    Restrictions:
-        - The version must be DRAFT
-        - Cannot change is_free_value from False to True if field has Values
-        - Cannot set default_value when switching to non-free field
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update fields
-
-    Returns:
-        FieldRead: The updated field
-    """
-    logger.info(f"Updating field {field.id} by user {current_user.id} (role: {current_user.role_display})")
 
     # State transition analysis
     old_is_free = field.is_free_value
@@ -179,10 +120,6 @@ def update_field(
         existing_values_count = db.query(Value).filter(Value.field_id == field.id).count()
 
         if existing_values_count > 0:
-            logger.warning(
-                f"Update field {field.id} failed: cannot change to free value "
-                f"with {existing_values_count} associated values"
-            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -197,9 +134,6 @@ def update_field(
     if old_is_free and not new_is_free:
         # Non-free fields do not use Field.default_value
         if field_update.default_value is not None:
-            logger.warning(
-                f"Update field {field.id} failed: attempted to set default_value when switching to non-free field"
-            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot set 'default_value' when switching to a non-free field. Use Value.is_default instead.",
@@ -212,10 +146,6 @@ def update_field(
             db.query(Rule).filter(Rule.target_field_id == field.id, Rule.rule_type == RuleType.CALCULATION).count()
         )
         if calc_rules_count > 0:
-            logger.warning(
-                f"Update field {field.id} failed: cannot switch to non-free "
-                f"with {calc_rules_count} CALCULATION rules targeting it"
-            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -232,7 +162,6 @@ def update_field(
     update_data = field_update.model_dump(exclude_unset=True)
 
     if not update_data:
-        logger.warning(f"Empty update request for field {field.id}")
         return field
 
     # If switching from free to non-free, explicitly overwrite DB default_value to None
@@ -256,27 +185,15 @@ def delete_field(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
+    """Delete a Field on a DRAFT version. ADMIN/AUTHOR only.
+
+    Blocked with 409 if the Field has Values, is the target of a Rule, or is
+    referenced inside any Rule's `conditions.criteria`.
     """
-    Delete a Field.
-
-    Strict Policy:
-        - Cannot delete if it has Values
-        - Cannot delete if it is the target of a Rule
-        - Cannot delete if it is used as a condition inside any Rule of the same Entity
-        - The version must be DRAFT
-
-    Access Control:
-        - Only ADMIN and AUTHOR can delete fields
-
-    Returns:
-        204 No Content on success
-    """
-    logger.info(f"Deleting field {field.id} by user {current_user.id} (role: {current_user.role_display})")
 
     # Guardrail: check for Values
     values_count = db.query(Value).filter(Value.field_id == field.id).count()
     if values_count > 0:
-        logger.warning(f"Delete field {field.id} failed: has {values_count} associated values")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot delete Field because it has {values_count} associated Values.",
@@ -285,7 +202,6 @@ def delete_field(
     # Guardrail: check for Rules targeting this field
     rules_targeting_field = db.query(Rule).filter(Rule.target_field_id == field.id).count()
     if rules_targeting_field > 0:
-        logger.warning(f"Delete field {field.id} failed: is target of {rules_targeting_field} rules")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot delete Field because it is the target of {rules_targeting_field} Rules.",
@@ -302,7 +218,6 @@ def delete_field(
         for criterion in criteria_list:
             # If the Field ID is found inside the Rule criterion...
             if criterion.get("field_id") == field.id:
-                logger.warning(f"Delete field {field.id} failed: used in rule {rule.id} conditions")
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(

@@ -1,25 +1,5 @@
-"""
-Engineering template service.
-
-Houses the graph operations on `EngineeringTemplateItem` rows used by the
-template CRUD endpoints, the preview endpoint, and the BOM materialization
-endpoint:
-
-- `would_create_cycle`: detects whether adding a `(parent_part_number,
-  child_part_number)` edge would close a cycle in the template DAG.
-- `acquire_template_graph_lock`: takes a transactional advisory lock that
-  serializes mutations of the template graph to prevent interleaved writes
-  from constructing a cycle that neither write would have detected on its
-  own.
-- `explode`: recursively expands the template of a catalog part into a
-  tree of `ExplodedNode` objects, enforcing depth and node-count limits and
-  rejecting any expansion that contains an `OBSOLETE` part.
-- `materialize`: persists the explosion as a hierarchy of `BOMItem` rows on
-  a target `EntityVersion`, propagating per-edge quantities and the
-  `suppress_child_explosion` opt-out.
-
-Transaction management mirrors the rest of the service layer: this module
-neither commits nor rolls back; the caller owns the transaction.
+"""Graph operations on `EngineeringTemplateItem`: cycle detection, advisory lock, recursive
+explosion, and BOM materialization. Caller owns the transaction.
 """
 
 import logging
@@ -41,13 +21,7 @@ from app.models.domain import (
 
 logger = logging.getLogger(__name__)
 
-
 _GRAPH_LOCK_KEY = "engineering_template_graph"
-
-
-# ============================================================
-# DATA STRUCTURES
-# ============================================================
 
 
 @dataclass
@@ -76,11 +50,6 @@ class ExplosionResult:
     max_depth_reached: int
 
 
-# ============================================================
-# EXCEPTIONS
-# ============================================================
-
-
 class ExplosionLimitExceededError(Exception):
     """Raised when an explosion exceeds `MAX_BOM_EXPLOSION_DEPTH` or `..._NODES`."""
 
@@ -100,19 +69,11 @@ class ExplosionContainsObsoletePartsError(Exception):
 
 
 def acquire_template_graph_lock(db: Session) -> None:
-    """
-    Acquire the PostgreSQL transactional advisory lock on the engineering
-    template graph.
+    """Take a transactional advisory lock that serializes template-graph mutations cluster-wide.
 
-    This serializes concurrent template-graph mutations cluster-wide so that
-    two transactions inserting different edges cannot together construct a
-    cycle that each would have considered safe in isolation (e.g., T1 adds
-    `A → B`, T2 adds `B → A`). The lock is released automatically on commit
-    or rollback.
-
-    Must be called at the beginning of any transaction that mutates
-    `engineering_template_items` (POST, PATCH, DELETE). Reads do not require
-    the lock.
+    Required for every POST/PATCH/DELETE on `engineering_template_items` to
+    prevent two concurrent edge inserts from jointly closing a cycle. Released
+    automatically on commit or rollback. Reads do not need it.
     """
     db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": _GRAPH_LOCK_KEY})
 
@@ -122,22 +83,10 @@ def would_create_cycle(
     parent_part_number: str,
     child_part_number: str,
 ) -> tuple[bool, list[str]]:
-    """
-    Detect whether adding the edge `(parent_part_number, child_part_number)`
-    would close a cycle in the engineering template graph.
+    """Detect whether adding `(parent, child)` would close a cycle in the template graph.
 
-    A cycle exists if the candidate `child_part_number` already reaches
-    `parent_part_number` through one or more `EngineeringTemplateItem` edges
-    (parent → child) traversed recursively. Self-loops are reported as a
-    cycle of length 1.
-
-    Returns:
-        `(True, path)` if a cycle would form. The returned `path` lists the
-        part numbers traversed, starting at `parent_part_number`, threading
-        through every intermediate child, and ending at `parent_part_number`
-        again to make the cycle explicit (e.g., `["A", "B", "C", "A"]`).
-
-        `(False, [])` if the edge is safe to add.
+    Returns `(True, path)` with `path = [parent, ..., parent]` if a cycle would
+    form (self-loops report `[part, part]`); `(False, [])` otherwise.
     """
     if parent_part_number == child_part_number:
         return True, [parent_part_number, parent_part_number]
@@ -166,34 +115,13 @@ def would_create_cycle(
     return False, []
 
 
-# ============================================================
-# EXPLOSION
-# ============================================================
-
-
 def explode(db: Session, root_part_number: str) -> ExplosionResult:
-    """
-    Recursively expand the engineering template of a catalog part.
+    """Recursively expand a catalog part's template, bounded by depth and node-count limits.
 
-    The root node carries placeholder values (`quantity=1`, `sequence=0`,
-    `suppress_auto_explode=False`); descendants carry the values from their
-    `EngineeringTemplateItem` edges. A child whose template edge has
-    `suppress_child_explosion=true` becomes a leaf with
-    `suppress_auto_explode=true`.
-
-    Limits are enforced at every step:
-        - `total_nodes > MAX_BOM_EXPLOSION_NODES` raises
-          `ExplosionLimitExceededError("nodes", ...)`.
-        - `depth > MAX_BOM_EXPLOSION_DEPTH` raises
-          `ExplosionLimitExceededError("depth", ...)`.
-
-    Every part visited is checked against the catalog. If any part is
-    `OBSOLETE`, traversal continues to enumerate the full set, then a
-    single `ExplosionContainsObsoletePartsError` is raised at the end.
-
-    Returns:
-        `ExplosionResult` with the root tree, the total node count, and the
-        deepest depth reached.
+    Edges with `suppress_child_explosion=True` become leaves with
+    `suppress_auto_explode=True`. OBSOLETE parts encountered during the walk
+    are collected and reported via `ExplosionContainsObsoletePartsError` at the end.
+    Depth/node-count breaches raise `ExplosionLimitExceededError` immediately.
     """
     state = {"total_nodes": 0, "max_depth_reached": 0}
     obsolete_parts: list[str] = []
@@ -269,24 +197,11 @@ def explode(db: Session, root_part_number: str) -> ExplosionResult:
     )
 
 
-# ============================================================
-# FLAT AGGREGATION
-# ============================================================
-
-
 def flatten(tree: ExplodedNode, root_quantity: Decimal = Decimal("1")) -> list[tuple[str, Decimal]]:
-    """
-    Cascade-multiply quantities through an exploded tree and aggregate by
-    `part_number`.
+    """Cascade-multiply quantities through an exploded tree and aggregate by `part_number`.
 
-    The root itself is excluded from the output; the result describes the
-    descendants needed to build one (or `root_quantity`) of the root.
-    Multipliers cascade through ancestors: a node's contribution to the
-    flat total is `root_quantity × q_anc_1 × q_anc_2 × ... × q_self`.
-
-    Returns:
-        Pairs of `(part_number, total_quantity)` sorted alphabetically by
-        `part_number`. Returns `[]` for a tree with no descendants.
+    Root is excluded; each descendant contributes `root_quantity × ∏(ancestor_qty) × node.quantity`.
+    Returns `(part_number, total_quantity)` pairs sorted by `part_number`.
     """
     totals: dict[str, Decimal] = {}
 
@@ -301,11 +216,6 @@ def flatten(tree: ExplodedNode, root_quantity: Decimal = Decimal("1")) -> list[t
     return sorted(totals.items())
 
 
-# ============================================================
-# MATERIALIZATION
-# ============================================================
-
-
 def materialize(
     db: Session,
     *,
@@ -317,28 +227,15 @@ def materialize(
     root_sequence: int,
     root_suppress_auto_explode: bool,
 ) -> BOMItem:
-    """
-    Persist the explosion of a catalog part as a hierarchy of `BOMItem` rows
-    on a DRAFT `EntityVersion`.
+    """Persist a recursively exploded template as TECHNICAL `BOMItem` rows on a DRAFT version.
 
-    The root's identity attributes (`quantity`, `quantity_from_field_id`,
-    `sequence`, `suppress_auto_explode`, `parent_bom_item_id`) are taken
-    from the caller. Descendants take their values from their template
-    edges; `EngineeringTemplateItem.suppress_child_explosion` propagates to
-    `BOMItem.suppress_auto_explode`. Every row is `bom_type=TECHNICAL`.
+    Root attributes come from the caller; descendants copy per-edge template
+    values. `EngineeringTemplateItem.suppress_child_explosion` propagates to
+    `BOMItem.suppress_auto_explode`. Quantities stay stoichiometric (per unit
+    of parent); the cascade view lives in `technical_flat` generation.
 
-    The descendants' `quantity` is the per-edge stoichiometric value from
-    the template (Analysis Section 8.2). The cascade arithmetic that
-    produces a top-down per-unit-of-root view lives in `technical_flat`
-    generation (Phase 9), not here.
-
-    Raises:
-        ExplosionLimitExceededError: depth or node-count limit breached.
-        ExplosionContainsObsoletePartsError: any visited part is OBSOLETE.
-
-    Returns:
-        The root `BOMItem` (its descendants are accessible via `.children`
-        once the session refreshes the relationship).
+    Raises `ExplosionLimitExceededError` on depth/node breach,
+    `ExplosionContainsObsoletePartsError` on any OBSOLETE part.
     """
     start = time.perf_counter()
 

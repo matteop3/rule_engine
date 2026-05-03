@@ -18,6 +18,8 @@ from app.models.domain import (
     BOMItemRule,
     CatalogItem,
     CatalogItemStatus,
+    Configuration,
+    ConfigurationStatus,
     EngineeringTemplateItem,
     EntityVersion,
     Field,
@@ -26,6 +28,39 @@ from app.models.domain import (
     Value,
     VersionStatus,
 )
+
+
+def _is_finalized(config: Configuration) -> bool:
+    """Return `True` if `config` is FINALIZED.
+
+    Compares against both the enum and its `.value` for defensive symmetry —
+    do not collapse the two comparisons; the duplication has been historically
+    necessary.
+    """
+    return config.status == ConfigurationStatus.FINALIZED or config.status == ConfigurationStatus.FINALIZED.value
+
+
+def require_draft_status(config: Configuration, operation: str) -> None:
+    """Raise 409 if `config` is FINALIZED; `operation` is interpolated into the error message."""
+    if _is_finalized(config):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot {operation} a FINALIZED configuration. "
+                "Use POST /configurations/{id}/clone to create a modifiable copy."
+            ),
+        )
+
+
+def require_complete_status(config: Configuration) -> None:
+    """Raise 400 if `config.is_complete` is `False`."""
+    if not config.is_complete:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Cannot finalize an incomplete configuration. Ensure all required fields are filled before finalizing."
+            ),
+        )
 
 
 def validate_version_is_draft(version: EntityVersion) -> None:
@@ -148,16 +183,11 @@ def validate_value_not_used_in_rules(db: Session, value: Value) -> None:
                     )
 
 
-# ============================================================
-# CATALOG REFERENCE VALIDATORS
-# ============================================================
-
-
 def validate_catalog_reference(db: Session, part_number: str, *, on_create: bool) -> CatalogItem:
     """
     Validates a `part_number` references an ACTIVE CatalogItem.
 
-    Rules (see PART_CATALOG_ANALYSIS_AND_PLAN §4.3):
+    Rules:
         - Unknown part_number -> HTTP 409
         - OBSOLETE catalog entry on create -> HTTP 409
         - OBSOLETE catalog entry on update -> HTTP 409
@@ -210,11 +240,6 @@ def validate_catalog_not_referenced(db: Session, catalog_item: CatalogItem) -> N
                 f"and {template_count} engineering template item(s)"
             ),
         )
-
-
-# ============================================================
-# EDITABLE DEPENDENCIES (HTTP context — compose fetcher + validation)
-# ============================================================
 
 
 def get_editable_version(version: EntityVersion = Depends(get_version_or_404)) -> EntityVersion:
@@ -271,11 +296,6 @@ def get_editable_value(value: Value = Depends(get_value_or_404), db: Session = D
     version = fetch_version_by_id(db, parent_field.entity_version_id)
     validate_version_is_draft(version)
     return value
-
-
-# ============================================================
-# BOM EDITABLE DEPENDENCIES
-# ============================================================
 
 
 def get_editable_bom_item(bom_item: BOMItem = Depends(get_bom_item_or_404), db: Session = Depends(get_db)) -> BOMItem:

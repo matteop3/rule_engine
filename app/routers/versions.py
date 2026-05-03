@@ -16,41 +16,13 @@ from app.models.domain import EntityVersion, User
 from app.schemas import VersionClone, VersionCreate, VersionRead, VersionUpdate
 from app.services.versioning import VersioningService
 
-# ============================================================
-# LOGGING SETUP
-# ============================================================
-
 logger = logging.getLogger(__name__)
-
-
-# ============================================================
-# ROUTER SETUP
-# ============================================================
 
 router = APIRouter(prefix="/versions", tags=["Versions"])
 
 
-# ============================================================
-# ERROR HANDLING HELPERS
-# ============================================================
-
-
 def handle_service_error(e: ValueError, context: str = "") -> HTTPException:
-    """
-    Converts service ValueError to appropriate HTTP exception.
-
-    Business logic errors from VersioningService are mapped to:
-    - 404 for "not found"
-    - 409 for "already exists" or "conflict"
-    - 400 for other validation errors
-
-    Args:
-        e: The ValueError from service layer
-        context: Optional context for logging (e.g., "create_version")
-
-    Returns:
-        HTTPException: Appropriate HTTP exception
-    """
+    """Map a service `ValueError` to 404 / 409 / 400 by inspecting the message."""
     msg: str = str(e)
 
     if context:
@@ -67,11 +39,6 @@ def handle_service_error(e: ValueError, context: str = "") -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
 
-# ============================================================
-# ENDPOINTS
-# ============================================================
-
-
 @router.get("/", response_model=list[VersionRead])
 def read_versions(
     entity_id: int,
@@ -80,30 +47,12 @@ def read_versions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Retrieves version history for a specific Entity.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view versions
-
-    Query Parameters:
-        entity_id: The Entity to retrieve versions for (required)
-        skip: Pagination offset
-        limit: Maximum results (max 100)
-
-    Returns:
-        List[VersionRead]: Versions ordered by version_number descending (newest first)
-    """
+    """List versions of an Entity newest-first. ADMIN/AUTHOR only."""
     logger.info(
         f"Listing versions for entity {entity_id} by user {current_user.id} (role: {current_user.role_display})"
     )
 
-    # Cap limit to prevent abuse
-    original_limit = limit
     limit = min(limit, 100)
-
-    if original_limit > 100:
-        logger.warning(f"Limit capped from {original_limit} to 100")
 
     versions = (
         db.query(EntityVersion)
@@ -121,16 +70,7 @@ def read_versions(
 
 @router.get("/{version_id}", response_model=VersionRead)
 def read_version(version_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_author)):
-    """
-    Retrieves a single version by ID.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can view version details
-
-    Returns:
-        VersionRead: The requested version
-    """
-    logger.info(f"Reading version {version_id} by user {current_user.id}")
+    """Get a version by id. ADMIN/AUTHOR only."""
 
     version = fetch_version_by_id(db, version_id)
 
@@ -149,18 +89,7 @@ def create_version_draft(
     current_user: User = Depends(require_admin_or_author),
     versioning_service: VersioningService = Depends(get_versioning_service),
 ):
-    """
-    Creates a new DRAFT version for an Entity.
-
-    - Version number is auto-calculated (incremental)
-    - Enforces Single Draft Policy (only one DRAFT per Entity)
-
-    Access Control:
-        - Only ADMIN and AUTHOR can create versions
-
-    Returns:
-        VersionRead: The created DRAFT version
-    """
+    """Create a DRAFT version (one DRAFT per Entity, auto-incremented `version_number`). ADMIN/AUTHOR only."""
     logger.info(
         f"Creating DRAFT version for entity {version_in.entity_id} "
         f"by user {current_user.id} (role: {current_user.role_display})"
@@ -198,20 +127,7 @@ def publish_version(
     current_user: User = Depends(require_admin_or_author),
     versioning_service: VersioningService = Depends(get_versioning_service),
 ):
-    """
-    Promotes a DRAFT version to PUBLISHED.
-
-    - Archives any previously PUBLISHED version (Single Published Policy)
-    - Only DRAFT versions can be published
-    - Existing Configurations on this version become "production data"
-
-    Access Control:
-        - Only ADMIN and AUTHOR can publish versions
-
-    Returns:
-        VersionRead: The published version
-    """
-    logger.info(f"Publishing version {version_id} by user {current_user.id} (role: {current_user.role_display})")
+    """Publish a DRAFT version, archiving the currently PUBLISHED version (if any). ADMIN/AUTHOR only."""
 
     try:
         with db_transaction(db, f"publish_version {version_id}"):
@@ -240,20 +156,7 @@ def clone_version(
     current_user: User = Depends(require_admin_or_author),
     versioning_service: VersioningService = Depends(get_versioning_service),
 ):
-    """
-    Creates a new DRAFT version by deep-copying an existing version.
-
-    - Source version can be in any status (DRAFT, PUBLISHED, ARCHIVED)
-    - Copies all Fields, Values, and Rules with ID remapping
-    - Enforces Single Draft Policy (target entity must not have a DRAFT)
-
-    Access Control:
-        - Only ADMIN and AUTHOR can clone versions
-
-    Returns:
-        VersionRead: The newly created DRAFT version
-    """
-    logger.info(f"Cloning version {version_id} by user {current_user.id} (role: {current_user.role_display})")
+    """Deep-copy a version into a new DRAFT (any source status accepted). ADMIN/AUTHOR only."""
 
     try:
         # Clean Swagger default value hack
@@ -289,21 +192,7 @@ def update_version_metadata(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_author),
 ):
-    """
-    Updates version metadata (changelog).
-
-    Restrictions:
-        - Only DRAFT versions can be modified
-        - PUBLISHED/ARCHIVED versions are immutable (history protection)
-        - Status changes must use dedicated endpoints (/publish)
-
-    Access Control:
-        - Only ADMIN and AUTHOR can update versions
-
-    Returns:
-        VersionRead: The updated version
-    """
-    logger.info(f"Updating metadata for version {version_id} by user {current_user.id}")
+    """Update version metadata (DRAFT only). Status transitions go through `/publish`. ADMIN/AUTHOR only."""
 
     version = fetch_version_by_id(db, version_id)
 
@@ -315,7 +204,6 @@ def update_version_metadata(
 
     # Check if there are actual changes
     if not update_data:
-        logger.warning(f"Empty update request for version {version_id}")
         return version
 
     try:
@@ -344,24 +232,7 @@ def update_version_metadata(
 def delete_version(
     version_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_author)
 ):
-    """
-    Deletes a version.
-
-    Strict Policy:
-        - Only DRAFT versions can be deleted
-        - PUBLISHED/ARCHIVED versions are protected (history preservation)
-        - Cascade deletes all Fields, Values, Rules, and Configurations
-
-    Note: Configurations on DRAFT versions are considered test data
-          and will be automatically deleted.
-
-    Access Control:
-        - Only ADMIN and AUTHOR can delete versions
-
-    Returns:
-        204 No Content on success
-    """
-    logger.info(f"Deleting version {version_id} by user {current_user.id}")
+    """Delete a DRAFT version (cascades to Fields, Values, Rules, Configurations). ADMIN/AUTHOR only."""
 
     version = fetch_version_by_id(db, version_id)
 
