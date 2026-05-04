@@ -4,8 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user, get_user_or_404, get_user_service, require_role
-from app.exceptions import DatabaseError
+from app.dependencies import db_transaction, get_current_user, get_user_or_404, get_user_service, require_role
 from app.models.domain import User, UserRole
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.users import UserService
@@ -37,13 +36,10 @@ def create_user(
         )
 
     # Create new User
-    try:
+    with db_transaction(db, f"create_user '{user_in.email}'"):
         new_user = user_service.create_user(db, user_in, current_user.id)
-    except DatabaseError:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred",
-        ) from None
+
+    db.refresh(new_user)
 
     logger.info(f"User {new_user.id} created successfully: email={user_in.email}, role={user_in.role.value}")
 
@@ -119,13 +115,10 @@ def update_user(
         if user_service.get_by_email(db, user_in.email):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Email already in use.")
 
-    try:
+    with db_transaction(db, f"update_user {user.id}"):
         updated_user = user_service.update_user(db, user, user_in, current_user.id)
-    except DatabaseError:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred",
-        ) from None
+
+    db.refresh(updated_user)
 
     logger.info(f"User {user.id} updated successfully by admin {current_user.id}")
 
@@ -150,13 +143,8 @@ def delete_user(
         logger.warning(f"Admin {current_user.id} attempted to delete own account")
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="You cannot delete your own account.")
 
-    try:
+    with db_transaction(db, f"soft_delete_user {user.id}"):
         user_service.soft_delete_user(db, user, current_user.id)
-    except DatabaseError:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred",
-        ) from None
 
     logger.info(f"User {user.id} soft-deleted successfully by admin {current_user.id}")
 

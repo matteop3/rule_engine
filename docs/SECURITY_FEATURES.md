@@ -157,6 +157,10 @@ Authorization: Bearer <old_refresh_token>
 # Old refresh token is now revoked and cannot be reused
 ```
 
+The revoke of the old token and the creation of the new one run in a single
+database transaction, so a rotation either fully succeeds or fully rolls back —
+the caller never ends up with no valid refresh token.
+
 #### When to Enable Rotation
 
 ✅ **Enable (REFRESH_TOKEN_ROTATION=true) if:**

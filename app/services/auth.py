@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class AuthService:
-    """Pure authentication logic."""
+    """Pure authentication logic. Caller owns the transaction; this service does not commit or rollback."""
 
     def authenticate_user(self, db: Session, email: str, password: str) -> User | None:
         """Return the active `User` matching `(email, password)` or `None` for any failure mode."""
@@ -55,8 +55,7 @@ class AuthService:
         )
 
         db.add(db_token)
-        db.commit()
-        db.refresh(db_token)
+        db.flush()
 
         logger.info(f"Created refresh token for user {user_id}, expires at {expires_at}")
 
@@ -93,7 +92,6 @@ class AuthService:
 
         # Update last used timestamp
         db_token.last_used_at = now_utc
-        db.commit()
 
         logger.info(f"Refresh token {db_token.id} verified successfully for user {db_token.user_id}")
 
@@ -108,7 +106,6 @@ class AuthService:
 
         db_token.is_revoked = True
         db_token.revoked_at = datetime.now(UTC)
-        db.commit()
 
         logger.info(f"Revoked refresh token {token_id} for user {db_token.user_id}")
 
@@ -124,8 +121,6 @@ class AuthService:
             .update({"is_revoked": True, "revoked_at": now_utc})
         )
 
-        db.commit()
-
         logger.info(f"Revoked {result} refresh tokens for user {user_id}")
 
         return result
@@ -135,8 +130,6 @@ class AuthService:
         now_utc = datetime.now(UTC)
 
         result = db.query(RefreshToken).filter(RefreshToken.expires_at < now_utc).delete()
-
-        db.commit()
 
         logger.info(f"Cleaned up {result} expired refresh tokens")
 

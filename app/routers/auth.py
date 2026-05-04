@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.rate_limit import get_login_rate_limit, get_refresh_rate_limit, limiter
 from app.core.security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token
 from app.database import get_db
-from app.dependencies import get_auth_service
+from app.dependencies import db_transaction, get_auth_service
 from app.services.auth import AuthService
 
 logger = logging.getLogger(__name__)
@@ -52,9 +52,10 @@ async def login_for_access_token(
 
     # Generate refresh token
     client_ip = request.client.host if request.client else None
-    refresh_token, _ = auth_service.create_user_refresh_token(
-        db=db, user_id=user.id, user_agent=user_agent, ip_address=client_ip
-    )
+    with db_transaction(db, "issue_refresh_token"):
+        refresh_token, _ = auth_service.create_user_refresh_token(
+            db=db, user_id=user.id, user_agent=user_agent, ip_address=client_ip
+        )
 
     logger.info(f"Successful login for user {user.id} (email: {form_data.username})")
 
@@ -77,46 +78,47 @@ async def refresh_access_token(
     """
     refresh_token = credentials.credentials
 
-    # Verify refresh token
-    db_token = auth_service.verify_user_refresh_token(db=db, plaintext_token=refresh_token)
+    operation = "rotate_refresh_token" if settings.REFRESH_TOKEN_ROTATION else "verify_refresh_token"
+    new_refresh_token: str | None = None
+    # Verify, revoke-and-create are wrapped in a single transaction so a token
+    # rotation is atomic: a crash mid-rotation leaves the caller with the
+    # original token still valid, never with no token.
+    with db_transaction(db, operation):
+        db_token = auth_service.verify_user_refresh_token(db=db, plaintext_token=refresh_token)
 
-    if not db_token:
-        logger.warning("Invalid or expired refresh token used")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        if not db_token:
+            logger.warning("Invalid or expired refresh token used")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-    # Get user
-    from app.models.domain import User
+        from app.models.domain import User
 
-    user = db.query(User).filter(User.id == db_token.user_id).first()
+        user = db.query(User).filter(User.id == db_token.user_id).first()
 
-    if not user or not user.is_active:
-        logger.warning(f"Refresh token user {db_token.user_id} not found or inactive")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        if not user or not user.is_active:
+            logger.warning(f"Refresh token user {db_token.user_id} not found or inactive")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-    # Generate new access token
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(subject=user.id, expires_delta=access_token_expires)
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(subject=user.id, expires_delta=access_token_expires)
+
+        if settings.REFRESH_TOKEN_ROTATION:
+            auth_service.revoke_refresh_token(db=db, token_id=db_token.id)
+            new_refresh_token, _ = auth_service.create_user_refresh_token(
+                db=db, user_id=user.id, user_agent=db_token.user_agent, ip_address=db_token.ip_address
+            )
 
     logger.info(f"Access token refreshed for user {user.id}")
 
-    # Refresh token rotation (configurable)
-    if settings.REFRESH_TOKEN_ROTATION:
-        # Revoke old token and create new one
-        auth_service.revoke_refresh_token(db=db, token_id=db_token.id)
-        new_refresh_token, _ = auth_service.create_user_refresh_token(
-            db=db, user_id=user.id, user_agent=db_token.user_agent, ip_address=db_token.ip_address
-        )
+    if new_refresh_token is not None:
         logger.info(f"Refresh token rotated for user {user.id}")
-
         return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
 
-    # No rotation - return only new access token
     return {"access_token": access_token, "token_type": "bearer"}
