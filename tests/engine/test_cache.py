@@ -78,6 +78,18 @@ class TestTTLCacheSetAndGet:
         assert cache.get("key1") == "new_value"
         assert cache.stats()["size"] == 1
 
+    def test_update_preserves_eviction_position(self):
+        """Updating an existing key does not refresh its FIFO eviction position."""
+        cache: TTLCache[str] = TTLCache(ttl_seconds=60, max_size=2)
+        cache.set("key1", "value1")
+        cache.set("key2", "value2")
+        cache.set("key1", "value1_updated")  # update, must not move to the back
+        cache.set("key3", "value3")  # evicts the oldest by insertion: key1
+
+        assert cache.get("key1") is None
+        assert cache.get("key2") == "value2"
+        assert cache.get("key3") == "value3"
+
     def test_stats_hit_miss_counters(self):
         """stats() returns correct hit/miss counts."""
         cache: TTLCache[str] = TTLCache(ttl_seconds=60, max_size=10)

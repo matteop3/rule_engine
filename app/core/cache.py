@@ -88,7 +88,16 @@ class VersionData:
 
 
 class TTLCache[T]:
-    """Thread-safe in-memory cache with TTL and max size."""
+    """Thread-safe in-memory cache with TTL and max size.
+
+    Eviction is FIFO on insertion order: when the store is full and a
+    new key is inserted, the first-inserted key is evicted in O(1).
+    Updating an existing key overwrites its value and resets its TTL,
+    but does not refresh its eviction position. With a uniform per-
+    instance TTL — the only usage pattern in this codebase — FIFO is
+    equivalent to "smallest expires_at"; with non-uniform TTLs the two
+    would diverge.
+    """
 
     def __init__(self, ttl_seconds: int = 300, max_size: int = 100):
         self._store: dict[str, tuple[float, T]] = {}
@@ -115,7 +124,8 @@ class TTLCache[T]:
     def set(self, key: str, value: T) -> None:
         with self._lock:
             if len(self._store) >= self._max_size and key not in self._store:
-                oldest_key = min(self._store, key=lambda k: self._store[k][0])
+                # dicts preserve insertion order; the first key is the oldest.
+                oldest_key = next(iter(self._store))
                 del self._store[oldest_key]
             self._store[key] = (time.monotonic() + self._ttl, value)
 
