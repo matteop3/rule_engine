@@ -64,8 +64,7 @@ class AuthService:
     def verify_user_refresh_token(self, db: Session, plaintext_token: str) -> RefreshToken | None:
         """Return the matching `RefreshToken` if not revoked and not expired, else `None`.
 
-        Updates `last_used_at` on success. Handles SQLite's naive `expires_at` by
-        coercing to UTC before the comparison.
+        Updates `last_used_at` on success.
         """
         token_hash = hash_refresh_token(plaintext_token)
 
@@ -83,11 +82,7 @@ class AuthService:
 
         # Check if expired
         now_utc = datetime.now(UTC)
-        # Handle timezone-naive datetimes from SQLite
-        expires_at = db_token.expires_at
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=UTC)
-        if expires_at < now_utc:
+        if db_token.expires_at < now_utc:
             return None
 
         # Update last used timestamp
