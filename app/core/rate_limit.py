@@ -1,9 +1,4 @@
-"""
-Rate Limiting configuration and utilities using slowapi.
-
-This module provides rate limiting functionality for the API endpoints
-to prevent abuse and brute force attacks.
-"""
+"""Rate limiting configuration and utilities using slowapi."""
 
 import logging
 
@@ -17,38 +12,11 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-# ============================================================
-# RATE LIMITER SETUP
-# ============================================================
-
-
 def get_client_identifier(request: Request) -> str:
-    """
-    Get client identifier for rate limiting.
-
-    Uses IP address by default. Can be extended to use:
-    - User ID (for authenticated requests)
-    - API key
-    - Combination of factors
-
-    Args:
-        request: FastAPI request object
-
-    Returns:
-        str: Client identifier (IP address)
-    """
-    # For now, use IP address
-    # In production, consider using X-Forwarded-For if behind a proxy
-    client_ip = get_remote_address(request)
-
-    # You can extend this to include user ID for authenticated requests:
-    # if hasattr(request.state, "user"):
-    #     return f"user:{request.state.user.id}"
-
-    return client_ip
+    """Return the client identifier used for rate limiting (currently the remote IP)."""
+    return get_remote_address(request)
 
 
-# Initialize the limiter
 limiter = Limiter(
     key_func=get_client_identifier,
     enabled=settings.RATE_LIMIT_ENABLED,
@@ -57,24 +25,8 @@ limiter = Limiter(
 )
 
 
-# ============================================================
-# RATE LIMIT EXCEPTION HANDLER
-# ============================================================
-
-
 def rate_limit_exceeded_handler(request: Request, exc: Exception) -> JSONResponse:
-    """
-    Custom handler for rate limit exceeded errors.
-
-    Returns a consistent JSON error response with appropriate HTTP status.
-
-    Args:
-        request: FastAPI request object
-        exc: Rate limit exceeded exception
-
-    Returns:
-        JSONResponse: Error response with 429 status code
-    """
+    """Return a consistent 429 JSON response for slowapi rate-limit-exceeded errors."""
     logger.warning(f"Rate limit exceeded for {get_client_identifier(request)} on endpoint {request.url.path}")
 
     return JSONResponse(
@@ -85,14 +37,6 @@ def rate_limit_exceeded_handler(request: Request, exc: Exception) -> JSONRespons
             "retry_after": getattr(exc, "detail", None),
         },
     )
-
-
-# ============================================================
-# RATE LIMIT STRINGS
-# ============================================================
-
-# These are the rate limit strings used by slowapi
-# Format: "count/period" where period can be: second, minute, hour, day
 
 
 def get_login_rate_limit() -> str:

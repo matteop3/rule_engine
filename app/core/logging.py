@@ -58,6 +58,7 @@ def get_uvicorn_log_config(json_output: bool = True) -> dict:
     are configured in setup_logging() instead.
     """
     if not json_output:
+        # Empty dict makes uvicorn fall back to its default plain-text loggers.
         return {}
 
     return {

@@ -5,10 +5,6 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 
-# ============================================================
-# CACHED DATA MODELS (frozen dataclasses, session-independent)
-# ============================================================
-
 
 @dataclass(frozen=True)
 class CachedField:
@@ -89,11 +85,6 @@ class VersionData:
     rules: list[CachedRule]
     bom_items: list[CachedBOMItem]
     bom_item_rules: list[CachedBOMItemRule]
-
-
-# ============================================================
-# TTL CACHE
-# ============================================================
 
 
 class TTLCache[T]:

@@ -13,22 +13,7 @@ class AuthService:
     """Pure authentication logic."""
 
     def authenticate_user(self, db: Session, email: str, password: str) -> User | None:
-        """
-        Verify user credentials.
-        Return User object if valid and active, None otherwise.
-
-        Args:
-            db: Database session
-            email: User email
-            password: Plain text password
-
-        Returns:
-            User object if authentication succeeds, None otherwise
-
-        Note:
-            Returns None for all failure cases (security best practice).
-            Specific failure reasons are logged internally.
-        """
+        """Return the active `User` matching `(email, password)` or `None` for any failure mode."""
         # Search for User
         user = db.query(User).filter(User.email == email).first()
 
@@ -53,21 +38,9 @@ class AuthService:
     def create_user_refresh_token(
         self, db: Session, user_id: str, user_agent: str | None = None, ip_address: str | None = None
     ) -> tuple[str, RefreshToken]:
-        """
-        Create a new refresh token for a user and store it in the database.
+        """Persist a new refresh token; returns `(plaintext_token, RefreshToken)`.
 
-        Args:
-            db: Database session
-            user_id: User ID to create token for
-            user_agent: Optional user agent string for tracking
-            ip_address: Optional IP address for tracking
-
-        Returns:
-            tuple: (plaintext_token, RefreshToken database record)
-
-        Example:
-            >>> token, db_record = auth_service.create_user_refresh_token(db, user.id)
-            >>> # Return token to client, db_record is stored
+        The plaintext is returned to the caller and never stored — only its hash lives in the DB.
         """
         # Generate secure random token
         plaintext_token = create_refresh_token()
@@ -90,21 +63,10 @@ class AuthService:
         return plaintext_token, db_token
 
     def verify_user_refresh_token(self, db: Session, plaintext_token: str) -> RefreshToken | None:
-        """
-        Verify a refresh token and return the database record if valid.
+        """Return the matching `RefreshToken` if not revoked and not expired, else `None`.
 
-        A token is valid if:
-        1. It exists in the database
-        2. It hasn't been revoked
-        3. It hasn't expired
-        4. The hash matches
-
-        Args:
-            db: Database session
-            plaintext_token: The refresh token to verify
-
-        Returns:
-            RefreshToken record if valid, None otherwise
+        Updates `last_used_at` on success. Handles SQLite's naive `expires_at` by
+        coercing to UTC before the comparison.
         """
         token_hash = hash_refresh_token(plaintext_token)
 
@@ -127,7 +89,6 @@ class AuthService:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
         if expires_at < now_utc:
-            logger.warning(f"Refresh token {db_token.id} has expired")
             return None
 
         # Update last used timestamp
@@ -139,20 +100,10 @@ class AuthService:
         return db_token
 
     def revoke_refresh_token(self, db: Session, token_id: int) -> bool:
-        """
-        Revoke a refresh token by its ID.
-
-        Args:
-            db: Database session
-            token_id: ID of the refresh token to revoke
-
-        Returns:
-            bool: True if token was revoked, False if not found
-        """
+        """Mark `token_id` as revoked; returns `False` if it doesn't exist."""
         db_token = db.query(RefreshToken).filter(RefreshToken.id == token_id).first()
 
         if not db_token:
-            logger.warning(f"Cannot revoke: refresh token {token_id} not found")
             return False
 
         db_token.is_revoked = True
@@ -164,21 +115,7 @@ class AuthService:
         return True
 
     def revoke_all_user_refresh_tokens(self, db: Session, user_id: str) -> int:
-        """
-        Revoke all active refresh tokens for a user.
-
-        Useful for:
-        - User logout from all devices
-        - Password change
-        - Security incident response
-
-        Args:
-            db: Database session
-            user_id: User ID whose tokens to revoke
-
-        Returns:
-            int: Number of tokens revoked
-        """
+        """Revoke every active refresh token for `user_id`; returns the count."""
         now_utc = datetime.now(UTC)
 
         result = (
@@ -194,17 +131,7 @@ class AuthService:
         return result
 
     def cleanup_expired_tokens(self, db: Session) -> int:
-        """
-        Delete expired refresh tokens from the database.
-
-        Should be run periodically (e.g., daily cron job) to keep database clean.
-
-        Args:
-            db: Database session
-
-        Returns:
-            int: Number of tokens deleted
-        """
+        """Hard-delete every refresh token whose `expires_at` is in the past; returns the count."""
         now_utc = datetime.now(UTC)
 
         result = db.query(RefreshToken).filter(RefreshToken.expires_at < now_utc).delete()

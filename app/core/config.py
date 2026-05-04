@@ -1,16 +1,12 @@
-# app/core/config.py
 import json
-import os
 from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Calculate absolute project root.
-# __file__ is this file (config.py).
-# .parent is 'core', .parent is 'app', .parent is the project root.
+# Project root: app/core/config.py → app/core → app → root.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-ENV_PATH = os.path.join(BASE_DIR, ".env")
+ENV_PATH = BASE_DIR / ".env"
 
 
 class Settings(BaseSettings):
